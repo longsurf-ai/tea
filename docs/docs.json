@@ -3,6 +3,18 @@
   "theme": "mint",
   "name": "Tea",
   "description": "Documentation for the Tea programming language.",
+  "logo": {
+    "light": "/assets/tea-logo-light.svg",
+    "dark": "/assets/tea-logo-dark.svg"
+  },
+  "favicon": "/assets/tea-mark.svg",
+  "styling": {
+    "codeblocks": {
+      "languages": {
+        "custom": ["/assets/tea.tmLanguage.json"]
+      }
+    }
+  },
   "colors": {
     "primary": "#156453",
     "light": "#70c9af",

@@ -3,16 +3,43 @@ title: Introduction
 slug: /
 ---
 
-Tea is a language for calculations over ordered time-series inputs. A program
-runs once per input step, can retain state and history, and emits named values.
-The host supplies the data and decides how to display or deliver the output.
-Tea itself does not fetch prices, send notifications, or place real orders.
+Tea is a programming language to run computation over data streams.
+It can be used to express arbitrary computation where output is a function of the current input and previous inputs.
 
-## Start here
+What this means is that Tea can be used to build:
 
-Read [program structure](language-guide/program-structure.md) and
-[execution model](language-guide/execution-model.md) before writing a program.
-Then choose the topic you need:
+* **Technical Indicators**: market data are combined and transformed into signals
+* **Trading Strategies**: a single Tea script can be used for both backtesting and live trading
+* **Market Scanner**: a Tea script can be applied to thousands of securities to find potential opportunities
+* **Alerts**: a Tea script can be used to set up alerts that trigger external event (e.g., AI agents)
+* **Time Series Prediction**: a Tea script can be used to model time series and automatically estimate the best parameters
+
+what sets Tea apart from other solutions are:
+
+1. **Tea is easy**: It's reallt easy to write and understand a Tea script, making it token-efficient for agent to write complex time series analysis without worrying about wiring data or sets up bespoke control flows. See [program structure](language-guide/program-structure.md)
+2. **Tea is fast**: Tea is purposedly built for handling time series, where memory copy are avoided as much as possible (hint: we love [Arrow](https://arrow.apache.org/)).
+3. **Tea is secure**: There's no network or file system access capability built into Tea, making it easy to share and trust other people/agent's code.
+4. **Tea is extensible**: Despite not being a GPPL, Tea supports structs, collection types, interfaces, just as any high level programming language. The only limitation is that it doesn't support recursion.
+5. **Tea is Open**: Tea is open sourced under the Apache 2.0 license, allowing anyone to build on top of it.
+6. **Tea runs on GPU**: This is still experimental, but Tea programs can be compiled into webGPU kernels that leverages any GPU from any platform to accelerate your strategy searching, parameter fitting, etc.
+
+
+## Getting started
+
+If you're new to Tea, let's start with [a small program](language-guide/program-structure.md).
+We'll walk through it together, from the inputs it reads to the results it produces.
+
+Then take a look at the [execution model](language-guide/execution-model.md).
+We'll follow a few rows of price data through a program and see how Tea keeps
+track of earlier values as new data arrives.
+
+
+
+## Language Guide
+
+Use the guide below when you have a specific question, whether that's how to
+remember a value between bars or bring another symbol into a calculation.
+Feel free to jump straight to the part you need.
 
 | Task                                                               | Read                                                                              |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
@@ -25,33 +52,13 @@ Then choose the topic you need:
 | Exact built-in signatures and supported library exports            | [Reference](reference/overview.md)                                                |
 | A complete first program                                           | [Write your first indicator](getting-started/Write%20your%20first%20indicator.md) |
 
-To look up a named API, search `reference/` recursively. Native signatures live
-in `reference/native-functions.md`; ordinary library declarations live in
-`reference/libraries/<library>.md` (`ta.md` for calculations, `visual.md` for
-plots and alerts). `reference/functions.md` is an index, not the declarations.
 
-## One program, one step
+## Contributing
 
-```tea
-length = input.int(10, "Length", minval=1)
-average = ta.sma(close, length)
-plot("average", average, "Average")
-```
+Tea is still taking shape, and we'd love to hear what you're trying to build with
+it. If something feels awkward or an example leaves you with questions, please
+tell us.
 
-The host binds `close` and the parameter `length`. Each step computes the next
-average. `plot` emits a visual description with the fixed ID `average`.
-An entry may start with `indicator("Title", overlay = false)` to give a host
-its display title and placement; the header never changes execution. There is
-no `strategy()` header. An ordinary Tea program can emit numbers, plots,
-events, or several of these together.
-
-Tea resembles Pine in some syntax. Use this version's declarations and semantics:
-for example visual helpers require an output ID before the value/condition,
-request declarations require host-bound data, and history indexes apply to
-bindings. A function or spelling found in another language is not evidence of
-support here.
-
-For a behavior check, derive expected values from the requirement, choose a
-small finite input containing both matching and nonmatching cases, and compare
-the actual outputs. Successful compilation establishes legal code; a successful
-run establishes execution. Neither alone establishes the intended behavior.
+A useful script, a bug report, or a clearer explanation can all help. Code
+contributions are welcome too, as are questions and ideas that aren't fully
+worked out yet.

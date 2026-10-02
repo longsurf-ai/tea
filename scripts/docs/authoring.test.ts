@@ -8,9 +8,10 @@ import {generate} from '../../src/codegen/codegen';
 import {libraryReferences, nativeReference} from './reference-catalog';
 
 const pages = [
-  'introduction.md',
   'getting-started/Hello world.md',
   'getting-started/Write your first indicator.md',
+  'language-guide/program-structure.md',
+  'language-guide/execution-model.md',
   'language-guide/values-and-control-flow.md',
   'language-guide/time-series.md',
   'language-guide/outputs-and-events.md',

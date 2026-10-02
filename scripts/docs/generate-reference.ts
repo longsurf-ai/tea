@@ -4,6 +4,7 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {format} from 'prettier';
+import {generateGrammar} from '../../editors/vscode/scripts/generate-syntax';
 import {
   libraryReferences,
   nativeReference,
@@ -241,6 +242,10 @@ function outputPath(root: string, entry: ReferenceEntry): string {
 
 export function referenceOutputs(root: string): ReadonlyMap<string, string> {
   return new Map([
+    [
+      path.join(root, 'docs/assets/tea.tmLanguage.json'),
+      JSON.stringify({...generateGrammar(), name: 'tea', displayName: 'Tea'}),
+    ],
     [path.join(root, 'docs/reference/overview.md'), overviewPage()],
     [path.join(root, 'docs/reference/native-functions.md'), nativeReference()],
     ...[...libraryReferences()].map(
@@ -294,7 +299,9 @@ export async function generateReference(
         return `](${relative.startsWith('.') ? relative : `./${relative}`})`;
       },
     );
-    const formatted = await format(portable, {parser: 'mdx'});
+    const formatted = await format(portable, {
+      parser: path.extname(file) === '.json' ? 'json' : 'mdx',
+    });
     let current: string | undefined;
     try {
       current = await readFile(file, 'utf8');

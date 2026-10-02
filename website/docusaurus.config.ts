@@ -8,6 +8,8 @@ const config: Config = {
   tagline: 'Documentation for the Tea programming language.',
   url: process.env['TEA_DOCS_URL'] ?? 'http://localhost',
   baseUrl: '/',
+  favicon: 'tea-mark.svg',
+  staticDirectories: ['../docs/assets'],
   onBrokenLinks: 'throw',
   onBrokenAnchors: 'throw',
   markdown: {
@@ -39,7 +41,13 @@ const config: Config = {
   ],
   themeConfig: {
     navbar: {
-      title: 'Tea',
+      logo: {
+        alt: 'Tea',
+        src: 'tea-logo-light.svg',
+        srcDark: 'tea-logo-dark.svg',
+        width: 90,
+        height: 32,
+      },
       items: [
         {
           type: 'docSidebar',
@@ -62,7 +70,7 @@ const config: Config = {
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.dracula,
-      additionalLanguages: ['bash', 'json'],
+      additionalLanguages: ['bash', 'json', 'python'],
     },
   },
 };
