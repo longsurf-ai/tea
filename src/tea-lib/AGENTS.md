@@ -17,6 +17,12 @@ preludes, and trade components are explicit imports.
   input.series("close")`, the one exported-variable form: an alias runs no
   per-bar code and owns no state or history. Scripts see every prelude name;
   a library resolves only the input aliases, where lexical lookup fails.
+- Every `library(...)` call, export, and member of an exported type carries a
+  `/** */` doc comment directly above it — a one-sentence summary, optional
+  Markdown, then `@param`, `@returns`, `@category` — which the Reference
+  renders; `{@link name}` links another documented name. Tests fail without
+  it and compile its ```tea examples. Plain `//` comments are maintainer
+  notes.
 - Exported functions, interfaces, types, and enums form the public surface;
   unexported declarations resolve only inside the owning library. Interfaces
   are checker-only structural constraints: receiver mode, positional arity and

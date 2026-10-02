@@ -2,11 +2,11 @@ Program version=1 slots=5
 series high: series float depth=none
 series low: series float depth=none
 series close: series float depth=none
-output[0] "output0" set: Plot @ tea-lib/visual.tea:38:5
-output[1] "output1" set: Plot @ tea-lib/visual.tea:38:5
-output[2] "output2" set: Fill @ tea-lib/visual.tea:67:5
-output[3] "output3" set: Hline @ tea-lib/visual.tea:53:5
-output[4] "output4" set: Shape @ tea-lib/visual.tea:87:5
+output[0] "output0" set: Plot @ tea-lib/visual.tea:89:5
+output[1] "output1" set: Plot @ tea-lib/visual.tea:89:5
+output[2] "output2" set: Fill @ tea-lib/visual.tea:163:5
+output[3] "output3" set: Hline @ tea-lib/visual.tea:123:5
+output[4] "output4" set: Shape @ tea-lib/visual.tea:218:5
 name p1: perBar series Plot depth=none
 name id: perBar const string depth=none
 name series: perBar series float depth=none

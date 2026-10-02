@@ -35,11 +35,13 @@ const LIBRARY_SCHEME = 'tea-lib:/';
  *   `Analysis`, dropped when it closes.
  * - Diagnostics are pushed, never pulled: 150 ms after the last change, with
  *   the document version they were computed from, and again for every open
- *   document on `workspace/didChangeWatchedFiles`. Closing a document clears
- *   them. Analysis is synchronous, so a published version never goes back.
+ *   document 150 ms after the last `workspace/didChangeWatchedFiles` or
+ *   `invalidateFiles()`. Closing a document clears them. Analysis is
+ *   synchronous, so a published version never goes back.
  * - Hover, definition, references, completion and signature help answer
  *   against the current text: a cache older than the document is refreshed
- *   first.
+ *   first. Hover, completion and signature help carry the documentation of
+ *   the names they show: doc comments, and the catalog's for natives.
  * - A `file:` URI is analyzed under its file-system path, so relative imports
  *   resolve against the real file; any other URI is its own filename. A
  *   definition in a compiler-shipped library is a `tea-lib:/ta.tea` location,
@@ -68,6 +70,7 @@ export function startLanguageServer(
     {readonly version: number; readonly analysis: Analysis}
   >();
   const debounces = new Map<string, ReturnType<typeof setTimeout>>();
+  let republish: ReturnType<typeof setTimeout> | undefined;
   let registersFileWatcher = false;
   let invalidatingFiles = false;
   function publishDependencies(): void {
@@ -183,16 +186,25 @@ export function startLanguageServer(
   });
 
   // A file on disk changed, and any open document may import it. Analysis
-  // is cheap enough that no import graph is kept to find out which.
+  // is cheap enough that no import graph is kept to find out which. A
+  // checkout or a save-all is a burst of changes: stale analyses go at once,
+  // so a request answers from the files as they are now, and diagnostics are
+  // republished once, after the burst.
   function invalidateFiles(): void {
-    invalidatingFiles = true;
-    try {
-      analyses.clear();
-      documents.all().forEach(document => publish(document.uri));
-    } finally {
-      invalidatingFiles = false;
-      publishDependencies();
-    }
+    analyses.clear();
+    clearTimeout(republish);
+    republish = setTimeout(() => {
+      republish = undefined;
+      invalidatingFiles = true;
+      // The host may have disposed the connection while this waited.
+      try {
+        documents.all().forEach(document => publish(document.uri));
+      } catch {
+      } finally {
+        invalidatingFiles = false;
+        publishDependencies();
+      }
+    }, DEBOUNCE_MS);
   }
   connection.onDidChangeWatchedFiles(invalidateFiles);
 

@@ -33,9 +33,23 @@ import {
 
 /** One synchronized external update passed to Context.step(). */
 export interface StepInput {
+  /** One number per `module.inputs.series` entry, in that order; `NaN` is na. */
   readonly series: readonly Stored[];
+  /**
+   * One value per entry of `module.inputs.builtins`, in that order. A builtin
+   * fixed through `Module.bind` uses its bound value instead.
+   */
   readonly builtins: readonly Stored[];
+  /**
+   * One entry per `module.requests` record, in that order: the child's value
+   * for a sample request, or the array of collected values for a collect
+   * request.
+   */
   readonly requests: readonly (Stored | readonly Stored[])[];
+  /**
+   * True for a provisional attempt: it replaces same-index values but does not
+   * advance committed history, so the next step evaluates the same row again.
+   */
   readonly provisional: boolean;
 }
 

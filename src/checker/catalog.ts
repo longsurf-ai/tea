@@ -884,13 +884,15 @@ function buildFuncs(): NativeFunc[] {
 
   // Context capture. The declared result type is a placeholder: a request's
   // result takes the captured expression's type, resolved per call site by
-  // the checker; the result qualifier is always series.
+  // the checker; the result qualifier is always series. Symbol and timeframe
+  // are simple because the runtime binds every request context before the
+  // first step; dynamic (series) contexts would raise this cap.
   funcs.push(
     func(
       'request.security',
       [
-        req('symbol', StringType, Qualifier.Series, {acceptsNa: false}),
-        req('timeframe', StringType, Qualifier.Series, {acceptsNa: false}),
+        req('symbol', StringType, Qualifier.Simple, {acceptsNa: false}),
+        req('timeframe', StringType, Qualifier.Simple, {acceptsNa: false}),
         req('expression', TypeRef.Any, Qualifier.Series, {capture: true}),
         opt('fill', StringType, Qualifier.Simple, {acceptsNa: false}),
         opt('currency', StringType, Qualifier.Const, {
@@ -904,8 +906,8 @@ function buildFuncs(): NativeFunc[] {
     func(
       'request.security_lower_tf',
       [
-        req('symbol', StringType, Qualifier.Series, {acceptsNa: false}),
-        req('timeframe', StringType, Qualifier.Series, {acceptsNa: false}),
+        req('symbol', StringType, Qualifier.Simple, {acceptsNa: false}),
+        req('timeframe', StringType, Qualifier.Simple, {acceptsNa: false}),
         req('expression', TypeRef.Any, Qualifier.Series, {capture: true}),
       ],
       FloatType,

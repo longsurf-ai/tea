@@ -17,7 +17,7 @@ const REQUEST_BOUNDARIES = [
     name: 'named dynamic context arguments',
     source: join(FIXTURES, 'context-evaluation-order.tea'),
     diagnostic:
-      'dynamic requests are not supported yet; symbol and timeframe must be bind-time-known',
+      "argument 'symbol' to 'request.security' accepts at most simple, got series",
   },
   {
     name: 'a dynamic request after mutable receiver work',

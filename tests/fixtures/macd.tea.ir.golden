@@ -6,12 +6,12 @@ param sigLenInput: int title="Signal length" default=9 {min=1} depth=none
 param oscTypeInput: string title="Oscillator MA type" default="EMA" {options=["EMA", "SMA"]} depth=none
 param sigTypeInput: string title="Signal MA type" default="EMA" {options=["EMA", "SMA"]} depth=none
 series close: series float depth=none
-output[0] "output0" set: Hline @ tea-lib/visual.tea:53:5
+output[0] "output0" set: Hline @ tea-lib/visual.tea:123:5
 output[1] "output1" set: float @ macd.tea:27:1
 output[2] "output2" set: float @ macd.tea:28:1
 output[3] "output3" set: float @ macd.tea:29:1
-output[4] "output4" append: Alert @ tea-lib/visual.tea:144:9
-output[5] "output5" append: Alert @ tea-lib/visual.tea:144:9
+output[4] "output4" append: Alert @ tea-lib/visual.tea:365:9
+output[5] "output5" append: Alert @ tea-lib/visual.tea:365:9
 name maFast: perBar series float depth=none
 name source: perBar series float depth=none
 name length: perBar input int depth=none

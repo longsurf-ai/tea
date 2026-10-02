@@ -248,16 +248,21 @@ test('signatureHelp marks the active parameter', async () => {
   });
 });
 
-test('didChangeWatchedFiles republishes every open document', async () => {
+test('a burst of didChangeWatchedFiles republishes every open document once', async () => {
   const settled = nextPublished();
   await change(6, FIXED);
   expect(await settled).toEqual({uri: URI, version: 6, diagnostics: []});
 
+  const before = published.length;
   const next = nextPublished();
-  await client.sendNotification('workspace/didChangeWatchedFiles', {
-    changes: [{uri: 'file:///charts/lib.tea', type: 2}],
-  });
+  for (let i = 0; i < 3; i++) {
+    await client.sendNotification('workspace/didChangeWatchedFiles', {
+      changes: [{uri: 'file:///charts/lib.tea', type: 2}],
+    });
+  }
   expect(await next).toEqual({uri: URI, version: 6, diagnostics: []});
+  await sleep(300);
+  expect(published.length).toBe(before + 1);
 });
 
 test('a compiler defect is logged, keeps the diagnostics and the session', async () => {

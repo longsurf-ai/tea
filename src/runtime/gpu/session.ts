@@ -31,6 +31,36 @@ const MAX_U32 = 0xffff_ffff;
 const MAX_I32 = 0x7fff_ffff;
 const MIN_WEBGPU_BUFFER_BYTES = 4;
 
+/**
+ * One concrete execution of an artifact: parameter values, materialized input
+ * arrays, and the callbacks that receive its rows.
+ *
+ * Each binding runs with private state, and its position in the array passed
+ * to {@link createGpuExecution} is its identity (`bindingIndex`).
+ *
+ * - `params`: parameter values by name, validated by the embedded module's
+ *   `bind()`; omitted parameters keep their defaults.
+ * - `indices`: the number of rows to run, at most 2147483647.
+ * - `series`: an array of exactly `indices` numbers for each id in the
+ *   artifact's `requiredSeries`; other keys are ignored. Values are rounded
+ *   to f32: `NaN` is na, and infinities or values beyond the f32 range are
+ *   rejected.
+ * - `time`: optional epoch milliseconds per row, `indices` entries long, each
+ *   a safe integer or `null`; it becomes each row's `time`.
+ * - `declare`: optional; called once during `createGpuExecution`, before any
+ *   row, with this binding's module `outputs` and a private schema copy.
+ * - `next`: receives each row as a detached {@link Datum}.
+ *
+ * @example
+ * ```ts
+ * const binding: GpuBinding = {
+ *   params: {length: 20},
+ *   indices: close.length,
+ *   series: {close},
+ *   next: row => rows.push(row),
+ * };
+ * ```
+ */
 export type GpuBinding = Readonly<{
   params: Readonly<Record<string, unknown>>;
   indices: number;
@@ -42,26 +72,46 @@ export type GpuBinding = Readonly<{
   next(datum: Datum): void;
 }>;
 
+/**
+ * Result of one {@link GpuExecution.runChunk} call: progress for each binding
+ * that advanced in this chunk, in caller order, and whether every binding has
+ * now delivered all its rows.
+ */
 export interface GpuChunkResult {
   readonly bindings: readonly GpuBindingProgress[];
   readonly done: boolean;
 }
 
+/**
+ * Result of {@link GpuExecution.runAll}: one summary per binding in caller
+ * order, plus the session's chunk and dispatch counts and host-side timing.
+ *
+ * Counts and timing include chunks run earlier through `runChunk()`.
+ */
 export interface GpuRunSummary {
   readonly bindings: readonly GpuBindingSummary[];
   readonly chunks: number;
+  /** Compute dispatches submitted; currently one per chunk. */
   readonly dispatches: number;
   readonly timing: GpuRunTiming;
 }
 
+/**
+ * Wall-clock milliseconds the session has spent in each host-side phase,
+ * summed over all its chunks.
+ */
 export interface GpuRunTiming {
-  // Host-side command encoding through queue submission. This is not GPU
-  // execution time: submitted work may begin before this interval ends.
+  /**
+   * Host-side command encoding through queue submission. This is not GPU
+   * execution time: submitted work may begin before this interval ends.
+   */
   readonly encodeSubmitMs: number;
-  // Waiting for submitted GPU work to complete plus copying and mapping its
-  // readback buffers. WebGPU exposes these together through mapAsync here.
+  /**
+   * Waiting for submitted GPU work to complete plus copying and mapping its
+   * readback buffers. WebGPU exposes these together through mapAsync here.
+   */
   readonly completionReadbackMs: number;
-  // Validation, decoding, and synchronous row delivery on the host.
+  /** Validation, decoding, and synchronous row delivery on the host. */
   readonly decodePublicationMs: number;
 }
 
@@ -73,23 +123,57 @@ type GpuPipelinePlan = Readonly<{
   bytesPerWorkgroup: number;
 }>;
 
+/**
+ * What one chunk delivered for one binding: absolute rows `rowStart` through
+ * `rowStart + rowCount - 1`, and whether the binding has now delivered all
+ * its rows.
+ */
 export interface GpuBindingProgress {
+  /** Position of the binding in the array passed to {@link createGpuExecution}. */
   readonly bindingIndex: number;
   readonly rowStart: number;
   readonly rowCount: number;
   readonly done: boolean;
 }
 
+/**
+ * One binding's totals after {@link GpuExecution.runAll}: its index in the
+ * caller's array, its row count, and the parameter records it ran with after
+ * defaults and validation.
+ */
 export interface GpuBindingSummary {
   readonly bindingIndex: number;
   readonly rows: number;
   readonly inputs: Module['parameters'];
 }
 
+/**
+ * A resumable GPU run over fixed bindings, created by
+ * {@link createGpuExecution}.
+ *
+ * Execution state stays on the device between chunks, so absolute row numbers
+ * and history do not depend on chunk boundaries. The session owns only the
+ * buffers it created; the caller keeps the `GPUDevice`.
+ */
 export interface GpuExecution {
+  /** True once every binding has delivered all its rows. */
   readonly done: boolean;
+  /**
+   * Run the next chunk for every unfinished binding. After readback the whole
+   * chunk is validated before any row is delivered; then each binding's
+   * `next()` receives its rows synchronously, binding by binding in caller
+   * order. Any failure, including an exception thrown by `next()`, makes the
+   * session terminal. Rejects with {@link GpuExecutionError} after disposal,
+   * after a failure, or while another chunk is running. Resolves
+   * `{bindings: [], done: true}` once done.
+   */
   runChunk(): Promise<GpuChunkResult>;
+  /** Run chunks until every binding is done; fails like `runChunk()`. */
   runAll(): Promise<GpuRunSummary>;
+  /**
+   * Destroy the buffers this session created. Repeated calls are harmless;
+   * later runs reject with {@link GpuExecutionError}.
+   */
   dispose(): void;
 }
 
@@ -190,6 +274,16 @@ interface PreparedGpuExecution {
   readonly resources: GpuResourceSizes;
 }
 
+/**
+ * The artifact or a binding was rejected by {@link createGpuExecution} before
+ * any GPU resource was created or any callback ran.
+ *
+ * Causes include a stale or malformed artifact, parameters the embedded
+ * module's `bind()` rejects or that exceed the i32 or f32 range, a missing or
+ * wrong-length series, an infinite or out-of-f32-range series value, a
+ * wrong-length `time` array, and sizes beyond the u32 execution ABI. The
+ * message names the binding index where one applies.
+ */
 export class GpuBindingError extends OperationalError {
   constructor(message: string) {
     super(message);
@@ -197,6 +291,16 @@ export class GpuBindingError extends OperationalError {
   }
 }
 
+/**
+ * GPU work could not be set up, failed, or was requested from a session that
+ * can no longer run.
+ *
+ * {@link createGpuExecution} throws it for WGSL compilation errors and for
+ * buffers, workgroups or workgroup storage beyond the device's limits;
+ * {@link GpuExecution} methods throw it for a chunk that fails validation
+ * (for example an effect overflow, or a `time` entry that is not a safe
+ * integer) and for a disposed, failed or busy session.
+ */
 export class GpuExecutionError extends OperationalError {
   constructor(message: string) {
     super(message);
@@ -265,7 +369,7 @@ function deviceLimit(value: number, name: string): number {
  *   next: row => console.log(row.output0),
  * }]);
  * try { await execution.runAll(); } finally { execution.dispose(); }
- * // A compiled plot(close) publishes {series: 10}, then {series: 12}.
+ * // For an artifact compiled from `emit "output0" close`, this logs 10, then 12.
  * ```
  */
 export async function createGpuExecution(
@@ -1193,7 +1297,7 @@ function resourcesFitDeviceBufferLimits(
  *   params: {}, indices: 2, series: {close: [10, 12]},
  *   next() {},
  * }]);
- * prepared.chunkRows; // 2 for a compiled plot(close) with this extent.
+ * prepared.chunkRows; // 2 for a compiled `emit "output0" close` with this extent.
  * ```
  */
 export async function prepareGpuExecutionInputs(

@@ -1466,6 +1466,7 @@ class Checker {
       }
       diagnostics.add(key);
     }
+    this.info.errors.push(pos);
     this.errors.errorAt(pos, msg);
   }
 
@@ -1927,6 +1928,11 @@ class Checker {
     pattern: syntax.TuplePattern,
     initTv: TypeAndValue,
   ): void {
+    // Persistent storage and compile-time folding are per name; neither has a
+    // tuple form yet.
+    if (d.mode !== Mode.None) {
+      this.error(d.pos, `${d.mode} tuple declarations are not supported yet`);
+    }
     let elems: readonly Type[] | null = null;
     if (initTv.type.kind === TypeKind.Tuple) {
       const tuple = initTv.type as TupleType;
@@ -4610,6 +4616,17 @@ class Checker {
       );
       return INVALID_TV;
     }
+    // A misplaced request is the structural error. Report it before argument
+    // checks, whose errors on the same line would otherwise hide it.
+    if (
+      candidates.every(candidate => candidate.effect === Effect.Request) &&
+      !this.isRequestBinding(c)
+    ) {
+      this.error(
+        c.pos,
+        'request call must directly initialize one plain top-level variable',
+      );
+    }
     if (
       this.rejectSuppliedStagedNativeArguments(
         c,
@@ -4969,6 +4986,12 @@ class Checker {
   // A request call owns a child semantic context. The same call syntax may be
   // checked by multiple function instances, so the capture belongs to this
   // active Info's CallResolution rather than a root-global syntax map.
+  // Whether `c` is the call that directly initializes the top-level
+  // declaration being checked, the one place a request may appear.
+  private isRequestBinding(c: syntax.CallExpr): boolean {
+    return this.requestBinding !== null && this.requestBinding.call === c;
+  }
+
   private checkRequest(
     c: syntax.CallExpr,
     native: NativeFunc,
@@ -4977,12 +5000,6 @@ class Checker {
   ): TypeAndValue {
     const binding = this.requestBinding;
     const validBinding = binding !== null && binding.call === c;
-    if (!validBinding) {
-      this.error(
-        c.pos,
-        'request call must directly initialize one plain top-level variable',
-      );
-    }
     // `fill` is the one request option.
     const fillIndex = native.params.findIndex(param => param.name === 'fill');
     const fill = fillIndex === -1 ? null : (args[fillIndex] ?? null);

@@ -1,11 +1,25 @@
 // Purpose: Pipeline driver — sole owner of stage order, phase barriers, and the per-compilation Errors instance: loadPackage (parse) → checkPackage (typecheck) → buildProgram (noding) → generate (lowering).
 
+/**
+ * The Tea compiler, for hosts that compile without the {@link tea} template.
+ * Start with {@link compileToProgram}, which turns source files or in-memory
+ * text into the `Program` that {@link generate} lowers; {@link compile} runs
+ * the whole `tea build` path for files on disk, and {@link compileForTooling}
+ * keeps every stage's result for editors. Source diagnostics are never
+ * thrown: they collect in the {@link Errors} instance the caller passes, or in
+ * the result of {@link compile}.
+ *
+ * @packageDocumentation
+ */
+
 import {log} from './base/log';
+import {formatPos} from './base/pos';
 import {Errors, type ErrorMsg} from './base/print';
 import {generate} from './codegen/codegen';
 import {checkGenerated} from './codegen/check';
 import type {Program} from './ir/program';
 import {checkPackage, type CheckedPackage} from './checker/check';
+import {callsReaching} from './checker/semantic-contexts';
 import {
   loadPackage,
   resolveImports,
@@ -13,10 +27,13 @@ import {
   type SourceInput,
 } from './loader/loader';
 import {buildProgram} from './noder/noder';
-import type {File} from './syntax/nodes';
+import {NodeKind, type Expr, type File} from './syntax/nodes';
 
-// Compilation either emits TypeScript or fails with the flushed, ordered
-// error batch — never both, never a partial emit.
+/**
+ * The outcome of {@link compile}: the generated TypeScript module source, or
+ * the flushed, position-ordered error batch. Never both, and never a partial
+ * module.
+ */
 export type CompileResult =
   | {readonly ok: true; readonly source: string}
   | {readonly ok: false; readonly errors: readonly ErrorMsg[]};
@@ -38,6 +55,11 @@ export interface Compilation {
   readonly checked: CheckedPackage;
   /** Null unless parse, check and noding all finished without an error. */
   readonly program: Program | null;
+  /**
+   * Every text this run parsed, by filename: the entry files and each
+   * library, compiler-shipped ones included. Tooling reads doc comments here.
+   */
+  readonly sources: ReadonlyMap<string, string>;
 }
 
 /** Source capture does not change compilation or import resolution. */
@@ -53,15 +75,17 @@ function parseStage(
   inputs: readonly SourceInput[],
   errors: Errors,
   captured?: Map<string, string>,
-): File[] {
+): {files: File[]; sources: ReadonlyMap<string, string>} {
   const parseDone = perf.startTimer('parse');
-  const files = loadPackage(inputs, errors, captured);
+  const sources = new Map<string, string>();
+  const files = loadPackage(inputs, errors, sources);
+  sources.forEach((source, filename) => captured?.set(filename, source));
   parseDone({files: files.length});
-  return files;
+  return {files, sources};
 }
 
 function checkAndNode(
-  files: readonly File[],
+  {files, sources: entrySources}: ReturnType<typeof parseStage>,
   errors: Errors,
   inputs: readonly SourceInput[],
   captured?: Map<string, string>,
@@ -103,9 +127,10 @@ function checkAndNode(
       ...importer.files,
     ]),
   ];
+  const sources = new Map([...entrySources, ...importer.sources]);
   checkDone();
   if (errors.count > 0) {
-    return {files, checked, dependencies, program: null};
+    return {files, checked, dependencies, program: null, sources};
   }
   const nodeDone = perf.startTimer('buildProgram');
   const program = buildProgram(checked, errors);
@@ -115,6 +140,7 @@ function checkAndNode(
     checked,
     dependencies,
     program: errors.count > 0 ? null : program,
+    sources,
   };
 }
 
@@ -154,14 +180,49 @@ export function compileToProgram(
   const captured = options.includeSources
     ? new Map<string, string>()
     : undefined;
-  const files = parseStage(inputs, errors, captured);
-  const program =
-    errors.count > 0
-      ? null
-      : checkAndNode(files, errors, inputs, captured).program;
-  return program && captured
-    ? {program, sources: Object.fromEntries(captured)}
-    : program;
+  const parsed = parseStage(inputs, errors, captured);
+  if (errors.count > 0) return null;
+  const {checked, program} = checkAndNode(parsed, errors, inputs, captured);
+  if (program === null) {
+    reportAtScriptCalls(errors, checked, parsed.files);
+    return null;
+  }
+  return captured ? {program, sources: Object.fromEntries(captured)} : program;
+}
+
+/**
+ * A library body is checked once per signature it is called with, so an
+ * argument it cannot use is reported inside the library. Move each such error
+ * onto the script calls that reached it, where the author can act, in the
+ * form the language server shows: `in ta.ema (tea-lib/ta.tea:68:24): ...`.
+ * An error no script call reaches keeps its position.
+ */
+function reportAtScriptCalls(
+  errors: Errors,
+  checked: CheckedPackage,
+  files: readonly File[],
+): void {
+  const scripts = new Set(files.map(file => file.pos.base.filename));
+  for (const error of errors.flushErrors()) {
+    const calls = scripts.has(error.pos.base.filename)
+      ? []
+      : callsReaching(error, checked, scripts);
+    if (calls.length === 0) errors.errorAt(error.pos, error.msg);
+    for (const call of calls) {
+      errors.errorAt(
+        call.fun.pos,
+        `in ${calleeName(call.fun)} (${formatPos(error.pos)}): ${error.msg}`,
+      );
+    }
+  }
+}
+
+function calleeName(fun: Expr): string {
+  if (fun.kind === NodeKind.Name) return fun.value;
+  if (fun.kind === NodeKind.SelectorExpr) {
+    return `${calleeName(fun.x)}.${fun.sel.value}`;
+  }
+  return 'call';
 }
 
 /**
@@ -195,6 +256,35 @@ export function compileForTooling(
   return checkAndNode(parseStage(inputs, errors), errors, inputs);
 }
 
+/**
+ * Compile Tea files on disk to the TypeScript module source that `tea build`
+ * writes.
+ *
+ * It runs {@link compileToProgram} with its own {@link Errors}, lowers the
+ * Program with {@link generate}, and type-checks the result against the
+ * installed `tea/runtime` declarations.
+ *
+ * Source diagnostics come back as `{ok: false, errors}`, sorted by position
+ * and deduplicated, and stop compilation at the first failed stage. An
+ * unreadable entry file throws its file-system error. A generated module that
+ * fails the type check throws {@link InternalError}: the frontend accepted
+ * the program, so the failure is a compiler defect.
+ *
+ * @example
+ * ```ts
+ * import {writeFileSync} from 'node:fs';
+ * import {compile} from 'tea/compiler';
+ *
+ * const result = compile(['rsi.tea']);
+ * if (result.ok) {
+ *   writeFileSync('rsi.ts', result.source);
+ * } else {
+ *   for (const {pos, msg} of result.errors) {
+ *     console.error(`${pos.base.filename}:${pos.line}:${pos.col}: ${msg}`);
+ *   }
+ * }
+ * ```
+ */
 export function compile(filenames: readonly string[]): CompileResult {
   const errors = new Errors();
   const program = compileToProgram(filenames, errors);

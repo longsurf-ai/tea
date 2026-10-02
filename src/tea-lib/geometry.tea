@@ -5,24 +5,87 @@
 // Quadratic construction follows kld-intersections 0.7.0; stable quadratic
 // roots, degenerate points and coincident intervals are handled explicitly.
 // Attribution and supported arithmetic domain: docs/geometry.md and LICENSES.
+
+/**
+ * Orientation and contact tests for line segments, quadratic curves and rectangles.
+ *
+ * Each point is a pair of `x` and `y` numbers on a plane with `y` pointing up.
+ * The library gives coordinates no time, price or pixel meaning, so choose the
+ * mapping yourself, for example `bar_index` as `x` and a price as `y`. Every
+ * function rejects a coordinate that {@link geometry.coordinateSupported}
+ * rejects, including `na`: {@link geometry.orient2d} then returns `na`,
+ * {@link geometry.segmentContact} returns `false`, and the functions that
+ * return arrays return an empty one.
+ *
+ * {@link geometry.orient2d} and {@link geometry.segmentContact} are exact for
+ * Float64 arithmetic on the CPU, a guarantee that does not extend to GPU
+ * execution. Positions along the shapes, and the contacts of quadratic curves,
+ * are computed in Float64 within small rounding bounds. See
+ * [geometry](/geometry) for the algorithms and numerical limits.
+ */
 library("geometry")
 
-// A non-overlap contact gives both parameters in [0,1]. Overlap contacts
-// describe the ends of the common interval, with boundaryParameter = na.
-// transverse describes an interior crossing of the primitive's supporting
-// curve, not path-level shared-vertex classification.
+/**
+ * One place where an observation segment meets a segment or curve.
+ *
+ * {@link geometry.segmentContacts} and {@link geometry.quadraticContacts}
+ * return these. The segment or curve passed first is the primitive, and the
+ * segment from `p` to `q` is the observation. Positions on a shape run from `0`
+ * at its start to `1` at its end; on a quadratic curve the position is the
+ * curve parameter, which is not proportional to length.
+ *
+ * @category Types
+ */
 export type Contact
+	/**
+	 * Position on the primitive, from `0` at its start to `1` at its end.
+	 *
+	 * `na` at either end of an overlap, and for every contact of a quadratic
+	 * curve that lies along the observation's line.
+	 */
 	float boundaryParameter
+	/**
+	 * Position on the observation, from `0` at `p` to `1` at `q`.
+	 *
+	 * `0` when the observation is a single point.
+	 */
 	float observationParameter
+	/**
+	 * Whether the observation meets the primitive at an angle rather than along or tangent to it.
+	 *
+	 * `true` even at an endpoint; `false` for a tangent touch, a point
+	 * observation and shapes on one line. It does not tell whether a path passes
+	 * to the other side.
+	 */
 	bool transverse
+	/** Whether the contact is one end of a stretch where the two shapes overlap. */
 	bool overlap
 
+/**
+ * A point on the plane, as returned by {@link geometry.rectangleContacts}.
+ *
+ * @category Types
+ */
 export type Point
+	/** Horizontal coordinate. */
 	float x
+	/** Vertical coordinate. */
 	float y
 
 // The bound excludes product overflow/underflow in the Float64 expansion
 // kernel. Callers reject unsupported coordinates before observing geometry.
+/**
+ * Tells whether a number can be used as a coordinate by this library.
+ *
+ * Accepts `0` and finite numbers whose magnitude is from `1e-70` through
+ * `1e70`, and rejects `na` and everything else; the range keeps the exact
+ * arithmetic free of overflow and underflow. Check inputs with it to skip
+ * evaluation when data is missing, such as `close[1]` on the first row.
+ *
+ * @param value The number to check.
+ * @returns `true` when `value` is a supported coordinate, otherwise `false`.
+ * @category Validation
+ */
 export coordinateSupported(float value) =>
 	not na(value) and math.abs(value) <= 1e70 and (value == 0.0 or math.abs(value) >= 1e-70)
 
@@ -113,6 +176,24 @@ orientationExact(float ax, float ay, float bx, float by, float cx, float cy) =>
 // Signed determinant, clockwise positive like robust-orientation. Only its
 // sign is meaningful; the exact branch returns the leading expansion term.
 // Unsupported input returns na, never an invented orientation.
+/**
+ * Tells whether three points turn clockwise, turn counterclockwise or lie on one line.
+ *
+ * The result is positive when `a`, `b`, `c` turn clockwise, so `c` lies to the
+ * right of the line from `a` through `b`; negative when they turn
+ * counterclockwise; and `0` when the points are collinear. The sign is exact,
+ * but the magnitude is not a reliable area, so use only the sign.
+ *
+ * @param ax `x` of the first point, `a`.
+ * @param ay `y` of `a`.
+ * @param bx `x` of the second point, `b`.
+ * @param by `y` of `b`.
+ * @param cx `x` of the point to classify, `c`.
+ * @param cy `y` of `c`.
+ * @returns A positive number, a negative number or `0`; `na` when a coordinate
+ * is unsupported.
+ * @category Orientation
+ */
 export orient2d(float ax, float ay, float bx, float by, float cx, float cy) =>
 	float result = na
 	if coordinateSupported(ax) and coordinateSupported(ay) and coordinateSupported(bx) and coordinateSupported(by) and coordinateSupported(cx) and coordinateSupported(cy)
@@ -129,6 +210,35 @@ export orient2d(float ax, float ay, float bx, float by, float cx, float cy) =>
 sameSide(float a, float b) =>
 	(a > 0.0 and b > 0.0) or (a < 0.0 and b < 0.0)
 
+/**
+ * Tests whether two line segments share at least one point.
+ *
+ * Both segments include their endpoints, so touching at an end counts, as does
+ * overlapping along one line; a segment whose ends are equal is a single point.
+ * The decision is exact. This tests whether the move from the previous close to
+ * the current one touches a line from `(0, 100)` to `(100, 110)`, with
+ * `bar_index` as `x`; on the first row `close[1]` is `na`, so the result is
+ * `false`:
+ *
+ * ```tea
+ * import geometry
+ *
+ * hit = geometry.segmentContact(0.0, 100.0, 100.0, 110.0, bar_index - 1, close[1], bar_index, close)
+ * emit "hit" hit
+ * ```
+ *
+ * @param ax `x` of the first segment's start, `a`.
+ * @param ay `y` of `a`.
+ * @param bx `x` of the first segment's end, `b`.
+ * @param by `y` of `b`.
+ * @param px `x` of the second segment's start, `p`.
+ * @param py `y` of `p`.
+ * @param qx `x` of the second segment's end, `q`.
+ * @param qy `y` of `q`.
+ * @returns `true` when the segments touch; `false` when they do not or a
+ * coordinate is unsupported.
+ * @category Intersections
+ */
 export segmentContact(float ax, float ay, float bx, float by, float px, float py, float qx, float qy) =>
 	x0 = orient2d(ax, ay, px, py, qx, qy)
 	y0 = orient2d(bx, by, px, py, qx, qy)
@@ -145,6 +255,30 @@ parameter(float x, float y, float ax, float ay, float bx, float by) =>
 
 clampUnit(float value) => math.max(0.0, math.min(1.0, value))
 
+/**
+ * Finds where an observation segment meets a line segment, with the position on each.
+ *
+ * The segment from `a` to `b` is the primitive and the segment from `p` to `q`
+ * is the observation. A crossing or a single shared point gives one
+ * {@link geometry.Contact}. Segments that overlap along one line give two,
+ * marking the ends of the shared stretch, with `overlap` set to `true` and
+ * `boundaryParameter` set to `na`. Whether the segments touch is decided
+ * exactly, as in {@link geometry.segmentContact}; the positions are then
+ * computed in Float64. Each call returns a new array, and the order of its
+ * contacts is not defined.
+ *
+ * @param ax `x` of the primitive's start, `a`.
+ * @param ay `y` of `a`.
+ * @param bx `x` of the primitive's end, `b`.
+ * @param by `y` of `b`.
+ * @param px `x` of the observation's start, `p`.
+ * @param py `y` of `p`.
+ * @param qx `x` of the observation's end, `q`.
+ * @param qy `y` of `q`.
+ * @returns An array of up to two {@link geometry.Contact} values; empty when
+ * the segments do not touch or a coordinate is unsupported.
+ * @category Intersections
+ */
 export segmentContacts(float ax, float ay, float bx, float by, float px, float py, float qx, float qy) =>
 	contacts = array.new<Contact>()
 	if segmentContact(ax, ay, bx, by, px, py, qx, qy)
@@ -204,6 +338,34 @@ bezier(float a, float b, float c, float u) =>
 	bc = b + (c - b) * u
 	ab + (bc - ab) * u
 
+/**
+ * Finds where an observation segment meets a quadratic Bézier curve, with the position on each.
+ *
+ * The curve starts at `a`, bends toward the control point `b` and ends at `c`;
+ * the observation runs from `p` to `q`. Each crossing or tangent touch gives
+ * one {@link geometry.Contact}, and its `transverse` field tells the two apart.
+ * When the whole curve lies along the observation's line, the contacts instead
+ * mark the ends of the shared stretch, or its single point, with
+ * `boundaryParameter` set to `na`: a curve can double back along the line, so
+ * a point there has no unique position on the curve. Contacts come from
+ * Float64 root finding, accepted within a rounding allowance of 32 machine
+ * epsilons rather than any price or pixel distance. Each call returns a new
+ * array, and the order of its contacts is not defined.
+ *
+ * @param ax `x` of the curve's start, `a`.
+ * @param ay `y` of `a`.
+ * @param bx `x` of the control point, `b`.
+ * @param by `y` of `b`.
+ * @param cx `x` of the curve's end, `c`.
+ * @param cy `y` of `c`.
+ * @param px `x` of the observation's start, `p`.
+ * @param py `y` of `p`.
+ * @param qx `x` of the observation's end, `q`.
+ * @param qy `y` of `q`.
+ * @returns An array of up to two {@link geometry.Contact} values; empty when
+ * the shapes do not touch or a coordinate is unsupported.
+ * @category Intersections
+ */
 export quadraticContacts(float ax, float ay, float bx, float by, float cx, float cy, float px, float py, float qx, float qy) =>
 	contacts = array.new<Contact>()
 	valid = coordinateSupported(ax) and coordinateSupported(ay) and coordinateSupported(bx) and coordinateSupported(by) and coordinateSupported(cx) and coordinateSupported(cy) and coordinateSupported(px) and coordinateSupported(py) and coordinateSupported(qx) and coordinateSupported(qy)
@@ -279,6 +441,35 @@ export quadraticContacts(float ax, float ay, float bx, float by, float cx, float
 // segment/quadratic kernel on its four sides; containment covers a primitive
 // wholly inside. One geometric witness proves contact for this primitive;
 // rectangle intersections can contain infinitely many points, not price fills.
+/**
+ * Tests whether a segment or quadratic curve touches a closed rectangle, returning one shared point.
+ *
+ * The rectangle includes its interior, so a shape wholly inside it touches it.
+ * With `quadratic` set to `false` the shape is the segment from `a` to `c`;
+ * otherwise it is the quadratic curve from `a` toward the control point `b` to
+ * `c`. The result holds at most one point: where the shape meets an edge, or a
+ * contained endpoint when the shape lies wholly inside. That point proves
+ * contact; it is not necessarily the first contact along the shape. A
+ * rectangle of zero width or height is allowed.
+ *
+ * @param ax `x` of the shape's start, `a`.
+ * @param ay `y` of `a`.
+ * @param bx `x` of the control point, `b`. Ignored when `quadratic` is
+ * `false`, but it must still be a supported coordinate.
+ * @param by `y` of `b`, with the same rule as `bx`.
+ * @param cx `x` of the shape's end, `c`.
+ * @param cy `y` of `c`.
+ * @param quadratic `true` for the quadratic curve with control point `b`,
+ * `false` for the segment from `a` to `c`.
+ * @param left `x` of the rectangle's left edge.
+ * @param bottom `y` of the rectangle's bottom edge.
+ * @param right `x` of the rectangle's right edge.
+ * @param top `y` of the rectangle's top edge.
+ * @returns An array holding one {@link geometry.Point} where the shapes meet;
+ * empty when they do not, when `left` is greater than `right` or `bottom`
+ * greater than `top`, or when a coordinate is unsupported.
+ * @category Intersections
+ */
 export rectangleContacts(float ax, float ay, float bx, float by, float cx, float cy, bool quadratic, float left, float bottom, float right, float top) =>
 	points = array.new<Point>()
 	valid = coordinateSupported(ax) and coordinateSupported(ay) and coordinateSupported(bx) and coordinateSupported(by) and coordinateSupported(cx) and coordinateSupported(cy) and coordinateSupported(left) and coordinateSupported(bottom) and coordinateSupported(right) and coordinateSupported(top)

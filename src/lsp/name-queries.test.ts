@@ -44,7 +44,8 @@ function on(line: number, word: string): Position {
   return rangeOf(line, word).start;
 }
 
-// The lines of the hover's `tea` block, or null.
+// The lines of the hover's leading `tea` block, or null. Documentation, when
+// the name has any, follows the block.
 function hoverLines(position: Position): string[] | null {
   const result = hover(analysis, position);
   if (result === null) {
@@ -52,8 +53,8 @@ function hoverLines(position: Position): string[] | null {
   }
   expect(result.contents).toMatchObject({kind: 'markdown'});
   const {value} = result.contents as {value: string};
-  expect(value.startsWith('```tea\n') && value.endsWith('\n```')).toBe(true);
-  return value.split('\n').slice(1, -1);
+  expect(value.startsWith('```tea\n')).toBe(true);
+  return value.slice('```tea\n'.length, value.indexOf('\n```')).split('\n');
 }
 
 const inThisFile = (line: number, word: string) => ({
@@ -75,6 +76,61 @@ const SILENT: readonly (readonly [string, Position])[] = [
 
 test('the fixture checks cleanly', () => {
   expect(analysis.diagnostics).toEqual([]);
+});
+
+describe('hover documentation', () => {
+  // The Markdown after the leading signature block.
+  function docsAt(source: string, word: string, line = 0): string | null {
+    const lines = source.split('\n');
+    const result = hover(analyze({filename: 'docs.tea', source}), {
+      line,
+      character: lines[line]!.indexOf(word),
+    });
+    if (result === null) return null;
+    const {value} = result.contents as {value: string};
+    const end = value.indexOf('\n```') + '\n```'.length;
+    return value.slice(end).trim() || null;
+  }
+
+  test('a library function shows its doc comment, parameters and result', () => {
+    const docs = docsAt('x = ta.ema(close, 9)', 'ema');
+    expect(docs).toMatch(/^Exponential moving average of `source`\./);
+    expect(docs).toContain('**Parameters**\n- `source` — Series to average');
+    expect(docs).toContain('**Returns** The average;');
+    // `{@link ta.rma}` becomes code: an editor has no page to link to.
+    expect(docs).toContain('Compare `ta.rma`');
+  });
+
+  test('a native shows its catalog docs', () => {
+    expect(docsAt('x = nz(close)', 'nz')).toMatch(
+      /^Replaces a missing value with a fallback\./,
+    );
+    expect(docsAt('x = bar_index', 'bar_index')).toMatch(/^The number/);
+    // A constant shows its family's docs.
+    expect(docsAt('x = color.red', 'red')).toContain('palette');
+  });
+
+  test('an input alias, a library name, a type and an enum member are documented', () => {
+    expect(docsAt('x = close', 'close')).toMatch(/^Closing price/);
+    const source = 'import trade\nx = trade.Direction.long';
+    expect(docsAt(source, 'trade', 1)).toMatch(/^Coordinators/);
+    expect(docsAt(source, 'Direction', 1)).toMatch(/^Side of a new position/);
+    expect(docsAt(source, 'long', 1)).toMatch(/^A long position/);
+  });
+
+  test('a declaration in this document documents itself with a doc comment', () => {
+    const source = [
+      '/** Doubles a price. */',
+      'double(float p) => p * 2',
+      '/** The doubled close. */',
+      'twice = double(close)',
+      'emit "twice" twice',
+    ].join('\n');
+    expect(docsAt(source, 'double', 3)).toBe('Doubles a price.');
+    expect(docsAt(source, 'twice', 3)).toBe('The doubled close.');
+    // A parameter shares its function's line, but not its doc.
+    expect(docsAt(source, 'p', 1)).toBeNull();
+  });
 });
 
 describe('hover', () => {

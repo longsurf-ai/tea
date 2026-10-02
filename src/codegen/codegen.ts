@@ -1,5 +1,14 @@
 // Purpose: Lower one Tea Program to ordinary typed TypeScript using tea/runtime.
 
+/**
+ * Lower a checked `Program` from `tea/compiler` to the TypeScript module
+ * source that runs on `tea/runtime`. Start with {@link generate}, then load
+ * its output in-process with {@link loadModule} or write it to a file, as
+ * `tea build` does.
+ *
+ * @packageDocumentation
+ */
+
 import type {Module} from '../runtime/module-binding';
 
 import {Field, Float64, Schema} from 'apache-arrow';
@@ -69,12 +78,13 @@ import {
  *
  * @example
  * ```ts
- * import {Errors} from '../base/print';
- * import {compileToProgram} from '../compiler';
- * import {loadModule} from '../runtime/load';
+ * import {Errors} from 'tea/base/print';
+ * import {generate} from 'tea/codegen/codegen';
+ * import {compileToProgram} from 'tea/compiler';
+ * import {loadModule} from 'tea/runtime/load';
  *
  * const program = compileToProgram(
- *   [{filename: 'demo.tea', source: 'plot(close)'}], new Errors(),
+ *   [{filename: 'demo.tea', source: 'plot("price", close)'}], new Errors(),
  * );
  * if (program !== null) {
  *   const module = loadModule(generate(program));

@@ -3,16 +3,14 @@
 import {MarkupKind} from 'vscode-languageserver';
 import type {Hover, Position, Range} from 'vscode-languageserver';
 import {formatNativeSignature} from '../checker/catalog';
+import type {DocComment} from '../syntax/doc-comments';
 import {CallKind, type FunctionInstance} from '../checker/info';
 import {ObjectKind, type FunctionObject} from '../checker/object';
 import {formatType, TypeKind, type Qualifier, type Type} from '../ir/type';
 import {NodeKind, type CallExpr, type Name} from '../syntax/nodes';
-import {
-  semanticContexts,
-  type Analysis,
-  type IndexedName,
-  type NameFact,
-} from './analysis';
+import {type Analysis, type IndexedName, type NameFact} from './analysis';
+import {docMarkdown, nativeFunctionDocs, objectDocs} from './documentation';
+import {semanticContexts} from '../checker/semantic-contexts';
 
 /**
  * A range in a named source file: an LSP `Location` whose file is still the
@@ -26,8 +24,8 @@ export interface SourceLocation {
 }
 
 /**
- * What the checker knows about the name at `position`, as one fenced `tea`
- * block with a line per distinct fact:
+ * What the checker knows about the name at `position`: one fenced `tea`
+ * block with a line per distinct fact, then the name's documentation.
  *
  * - a variable, parameter or context builtin: qualifier, type and name. A
  *   field has no qualifier of its own, so it shows one only where it is
@@ -35,13 +33,18 @@ export interface SourceLocation {
  * - a user or library function or method: at a call, the signature that call
  *   stenciled; at the declaration, every stenciled signature, or the written
  *   parameters when nothing calls it;
- * - a native: the catalog signature of the overload the call resolved to.
+ * - a native: the catalog signature of the overload the call resolved to;
+ * - a type, enum or interface: its declaration line as written; an enum
+ *   member: `Enum.member`; a library name: `library ta`.
+ *
+ * The documentation is the doc comment above the declaration, in this
+ * document or in a library, or the catalog's for a native (see
+ * {@link objectDocs}), rendered by {@link docMarkdown}.
  *
  * A function body is checked once per called signature, so a parameter of a
  * function called two ways has two lines. The result is null where there is
- * no name (whitespace, keywords, literals), for kinds with nothing to show
- * yet (types, enums, packages), and inside a free function nothing calls,
- * where the checker recorded no fact.
+ * no name (whitespace, keywords, literals) and inside a free function nothing
+ * calls, where the checker recorded no fact.
  *
  * A position just past a name's last character still finds the name.
  *
@@ -67,6 +70,10 @@ export function hover(analysis: Analysis, position: Position): Hover | null {
   const lines = new Set(
     facts.flatMap(fact => hoverLines(analysis, name, fact)),
   );
+  let docs: DocComment | null = null;
+  for (const {object} of facts) {
+    docs ??= objectDocs(analysis, object);
+  }
   // A native callee has no Object: what is known about it is the overload
   // each call resolved to.
   for (const info of semanticContexts(analysis.checked)) {
@@ -77,16 +84,18 @@ export function hover(analysis: Analysis, position: Position): Hover | null {
           resolution.kind === CallKind.Request)
       ) {
         lines.add(formatNativeSignature(resolution.native));
+        docs ??= nativeFunctionDocs(resolution.native.name);
       }
     }
   }
   if (lines.size === 0) {
     return null;
   }
+  const signature = `\`\`\`tea\n${[...lines].join('\n')}\n\`\`\``;
   return {
     contents: {
       kind: MarkupKind.Markdown,
-      value: `\`\`\`tea\n${[...lines].join('\n')}\n\`\`\``,
+      value: docs === null ? signature : `${signature}\n\n${docMarkdown(docs)}`,
     },
     range: nameRange(name),
   };
@@ -116,19 +125,11 @@ export function definition(
   analysis: Analysis,
   position: Position,
 ): SourceLocation[] {
-  const targets = new Set(
-    nameAt(analysis.names, position)?.facts.map(fact => fact.object),
+  const defining = new Set(
+    nameAt(analysis.names, position)?.facts.flatMap(
+      fact => analysis.definitions.get(fact.object) ?? [],
+    ),
   );
-  const defining = new Set<Name>();
-  // ponytail: scans every def of the compilation per request; index Object
-  // to Name inside analyze() if this ever shows up in a profile.
-  for (const info of semanticContexts(analysis.checked)) {
-    for (const [name, object] of info.defs) {
-      if (targets.has(object)) {
-        defining.add(name);
-      }
-    }
-  }
   return [...defining].map(name => ({
     filename: name.pos.base.filename,
     range: nameRange(name),
@@ -235,6 +236,23 @@ function hoverLines(
         ? instances.map(instanceSignature)
         : [declaredSignature(object)];
     }
+    case ObjectKind.Struct:
+    case ObjectKind.GenericStruct:
+    case ObjectKind.Enum:
+    case ObjectKind.Interface:
+    case ObjectKind.InterfaceMethod: {
+      // The declaration as written: `type Point`, `enum Side`,
+      // `float cash() const`.
+      const defined = analysis.definitions.get(object)?.[0];
+      const line =
+        defined &&
+        analysis.lines.get(defined.pos.base.filename)?.[defined.pos.line - 1];
+      return line === undefined ? [] : [line.trim().replace(/^export\s+/, '')];
+    }
+    case ObjectKind.EnumMember:
+      return [`${object.owner.name}.${object.name}`];
+    case ObjectKind.PackageName:
+      return [`library ${object.pkg.name}`];
     default:
       return [];
   }

@@ -1377,8 +1377,10 @@ describe('requests', () => {
     );
     expect(dynamic.program).toBeNull();
     expect(
-      dynamic.errors.filter(error =>
-        error.msg.includes('dynamic requests are not supported yet'),
+      dynamic.errors.filter(
+        error =>
+          error.msg ===
+          "argument 'symbol' to 'request.security' accepts at most simple, got series",
       ),
     ).toHaveLength(2);
 

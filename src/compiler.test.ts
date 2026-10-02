@@ -217,3 +217,34 @@ describe('relative imports', () => {
     ]);
   });
 });
+
+describe('errors inside a library body', () => {
+  const report = (source: string): string[] => {
+    const errors = new Errors();
+    expect(
+      compileToProgram([{filename: 'script.tea', source}], errors),
+    ).toBeNull();
+    return errors
+      .flushErrors()
+      .map(error => `${formatPos(error.pos)}: ${error.msg}`);
+  };
+
+  test('are reported on the call in the script that caused them', () => {
+    const [line] = report('e = ta.ema("a", 14)\n');
+    expect(line).toMatch(
+      /^script\.tea:1:5: in ta\.ema \(tea-lib\/ta\.tea:\d+:\d+\): operator '\*' requires numeric operands/,
+    );
+    // Any error the body reports moves, not only one at an invalid expression.
+    expect(report('fill("f", close, open)\n')).toEqual([
+      expect.stringMatching(
+        /^script\.tea:1:1: in fill \(tea-lib\/visual\.tea:\d+:\d+\): float has no field 'id'$/,
+      ),
+    ]);
+  });
+
+  test('leave errors in the script itself where they are', () => {
+    expect(report('x = 1 +\n')).toEqual([
+      "script.tea:1:8: expected expression, found 'newline'",
+    ]);
+  });
+});

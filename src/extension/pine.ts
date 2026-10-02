@@ -1,6 +1,16 @@
 import type {Module} from '../runtime/module-binding';
 // Purpose: Concrete Pine contextual values derived from public Node inputs.
 
+/**
+ * Pine's contextual builtin values, such as `bar_index`, `time`, `timenow` and
+ * the `barstate.*` flags, for each step of a {@link Node}. The {@link tea}
+ * template already installs {@link pineBuiltinSupplier} with default
+ * callbacks; import it when calling {@link createNode} directly, or to supply
+ * a host clock or realtime flag.
+ *
+ * @packageDocumentation
+ */
+
 import {BindError} from '../runtime/errors';
 import type {Builtin} from '../runtime/module-abi';
 import type {Stored} from '../runtime/value';
@@ -16,7 +26,7 @@ import type {Stored} from '../runtime/value';
  * Nodes report history; a live host calls `createNode` with its own flag.
  * Absent symbol/timeframe metadata uses the builtin's typed empty value.
  * Runtime overlays any bound fixed values.
- * @example For a module containing only `plot(timenow)`,
+ * @example For a module containing only `emit "now" timenow`,
  * `pineBuiltinSupplier(() => 1000)([], module, 0, {})` returns `[1000]`.
  * `pineBuiltinSupplier(Date.now, () => live)` reports realtime bars once the
  * host sets `live`.

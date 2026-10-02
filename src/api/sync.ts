@@ -110,7 +110,7 @@ const wait = (): Wait => WAIT;
  *
  * ```ts
  * import {Subject} from 'rxjs';
- * import {sync} from './sync';
+ * import {sync} from 'tea';
  *
  * const source = new Subject<number>();
  * const target = new Subject<void>();
@@ -182,7 +182,7 @@ const wait = (): Wait => WAIT;
  * Defaults to emitting the whole buffer.
  * @param continueAfterSourceComplete Keep serving target values after the
  * source completes. Defaults to `false`.
- * @return A function that returns an Observable emitting one projected value
+ * @returns A function that returns an Observable emitting one projected value
  * per target value.
  */
 export function sync<S, T, U = S | readonly S[]>(

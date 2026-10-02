@@ -11,22 +11,84 @@
 //     per-bar state; input aliases (the pine prelude) are the only exports
 //     that are variables today.
 // Ambient reads (volume, high, low, close) are pine prelude input aliases.
+
+/**
+ * Technical-analysis functions: moving averages, oscillators, volatility bands,
+ * crosses and running statistics.
+ *
+ * Each written call keeps its own history and state, covering only the bars on
+ * which that call runs. Call these functions on every bar and combine their
+ * results with conditions afterwards: a call inside an `if` branch, one arm of a
+ * ternary, or after `and` or `or` does not run when that code is skipped, so its
+ * window reads the skipped bars as `na` and its running state does not change on
+ * them. A call inside a loop shares one history and state across all iterations.
+ * See [values and control flow](/language-guide/values-and-control-flow).
+ *
+ * Most results are `na` until enough bars have arrived; each entry states when.
+ * The [time-series guide](/language-guide/time-series) covers warm-up and
+ * crossing rules.
+ *
+ * ```tea
+ * // Call on every bar, then combine the result with the condition.
+ * risingThree = ta.rising(close, 3)
+ * emit "signal" close > open and risingThree
+ * ```
+ */
 library("ta")
 
 // ---- moving averages and smoothing ------------------------------------------
 
+/**
+ * Simple moving average of the last `length` values of `source`.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Number of bars, a positive `int`.
+ * @returns The mean; `na` for the first `length - 1` bars and while any value
+ * in the window is `na`.
+ * @category Moving averages
+ */
 export sma(source, length) =>
 	sum = 0.0
 	for i = 0 to length - 1
 		sum += source[i]
 	sum / length
 
+/**
+ * Exponential moving average of `source`.
+ *
+ * Each bar moves the average toward `source` by `2 / (length + 1)` of the
+ * difference. It starts from the first value of `source` instead of waiting for
+ * `length` bars. An `na` value restarts it: the result is `na` on that bar, and
+ * the average starts over from the next value. Compare {@link ta.rma}, which
+ * waits for `length` values and skips `na`.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Smoothing length in bars; larger values react more slowly.
+ * @returns The average; `na` before the first value of `source` and on bars
+ * where `source` is `na`.
+ * @category Moving averages
+ */
 export ema(source, length) =>
 	alpha = 2.0 / (length + 1)
 	var float e = na
 	e := na(e) ? source : alpha * source + (1 - alpha) * e
 	e
 
+/**
+ * Wilder's moving average of `source`, the smoothing behind {@link ta.rsi},
+ * {@link ta.atr} and {@link ta.dmi}.
+ *
+ * It starts as the simple average of the first `length` values that are not
+ * `na`, then moves toward each new value by `1 / length` of the difference. An
+ * `na` value is skipped: it does not count toward the first `length` values,
+ * and later the previous result is kept.
+ *
+ * @param source Series to average.
+ * @param length Smoothing length in bars, a positive `int`.
+ * @returns The average; `na` until `length` values that are not `na` have
+ * arrived.
+ * @category Moving averages
+ */
 export rma(source, length) =>
 	alpha = 1.0 / length
 	var float r = na
@@ -42,6 +104,18 @@ export rma(source, length) =>
 			r := alpha * source + (1 - alpha) * r
 	r
 
+/**
+ * Linearly weighted moving average of the last `length` values of `source`.
+ *
+ * The newest value has weight `length`, the one before it `length - 1`, and so
+ * on down to `1` for the oldest.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Number of bars, a positive `int`.
+ * @returns The weighted mean; `na` for the first `length - 1` bars and while
+ * any value in the window is `na`.
+ * @category Moving averages
+ */
 export wma(source, length) =>
 	norm = 0.0
 	sum = 0.0
@@ -51,18 +125,73 @@ export wma(source, length) =>
 		sum += source[i] * weight
 	sum / norm
 
+/**
+ * Volume-weighted moving average of the last `length` values of `source`.
+ *
+ * It is `ta.sma(source * volume, length) / ta.sma(volume, length)`, weighting
+ * each bar by its {@link volume}.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Number of bars, a positive `int`.
+ * @returns The weighted mean; `na` for the first `length - 1` bars, while any
+ * price or volume in the window is `na`, and when the window's total volume is
+ * `0`.
+ * @category Moving averages
+ */
 export vwma(source, length) =>
 	sma(source * volume, length) / sma(volume, length)
 
+/**
+ * Hull moving average of `source`.
+ *
+ * It is the {@link ta.wma} over `math.round(math.sqrt(length))` bars of
+ * `2 * ta.wma(source, length / 2) - ta.wma(source, length)`, with `length / 2`
+ * rounded down.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Number of bars, an `int` of at least `2`.
+ * @returns The average; `na` for the first
+ * `length + math.round(math.sqrt(length)) - 2` bars and while an `na` value of
+ * `source` is still inside its windows.
+ * @category Moving averages
+ */
 export hma(source, length) =>
 	wma(2 * wma(source, math.floor(length / 2)) - wma(source, length), math.round(math.sqrt(length)))
 
+/**
+ * Symmetrically weighted moving average of the last four values of `source`.
+ *
+ * The weights are `1/6`, `2/6`, `2/6` and `1/6`, from the oldest value to the
+ * newest.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @returns The weighted mean; `na` for the first three bars and while any of the
+ * four values is `na`.
+ * @category Moving averages
+ */
 export swma(source) =>
-	source[3] / 6 + source[2] * 2 / 6 + source[1] * 2 / 6 + source / 6
+	source[3] / 6.0 + source[2] * 2 / 6.0 + source[1] * 2 / 6.0 + source / 6.0
 
+/**
+ * Arnaud Legoux moving average: a bell-curve-weighted average of the last
+ * `length` values of `source`.
+ *
+ * The weights follow a Gaussian curve whose peak sits at `offset` across the
+ * window and whose standard deviation is `length / sigma` bars.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Number of bars, a positive `int`.
+ * @param offset Position of the peak weight, from `0` (oldest value) to `1`
+ * (newest value).
+ * @param sigma Narrowness of the curve; larger values concentrate the weight
+ * near the peak.
+ * @returns The weighted mean; `na` for the first `length - 1` bars and while
+ * any value in the window is `na`.
+ * @category Moving averages
+ */
 export alma(source, length, offset, sigma) =>
 	m = offset * (length - 1)
-	s = length / sigma
+	s = float(length) / sigma
 	norm = 0.0
 	sum = 0.0
 	for i = 0 to length - 1
@@ -71,6 +200,22 @@ export alma(source, length, offset, sigma) =>
 		sum += weight * source[length - 1 - i]
 	sum / norm
 
+/**
+ * Value of the least-squares line through the last `length` values of
+ * `source`, `offset` bars before the current bar.
+ *
+ * The line is fitted with the oldest value at position `0` and the current value
+ * at position `length - 1`, then read at position `length - 1 - offset`. A
+ * negative `offset` extends the line past the current bar.
+ *
+ * @param source Series to fit, usually {@link close}.
+ * @param length Number of bars, an `int` of at least `2`.
+ * @param offset Bars back from the current bar at which to read the line; `0`
+ * reads it at the current bar.
+ * @returns The line's value; `na` for the first `length - 1` bars and while any
+ * value in the window is `na`.
+ * @category Moving averages
+ */
 export linreg(source, length, offset) =>
 	sumX = 0.0
 	sumY = 0.0
@@ -88,6 +233,19 @@ export linreg(source, length, offset) =>
 	intercept = (sumY - slope * sumX) / n
 	intercept + slope * (length - 1 - offset)
 
+/**
+ * Center of gravity of the last `length` values of `source`.
+ *
+ * It is minus the sum of `source[i] * (i + 1)` divided by the sum of
+ * `source[i]`, for `i` from `0` (the current bar) to `length - 1`, so it is
+ * negative when the values are positive.
+ *
+ * @param source Series to measure, usually {@link close}.
+ * @param length Number of bars, a positive `int`.
+ * @returns The center of gravity; `na` for the first `length - 1` bars, while
+ * any value in the window is `na`, and when the values sum to `0`.
+ * @category Moving averages
+ */
 export cog(source, length) =>
 	sum = 0.0
 	num = 0.0
@@ -99,20 +257,75 @@ export cog(source, length) =>
 
 // ---- momentum ---------------------------------------------------------------
 
+/**
+ * Difference between `source` now and `length` bars ago.
+ *
+ * @param source Series to compare.
+ * @param length Number of bars back, a positive `int`.
+ * @returns `source - source[length]`; `na` for the first `length` bars and when
+ * either value is `na`.
+ * @category Momentum
+ */
 export change(source, length = 1) =>
 	source - source[length]
 
+/**
+ * Momentum: `source` minus its value `length` bars ago.
+ *
+ * It is the same as {@link ta.change}, with `length` required.
+ *
+ * @param source Series to compare, usually {@link close}.
+ * @param length Number of bars back, a positive `int`.
+ * @returns `source - source[length]`; `na` for the first `length` bars and when
+ * either value is `na`.
+ * @category Momentum
+ */
 export mom(source, length) =>
 	source - source[length]
 
+/**
+ * Rate of change: the percentage change of `source` from `length` bars ago.
+ *
+ * @param source Series to compare, usually {@link close}.
+ * @param length Number of bars back, a positive `int`.
+ * @returns `100 * (source - source[length]) / source[length]`; `na` for the
+ * first `length` bars, when either value is `na`, and when `source[length]` is
+ * `0`.
+ * @category Momentum
+ */
 export roc(source, length) =>
-	100 * (source - source[length]) / source[length]
+	100.0 * (source - source[length]) / source[length]
 
+/**
+ * Relative strength index of `source`, from `0` to `100`.
+ *
+ * Gains and losses from {@link ta.change} are each smoothed with
+ * {@link ta.rma} over `length` bars, and the result is
+ * `100 - 100 / (1 + gain / loss)`. It is `100` when the smoothed loss is `0`,
+ * including on a flat series, and `0` when the smoothed gain is `0`.
+ *
+ * @param source Series to measure, usually {@link close}.
+ * @param length Smoothing length in bars, a positive `int`.
+ * @returns The index; `na` for the first `length` bars.
+ * @category Momentum
+ */
 export rsi(source, length) =>
 	up = rma(math.max(change(source), 0), length)
 	down = rma(math.max(-change(source), 0), length)
 	down == 0 ? 100.0 : up == 0 ? 0.0 : 100.0 - 100.0 / (1 + up / down)
 
+/**
+ * Chande momentum oscillator of `source`, from `-100` to `100`.
+ *
+ * Over the last `length` bar-to-bar changes, it is
+ * `100 * (gains - losses) / (gains + losses)`.
+ *
+ * @param source Series to measure, usually {@link close}.
+ * @param length Number of changes, a positive `int`.
+ * @returns The oscillator; `na` for the first `length` bars, while any value in
+ * the window is `na`, and when `source` did not change over the window.
+ * @category Momentum
+ */
 export cmo(source, length) =>
 	sumUp = 0.0
 	sumDown = 0.0
@@ -122,14 +335,64 @@ export cmo(source, length) =>
 		sumDown += math.max(-delta, 0)
 	100 * (sumUp - sumDown) / (sumUp + sumDown)
 
+/**
+ * True strength index of `source`, from `-100` to `100`.
+ *
+ * The bar-to-bar change of `source` is smoothed twice with {@link ta.ema},
+ * first over `longLength` bars and then over `shortLength` bars, and divided by
+ * the absolute change smoothed the same way, times `100`.
+ *
+ * @param source Series to measure, usually {@link close}.
+ * @param shortLength Length of the second smoothing, in bars.
+ * @param longLength Length of the first smoothing, in bars.
+ * @returns The index; `na` on the first bar and until `source` has changed.
+ * @category Momentum
+ */
 export tsi(source, shortLength, longLength) =>
 	diff = change(source)
 	100 * (ema(ema(diff, longLength), shortLength) / ema(ema(math.abs(diff), longLength), shortLength))
 
+/**
+ * Stochastic oscillator: where `source` sits between the lowest `l` and highest
+ * `h` of the last `length` bars.
+ *
+ * It is `100 * (source - lowest) / (highest - lowest)`, from `0` to `100` when
+ * `source` lies within that range. The result is not smoothed; pass it to
+ * {@link ta.sma} to smooth it.
+ *
+ * ```tea
+ * k = ta.sma(ta.stoch(close, high, low, 14), 3)
+ * d = ta.sma(k, 3)
+ * emit "k" k
+ * emit "d" d
+ * ```
+ *
+ * @param source Series to place in the range, usually {@link close}.
+ * @param h Series whose highest value is the top of the range, usually
+ * {@link high}.
+ * @param l Series whose lowest value is the bottom of the range, usually
+ * {@link low}.
+ * @param length Number of bars, a positive `int`.
+ * @returns The percentage; `na` for the first `length - 1` bars, while any value
+ * in the windows is `na`, and when the range is `0`.
+ * @category Momentum
+ */
 export stoch(source, h, l, length) =>
 	lowestLow = lowest(l, length)
-	100 * (source - lowestLow) / (highest(h, length) - lowestLow)
+	100.0 * (source - lowestLow) / (highest(h, length) - lowestLow)
 
+/**
+ * Commodity channel index of `source`.
+ *
+ * It is `(source - mean) / (0.015 * deviation)`, where `mean` is the
+ * {@link ta.sma} and `deviation` the {@link ta.dev} of the last `length` values.
+ *
+ * @param source Series to measure, such as {@link hlc3}.
+ * @param length Number of bars, a positive `int`.
+ * @returns The index; `na` for the first `length - 1` bars, while any value in
+ * the window is `na`, and when all values in the window are equal.
+ * @category Momentum
+ */
 export cci(source, length) =>
 	mean = sma(source, length)
 	md = 0.0
@@ -138,11 +401,38 @@ export cci(source, length) =>
 	md /= length
 	(source - mean) / (0.015 * md)
 
+/**
+ * Williams %R: where {@link close} sits within the range of the last `length`
+ * bars, from `-100` to `0`.
+ *
+ * It is `100 * (close - highest) / (highest - lowest)`, using the highest
+ * {@link high} and the lowest {@link low} of the last `length` bars.
+ *
+ * @param length Number of bars, a positive `int`.
+ * @returns The percentage; `na` for the first `length - 1` bars, while any price
+ * in the window is `na`, and when the range is `0`.
+ * @category Momentum
+ */
 export wpr(length) =>
 	upper = highest(high, length)
 	lower = lowest(low, length)
 	100 * (close - upper) / (upper - lower)
 
+/**
+ * Money flow index of `source`, from `0` to `100`.
+ *
+ * Money flow is `source * volume`, using {@link volume}. Over the last `length`
+ * bars, the flows of bars where `source` rose and of bars where it fell are
+ * summed separately, and the result is `100 - 100 / (1 + rising / falling)`.
+ * Bars whose change cannot be computed, such as the first bar, are left out
+ * instead of making the result `na`.
+ *
+ * @param source Price series, usually {@link hlc3}.
+ * @param length Number of bars, a positive `int`.
+ * @returns The index; `0` when bars in the window fell but none rose, and `na`
+ * when none fell or the volume of a bar that rose or fell is `na`.
+ * @category Momentum
+ */
 export mfi(source, length) =>
 	upper = 0.0
 	lower = 0.0
@@ -153,6 +443,30 @@ export mfi(source, length) =>
 		lower += delta < 0 ? flow : 0.0
 	100.0 - 100.0 / (1.0 + upper / lower)
 
+/**
+ * Moving average convergence divergence of `source`, with its signal line and
+ * histogram.
+ *
+ * The MACD line is `ta.ema(source, fastLength) - ta.ema(source, slowLength)`,
+ * the signal line is its {@link ta.ema} over `signalLength` bars, and the
+ * histogram is their difference. The averages start from the first value of
+ * `source`, so all three are `0` on the first bar.
+ *
+ * ```tea
+ * [macdLine, signalLine, histogram] = ta.macd(close, 12, 26, 9)
+ * emit "macd" macdLine
+ * emit "signal" signalLine
+ * emit "histogram" histogram
+ * ```
+ *
+ * @param source Series to measure, usually {@link close}.
+ * @param fastLength Length of the fast average, in bars.
+ * @param slowLength Length of the slow average, in bars.
+ * @param signalLength Length of the signal line's average, in bars.
+ * @returns A tuple `[macdLine, signalLine, histogram]`, where `histogram` is
+ * `macdLine - signalLine`.
+ * @category Momentum
+ */
 export macd(source, fastLength, slowLength, signalLength) =>
 	fast = ema(source, fastLength)
 	slow = ema(source, slowLength)
@@ -160,6 +474,30 @@ export macd(source, fastLength, slowLength, signalLength) =>
 	signalLine = ema(macdLine, signalLength)
 	[macdLine, signalLine, macdLine - signalLine]
 
+/**
+ * Directional movement index: the +DI and -DI lines and the ADX trend strength,
+ * each from `0` to `100`.
+ *
+ * On each bar, the upward move of {@link high} counts toward +DI and the
+ * downward move of {@link low} toward -DI, whichever is larger and positive.
+ * Each is smoothed with {@link ta.rma} over `diLength` bars and divided by the
+ * true range ({@link ta.tr}) smoothed the same way. ADX is `100` times the
+ * {@link ta.rma}, over `adxSmoothing` bars, of the absolute difference between
+ * +DI and -DI divided by their sum.
+ *
+ * ```tea
+ * [plusDI, minusDI, adx] = ta.dmi(14, 14)
+ * emit "+DI" plusDI
+ * emit "-DI" minusDI
+ * emit "ADX" adx
+ * ```
+ *
+ * @param diLength Smoothing length for +DI and -DI, a positive `int`.
+ * @param adxSmoothing Smoothing length for ADX, a positive `int`.
+ * @returns A tuple `[plusDI, minusDI, adx]`. +DI and -DI are `na` for the first
+ * `diLength - 1` bars, and ADX for the first `diLength + adxSmoothing - 2` bars.
+ * @category Momentum
+ */
 export dmi(diLength, adxSmoothing) =>
 	up = change(high)
 	down = -change(low)
@@ -176,13 +514,44 @@ export dmi(diLength, adxSmoothing) =>
 
 // ---- volatility and channels ------------------------------------------------
 
+/**
+ * True range of the current bar.
+ *
+ * It is the largest of `high - low`, `math.abs(high - close[1])` and
+ * `math.abs(low - close[1])`, using {@link high}, {@link low} and
+ * {@link close}.
+ *
+ * @param handleNa What to return when the previous {@link close} is `na`, as on
+ * the first bar: `true` gives `high - low`, `false` gives `na`.
+ * @returns The true range, or the `handleNa` result when the previous close is
+ * `na`.
+ * @category Volatility and channels
+ */
 export tr(handleNa = true) =>
 	prevClose = close[1]
 	na(prevClose) ? (handleNa ? high - low : na) : math.max(high - low, math.abs(high - prevClose), math.abs(low - prevClose))
 
+/**
+ * Average true range: {@link ta.tr} smoothed with {@link ta.rma} over `length`
+ * bars.
+ *
+ * @param length Smoothing length in bars, a positive `int`.
+ * @returns The average; `na` for the first `length - 1` bars.
+ * @category Volatility and channels
+ */
 export atr(length) =>
 	rma(tr(true), length)
 
+/**
+ * Mean absolute deviation of the last `length` values of `source` from their
+ * average.
+ *
+ * @param source Series to measure.
+ * @param length Number of bars, a positive `int`.
+ * @returns The deviation; `na` for the first `length - 1` bars and while any
+ * value in the window is `na`.
+ * @category Volatility and channels
+ */
 export dev(source, length) =>
 	mean = sma(source, length)
 	sum = 0.0
@@ -190,6 +559,17 @@ export dev(source, length) =>
 		sum += math.abs(source[i] - mean)
 	sum / length
 
+/**
+ * Variance of the last `length` values of `source`.
+ *
+ * @param source Series to measure.
+ * @param length Number of bars, a positive `int`.
+ * @param biased `true` divides by `length` (population variance); `false`
+ * divides by `length - 1` (sample variance).
+ * @returns The variance; `na` for the first `length - 1` bars, while any value
+ * in the window is `na`, and for a sample variance of one value.
+ * @category Volatility and channels
+ */
 export variance(source, length, biased = true) =>
 	// Center the window before averaging so a constant decimal stays exactly
 	// zero and small spreads do not lose precision against a large price level.
@@ -204,31 +584,147 @@ export variance(source, length, biased = true) =>
 		sum += diff * diff
 	sum / (biased ? length : length - 1)
 
+/**
+ * Standard deviation of the last `length` values of `source`.
+ *
+ * @param source Series to measure.
+ * @param length Number of bars, a positive `int`.
+ * @param biased `true` divides by `length` (population); `false` divides by
+ * `length - 1` (sample).
+ * @returns The square root of {@link ta.variance} with the same arguments; `na`
+ * whenever that is `na`.
+ * @category Volatility and channels
+ */
 export stdev(source, length, biased = true) =>
 	math.sqrt(variance(source, length, biased))
 
+/**
+ * Difference between the highest and lowest of the last `length` values of
+ * `source`.
+ *
+ * @param source Series to measure.
+ * @param length Number of bars, a positive `int`.
+ * @returns The range; `na` for the first `length - 1` bars and while any value
+ * in the window is `na`.
+ * @category Volatility and channels
+ */
 export range(source, length) =>
 	highest(source, length) - lowest(source, length)
 
+/**
+ * Bollinger Bands: the average of `source` with bands `mult` standard
+ * deviations above and below it.
+ *
+ * The middle band is the {@link ta.sma} of the last `length` values, and the
+ * distance is `mult` times their population {@link ta.stdev}.
+ *
+ * ```tea
+ * [middle, upper, lower] = ta.bb(close, 20, 2.0)
+ * emit "middle" middle
+ * emit "upper" upper
+ * emit "lower" lower
+ * ```
+ *
+ * @param source Series to measure, usually {@link close}.
+ * @param length Number of bars, a positive `int`.
+ * @param mult Band distance in standard deviations.
+ * @returns A tuple `[middle, upper, lower]`; each is `na` for the first
+ * `length - 1` bars and while any value in the window is `na`.
+ * @category Volatility and channels
+ */
 export bb(source, length, mult) =>
 	basis = sma(source, length)
 	spread = mult * stdev(source, length, true)
 	[basis, basis + spread, basis - spread]
 
+/**
+ * Bollinger Band width as a percentage of the middle band.
+ *
+ * It is `(upper - lower) / middle * 100` for the bands {@link ta.bb} returns
+ * with the same arguments.
+ *
+ * @param source Series to measure, usually {@link close}.
+ * @param length Number of bars, a positive `int`.
+ * @param mult Band distance in standard deviations.
+ * @returns The width in percent; `na` for the first `length - 1` bars, while any
+ * value in the window is `na`, and when the middle band is `0`.
+ * @category Volatility and channels
+ */
 export bbw(source, length, mult) =>
 	basis = sma(source, length)
 	2 * mult * stdev(source, length, true) / basis * 100
 
+/**
+ * Keltner Channels: an exponential average of `source` with bands `mult`
+ * average ranges above and below it.
+ *
+ * The middle line is `ta.ema(source, length)`. The distance is `mult` times the
+ * {@link ta.ema}, over `length` bars, of each bar's {@link ta.tr}, or of
+ * `high - low` when `useTrueRange` is `false`. The averages start on the first
+ * bar, so there is no warm-up `na`.
+ *
+ * ```tea
+ * [middle, upper, lower] = ta.kc(close, 20, 1.5)
+ * emit "middle" middle
+ * emit "upper" upper
+ * emit "lower" lower
+ * ```
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Smoothing length in bars.
+ * @param mult Band distance in average ranges.
+ * @param useTrueRange `true` measures each bar's range with {@link ta.tr};
+ * `false` uses `high - low`.
+ * @returns A tuple `[middle, upper, lower]`.
+ * @category Volatility and channels
+ */
 export kc(source, length, mult, useTrueRange = true) =>
 	basis = ema(source, length)
 	span = useTrueRange ? tr(true) : high - low
 	spanEma = ema(span, length)
 	[basis, basis + spanEma * mult, basis - spanEma * mult]
 
+/**
+ * Keltner Channel width as a fraction of the middle line.
+ *
+ * It is `(upper - lower) / middle` for the channels {@link ta.kc} returns with
+ * the same arguments. Unlike {@link ta.bbw}, it is not multiplied by `100`.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Smoothing length in bars.
+ * @param mult Band distance in average ranges.
+ * @param useTrueRange `true` measures each bar's range with {@link ta.tr};
+ * `false` uses `high - low`.
+ * @returns The width as a ratio; `na` when the middle line is `0`.
+ * @category Volatility and channels
+ */
 export kcw(source, length, mult, useTrueRange = true) =>
 	[kcMid, kcUp, kcLow] = kc(source, length, mult, useTrueRange)
 	(kcUp - kcLow) / kcMid
 
+/**
+ * Supertrend: a trailing line on one side of price, and the trend direction.
+ *
+ * Bands sit `factor` times `ta.atr(atrPeriod)` above and below {@link hl2}.
+ * The lower band never falls unless the previous {@link close} was below it,
+ * and the upper band never rises unless the previous close was above it. The
+ * trend turns up when `close` rises above the upper band and turns down when
+ * `close` falls below the lower band.
+ *
+ * ```tea
+ * [line, direction] = ta.supertrend(3.0, 10)
+ * emit "supertrend" line
+ * emit "uptrend" direction == -1
+ * ```
+ *
+ * @param factor Band distance in average true ranges.
+ * @param atrPeriod Length of the {@link ta.atr}, a positive `int`.
+ * @returns A tuple `[line, direction]`. `direction` is `-1` in an uptrend,
+ * where `line` is the lower band below price, and `1` in a downtrend, where
+ * `line` is the upper band above price; it is `1` until the ATR has a previous
+ * value. `line` is `0` on the first bar and `na` until the ATR has a value.
+ * @category Volatility and channels
+ */
 export supertrend(factor, atrPeriod) =>
 	src = hl2
 	atrValue = atr(atrPeriod)
@@ -250,6 +746,27 @@ export supertrend(factor, atrPeriod) =>
 	superTrend := direction == -1 ? lowerBand : upperBand
 	[superTrend, direction]
 
+/**
+ * Parabolic SAR: a trailing stop that moves faster toward price as the trend
+ * makes new extremes.
+ *
+ * The trend starts on the bar where {@link bar_index} is `1`: upward with the
+ * level at the previous {@link low} if {@link close} rose, otherwise downward
+ * with the level at the previous {@link high}. Each bar the level moves toward
+ * the trend's extreme price by the acceleration factor, which starts at `start`
+ * and grows by `inc`, up to `max`, whenever the trend makes a new extreme. When
+ * the bar's low falls below the level in an uptrend, or its high rises above it
+ * in a downtrend, the trend reverses and the level jumps to the extreme of the
+ * trend that ended. In an uptrend the level stays at or below the previous two
+ * lows; in a downtrend, at or above the previous two highs.
+ *
+ * @param start Initial acceleration factor, such as `0.02`.
+ * @param inc Increase of the acceleration factor at each new extreme.
+ * @param max Largest acceleration factor.
+ * @returns The level; `na` on the first bar, and on every bar if this call did
+ * not run on the bar where `bar_index` is `1`.
+ * @category Volatility and channels
+ */
 export sar(start, inc, max) =>
 	var float result = na
 	var float maxMin = na
@@ -303,44 +820,158 @@ export sar(start, inc, max) =>
 
 // ---- crosses and conditions -------------------------------------------------
 
+/**
+ * True on the bar where `source1` moves above `source2`.
+ *
+ * It is `source1 > source2` on this bar and `source1 <= source2` on the
+ * previous bar. Equality on the current bar is not a cross, and a comparison
+ * with `na` is `false`, so the result is `false` on the first bar.
+ *
+ * ```tea
+ * fast = ta.ema(close, 9)
+ * slow = ta.ema(close, 21)
+ * emit "crossedUp" ta.crossover(fast, slow)
+ * emit "crossedLevel" ta.crossover(close, 100.0)
+ * ```
+ *
+ * @param source1 Series that crosses.
+ * @param source2 Series or level being crossed.
+ * @returns `true` on the crossing bar, otherwise `false`.
+ * @category Crosses and conditions
+ */
 export crossover(source1, source2) =>
 	source1 > source2 and source1[1] <= source2[1]
 
+/**
+ * True on the bar where `source1` moves below `source2`.
+ *
+ * It is `source1 < source2` on this bar and `source1 >= source2` on the
+ * previous bar. Equality on the current bar is not a cross, and the result is
+ * `false` on the first bar.
+ *
+ * @param source1 Series that crosses.
+ * @param source2 Series or level being crossed.
+ * @returns `true` on the crossing bar, otherwise `false`.
+ * @category Crosses and conditions
+ */
 export crossunder(source1, source2) =>
 	source1 < source2 and source1[1] >= source2[1]
 
+/**
+ * True on the bar where `source1` crosses `source2` in either direction.
+ *
+ * @param source1 Series that crosses.
+ * @param source2 Series or level being crossed.
+ * @returns `true` when {@link ta.crossover} or {@link ta.crossunder} is
+ * `true`, otherwise `false`.
+ * @category Crosses and conditions
+ */
 export cross(source1, source2) =>
-	crossover(source1, source2) or crossunder(source1, source2)
+	// Both calls run on every bar: `or` would skip crossunder after a
+	// crossover, and a skipped call records na history for the next bar.
+	up = crossover(source1, source2)
+	down = crossunder(source1, source2)
+	up or down
 
+/**
+ * True when `source` rose on each of the last `length` bars.
+ *
+ * Each value must be strictly greater than the one before it, so `length`
+ * rises span `length + 1` values. A comparison with `na` is `false`.
+ *
+ * @param source Series to test.
+ * @param length Number of consecutive rises, a positive `int`.
+ * @returns `true` when every rise happened, otherwise `false`; `false` for the
+ * first `length` bars.
+ * @category Crosses and conditions
+ */
 export rising(source, length) =>
 	result = true
 	for i = 0 to length - 1
 		result := result and source[i] > source[i + 1]
 	result
 
+/**
+ * True when `source` fell on each of the last `length` bars.
+ *
+ * Each value must be strictly less than the one before it, so `length` falls
+ * span `length + 1` values. A comparison with `na` is `false`.
+ *
+ * @param source Series to test.
+ * @param length Number of consecutive falls, a positive `int`.
+ * @returns `true` when every fall happened, otherwise `false`; `false` for the
+ * first `length` bars.
+ * @category Crosses and conditions
+ */
 export falling(source, length) =>
 	result = true
 	for i = 0 to length - 1
 		result := result and source[i] < source[i + 1]
 	result
 
+/**
+ * Number of bars since `condition` was last `true`.
+ *
+ * @param condition Condition to track.
+ * @returns `0` on a bar where `condition` is `true`, then `1`, `2` and so on;
+ * `na` until `condition` is first `true`.
+ * @category Crosses and conditions
+ */
 export barssince(condition) =>
 	var int count = na
 	count := condition ? 0 : na(count) ? na : count + 1
 	count
 
+/**
+ * Highest of the last `length` values of `source`, including the current one.
+ *
+ * To compare against earlier bars only, read the result's history:
+ *
+ * ```tea
+ * upper = ta.highest(high, 20)
+ * emit "breakout" close > upper[1]
+ * ```
+ *
+ * @param source Series to search, usually {@link high}.
+ * @param length Number of bars, a positive `int`.
+ * @returns The highest value; `na` for the first `length - 1` bars and while
+ * any value in the window is `na`.
+ * @category Crosses and conditions
+ */
 export highest(source, length) =>
 	h = source
 	for i = 1 to length - 1
 		h := math.max(h, source[i])
 	h
 
+/**
+ * Lowest of the last `length` values of `source`, including the current one.
+ *
+ * @param source Series to search, usually {@link low}.
+ * @param length Number of bars, a positive `int`.
+ * @returns The lowest value; `na` for the first `length - 1` bars and while any
+ * value in the window is `na`.
+ * @category Crosses and conditions
+ */
 export lowest(source, length) =>
 	l = source
 	for i = 1 to length - 1
 		l := math.min(l, source[i])
 	l
 
+/**
+ * Bar offset of the highest of the last `length` values of `source`, as `0` or
+ * a negative number.
+ *
+ * `0` is the current bar and `-1` the previous one; ties go to the most recent
+ * bar. Values that are `na`, including bars before the first, are skipped, so
+ * the result is never `na`; if `source` itself is `na`, it is `0`.
+ *
+ * @param source Series to search, usually {@link high}.
+ * @param length Number of bars, a positive `int`.
+ * @returns An `int` from `1 - length` to `0`.
+ * @category Crosses and conditions
+ */
 export highestbars(source, length) =>
 	best = source
 	offsetBars = 0
@@ -351,6 +982,19 @@ export highestbars(source, length) =>
 			offsetBars := i
 	-offsetBars
 
+/**
+ * Bar offset of the lowest of the last `length` values of `source`, as `0` or
+ * a negative number.
+ *
+ * `0` is the current bar and `-1` the previous one; ties go to the most recent
+ * bar. Values that are `na`, including bars before the first, are skipped, so
+ * the result is never `na`; if `source` itself is `na`, it is `0`.
+ *
+ * @param source Series to search, usually {@link low}.
+ * @param length Number of bars, a positive `int`.
+ * @returns An `int` from `1 - length` to `0`.
+ * @category Crosses and conditions
+ */
 export lowestbars(source, length) =>
 	worst = source
 	offsetBars = 0
@@ -361,6 +1005,28 @@ export lowestbars(source, length) =>
 			offsetBars := i
 	-offsetBars
 
+/**
+ * Value of a pivot high, reported `rightbars` bars after it, otherwise `na`.
+ *
+ * The value `rightbars` bars ago is a pivot high when it is strictly higher
+ * than each of the `leftbars` values before it and the `rightbars` values after
+ * it. Values that are `na`, including bars before the first, do not prevent a
+ * pivot, so one can be reported with fewer than `leftbars` bars on its left.
+ *
+ * ```tea
+ * pivot = ta.pivothigh(high, 5, 5)
+ * emit "pivotHigh" pivot
+ * emit "pivotBar" na(pivot) ? na : bar_index - 5 // bar index of the pivot itself
+ * ```
+ *
+ * @param source Series to search, usually {@link high}.
+ * @param leftbars Number of bars before the pivot that must be lower.
+ * @param rightbars Number of bars after the pivot that must be lower; the pivot
+ * is reported this many bars late.
+ * @returns `source[rightbars]` on a bar that confirms a pivot high, otherwise
+ * `na`.
+ * @category Crosses and conditions
+ */
 export pivothigh(source, leftbars, rightbars) =>
 	pivot = source[rightbars]
 	confirmed = true
@@ -369,6 +1035,22 @@ export pivothigh(source, leftbars, rightbars) =>
 			confirmed := false
 	confirmed ? pivot : na
 
+/**
+ * Value of a pivot low, reported `rightbars` bars after it, otherwise `na`.
+ *
+ * The value `rightbars` bars ago is a pivot low when it is strictly lower than
+ * each of the `leftbars` values before it and the `rightbars` values after it.
+ * Values that are `na`, including bars before the first, do not prevent a
+ * pivot, so one can be reported with fewer than `leftbars` bars on its left.
+ *
+ * @param source Series to search, usually {@link low}.
+ * @param leftbars Number of bars before the pivot that must be higher.
+ * @param rightbars Number of bars after the pivot that must be higher; the
+ * pivot is reported this many bars late.
+ * @returns `source[rightbars]` on a bar that confirms a pivot low, otherwise
+ * `na`.
+ * @category Crosses and conditions
+ */
 export pivotlow(source, leftbars, rightbars) =>
 	pivot = source[rightbars]
 	confirmed = true
@@ -379,21 +1061,65 @@ export pivotlow(source, leftbars, rightbars) =>
 
 // ---- accumulation and statistics --------------------------------------------
 
+/**
+ * Running total of `source` since the first bar.
+ *
+ * An `na` value is not skipped: once `source` is `na`, this and every later
+ * result is `na`. Wrap `source` in {@link nz} to count missing values as `0`.
+ *
+ * @param source Series to add up, such as {@link volume}.
+ * @returns The sum so far; `na` from the first `na` value of `source` onward.
+ * @category Accumulation and statistics
+ */
 export cum(source) =>
 	var total = 0.0
 	total += source
 	total
 
+/**
+ * Highest value of `source` seen so far.
+ *
+ * An `na` value resets it: the result is `na` on that bar and starts over from
+ * the next value, forgetting earlier ones.
+ *
+ * @param source Series to track.
+ * @returns The running maximum; `na` before the first value and on bars where
+ * `source` is `na`.
+ * @category Accumulation and statistics
+ */
 export max(source) =>
 	var float m = na
 	m := na(m) ? source : math.max(m, source)
 	m
 
+/**
+ * Lowest value of `source` seen so far.
+ *
+ * An `na` value resets it: the result is `na` on that bar and starts over from
+ * the next value, forgetting earlier ones.
+ *
+ * @param source Series to track.
+ * @returns The running minimum; `na` before the first value and on bars where
+ * `source` is `na`.
+ * @category Accumulation and statistics
+ */
 export min(source) =>
 	var float m = na
 	m := na(m) ? source : math.min(m, source)
 	m
 
+/**
+ * Correlation coefficient of the last `length` values of `source1` and
+ * `source2`, from `-1` to `1`.
+ *
+ * @param source1 First series.
+ * @param source2 Second series.
+ * @param length Number of bars, a positive `int`.
+ * @returns Pearson's correlation; `na` for the first `length - 1` bars, while
+ * any value in either window is `na`, and when either series is constant over
+ * the window.
+ * @category Accumulation and statistics
+ */
 export correlation(source1, source2, length) =>
 	mean1 = sma(source1, length)
 	mean2 = sma(source2, length)
@@ -408,6 +1134,19 @@ export correlation(source1, source2, length) =>
 		dev2 += d2 * d2
 	cov / math.sqrt(dev1 * dev2)
 
+/**
+ * Percentage of the previous `length` values of `source` that are less than or
+ * equal to its current value.
+ *
+ * The result is `100 * count / length`. Earlier values that are `na`, including
+ * bars before the first, are not counted, so the result is not `na` during the
+ * first `length` bars; if `source` itself is `na`, it is `0`.
+ *
+ * @param source Series to rank.
+ * @param length Number of previous bars, a positive `int`.
+ * @returns A percentage from `0` to `100`.
+ * @category Accumulation and statistics
+ */
 export percentrank(source, length) =>
 	count = 0
 	for i = 1 to length

@@ -32,8 +32,8 @@ alone does not establish the equality behavior.
 
 `const`, `input`, `simple`, and `series` are qualifiers, ordered from least to
 most variable. A parameter that accepts `input` cannot accept a value that
-changes on every step. The [native reference](../reference/native-functions.md)
-shows restrictions for each parameter.
+changes on every step. Each built-in's [reference entry](../reference/overview.md#reading-signatures)
+shows the qualifier every parameter accepts.
 
 ## Expressions and blocks
 
@@ -76,5 +76,5 @@ emit "mean" mean(close, 3)
 `for i = 0 to n` includes both endpoints. Use `array.get(values, i)` or
 `values.get(i)` for collection access: `values[i]` is history of the binding,
 not element indexing. Arrays, maps, structs and methods are covered by the
-[memory model](../memory-model.md). Consult the [type inventory](../reference/types.md)
+[memory model](../memory-model.md). Consult [types and qualifiers](../reference/language/types.md)
 for supported forms rather than assuming another language's type syntax.

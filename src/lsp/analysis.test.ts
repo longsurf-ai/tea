@@ -99,8 +99,17 @@ describe('diagnostics', () => {
 });
 
 describe('errors positioned in a library body', () => {
-  const IN_EMA =
-    "in ta.ema (tea-lib/ta.tea:27:24): operator '*' requires numeric operands (got float and string)";
+  // Located in the shipped source, so doc comments added above ta.ema never
+  // move this expectation.
+  const ta = readFileSync(
+    fileURLToPath(new URL('../tea-lib/ta.tea', import.meta.url)),
+    'utf8',
+  ).split('\n');
+  const emaLine = ta.findIndex(line =>
+    line.includes('alpha * source + (1 - alpha) * e'),
+  );
+  const emaColumn = ta[emaLine]!.indexOf('alpha * source') + 1;
+  const IN_EMA = `in ta.ema (tea-lib/ta.tea:${emaLine + 1}:${emaColumn}): operator '*' requires numeric operands (got float and string)`;
 
   test('surface on the call in this document that caused them', () => {
     expect(rendered(analyzeText('e = ta.ema("a", 14)\n'))).toEqual([

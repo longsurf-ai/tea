@@ -1,8 +1,9 @@
 // Purpose: The queries answered from the text before the cursor — completion and signature help. The expression being typed is usually broken, so they read tokens and scopes, never a syntax node at the cursor.
 
-import {CompletionItemKind} from 'vscode-languageserver';
+import {CompletionItemKind, MarkupKind} from 'vscode-languageserver';
 import type {
   CompletionItem,
+  MarkupContent,
   Position,
   SignatureHelp,
   SignatureInformation,
@@ -44,13 +45,15 @@ import {
   Tok,
   type Token,
 } from '../syntax/tokens';
-import {
-  childNodes,
-  semanticContexts,
-  tokenWidth,
-  type Analysis,
-} from './analysis';
+import {childNodes, tokenWidth, type Analysis} from './analysis';
+import {semanticContexts} from '../checker/semantic-contexts';
 import {declaredParams, declaredSignature, typedName} from './name-queries';
+import {
+  editorText,
+  nativeFunctionDocs,
+  nativeValueDocs,
+  objectDocs,
+} from './documentation';
 
 /**
  * What can be typed at `position`, nearest scope first. `text` is the
@@ -59,8 +62,9 @@ import {declaredParams, declaredSignature, typedName} from './name-queries';
  *
  * - After `name.` or `this.`: the exports of a package alias (`ta.`), the
  *   catalog entries of a native namespace (`math.`), the fields and methods
- *   of a struct value, or the members of an enum. Any other receiver
- *   (`a.b.`, `f().`, an unknown name) gets the list below instead.
+ *   of a struct value, the members of an enum, or the methods of an array,
+ *   matrix or map value (`values.push`). Any other receiver (`a.b.`, `f().`,
+ *   an unknown name) gets the list below instead.
  * - Otherwise: the names of the innermost scope at the cursor, then of each
  *   parent up to the package and the implicit libraries, then the catalog
  *   roots (`close`, `nz`, the namespace `math`) and the keywords. A name
@@ -73,9 +77,10 @@ import {declaredParams, declaredSignature, typedName} from './name-queries';
  * function nothing calls there are no scopes, so the function's written
  * parameters stand in for them.
  *
- * Inside a string or a line comment there is nothing to complete. `sortText`
+ * Inside a string or a comment there is nothing to complete. `sortText`
  * carries the scope distance for clients that sort. There is no resolve
- * step: `detail` already holds the type or signature.
+ * step: `detail` holds the type or signature and `documentation` the
+ * summary of the name's docs.
  *
  * @example
  * ```ts
@@ -85,7 +90,9 @@ import {declaredParams, declaredSignature, typedName} from './name-queries';
  *   character: 10,
  * }).find(item => item.label === 'sma');
  * // {label: 'sma', kind: CompletionItemKind.Function,
- * //  detail: 'sma(source, length)', sortText: '00'}
+ * //  detail: 'sma(source, length)', documentation: {kind: 'markdown', value:
+ * //  'Simple moving average of the last `length` values of `source`.'},
+ * //  sortText: '00'}
  * ```
  */
 export function completion(
@@ -104,10 +111,15 @@ export function completion(
   const receiver = simpleReceiver(tokens, tokens.length - 1);
   if (receiver !== null) {
     const selectable = receiverMembers(analysis, visible, receiver).map(
-      objectItem,
+      object => objectItem(analysis, object),
     );
+    const collection = collectionOf(visible, receiver);
     const items =
-      selectable.length > 0 ? selectable : catalogItems(`${receiver}.`);
+      selectable.length > 0
+        ? selectable
+        : collection !== null
+          ? methodItems(collection, receiver)
+          : catalogItems(`${receiver}.`);
     if (items.length > 0) {
       return ranked([items]);
     }
@@ -138,7 +150,11 @@ export function completion(
     level.length > 0;
     level = [...new Set(level.flatMap(scope => scope.parent ?? []))]
   ) {
-    groups.push(level.flatMap(scope => [...scope.declared()].map(objectItem)));
+    groups.push(
+      level.flatMap(scope =>
+        [...scope.declared()].map(object => objectItem(analysis, object)),
+      ),
+    );
   }
   groups.push(
     catalogItems(''),
@@ -156,9 +172,13 @@ export function completion(
  *
  * The callee resolves like a name at the cursor: a user or library function
  * or a struct method gives the one signature that is written, a native
- * gives every overload. The active parameter is the number of top-level
- * commas before the cursor, the last parameter once a variadic one is
- * reached, or the parameter a named argument (`title = `) spells. The active
+ * gives every overload, and a native called as a method on an array, matrix
+ * or map (`values.push(`) gives its overloads without the receiver. Each
+ * signature and parameter carries its documentation. The active parameter
+ * is the number of top-level commas before the cursor, the last parameter
+ * once a variadic one is reached, or the parameter a named argument
+ * (`title = `) spells; a native parameter that cannot be passed yet still
+ * holds its position, so the argument there matches nothing. The active
  * signature is the first one that has that parameter.
  *
  * @example
@@ -189,8 +209,16 @@ export function signatureHelp(
     if (open < 0) {
       return null;
     }
-    const {tok} = tokens[open];
-    if (tok === Tok.Rparen || tok === Tok.Rbrack || tok === Tok.Rbrace) {
+    const {tok, op} = tokens[open];
+    if (op === Op.Gt && tokens[open + 1]?.tok === Tok.Lparen) {
+      // `map.new<string, int>(`: a type-argument list, whose commas are its
+      // own. A `>` directly before `(` is never a comparison.
+      for (let nested = 0; open > 0; ) {
+        open -= 1;
+        if (tokens[open].op === Op.Gt) nested += 1;
+        else if (tokens[open].op === Op.Lt && nested-- === 0) break;
+      }
+    } else if (tok === Tok.Rparen || tok === Tok.Rbrack || tok === Tok.Rbrace) {
       depth += 1;
     } else if (tok === Tok.Lparen || tok === Tok.Lbrack || tok === Tok.Lbrace) {
       if (depth > 0) {
@@ -239,22 +267,19 @@ export function signatureHelp(
     (object): object is FunctionObject =>
       object.kind === ObjectKind.Function && object.name === name,
   );
+  const collection = receiver === null ? null : collectionOf(visible, receiver);
   const signatures =
     functions.length > 0
       ? functions.map(template =>
-          signatureOf(
-            declaredSignature(template),
-            declaredParams(template).map((label, index) => ({
-              name: template.decl.params[index].name.value,
-              label,
-              variadic: false,
-            })),
-            argument,
-          ),
+          functionSignature(analysis, template, argument),
         )
-      : (
-          nativeFuncs(receiver === null ? name : `${receiver}.${name}`) ?? []
-        ).map(native => nativeSignature(native, argument));
+      : collection !== null
+        ? (nativeFuncs(`${collection}.${name}`) ?? [])
+            .filter(native => native.params[0]?.name === 'self')
+            .map(native => nativeSignature(native, argument, receiver))
+        : (
+            nativeFuncs(receiver === null ? name : `${receiver}.${name}`) ?? []
+          ).map(native => nativeSignature(native, argument, null));
   if (signatures.length === 0) {
     return null;
   }
@@ -262,11 +287,13 @@ export function signatureHelp(
     0,
     signatures.findIndex(signature => signature.activeParameter !== undefined),
   );
+  const active = signatures[activeSignature];
   return {
     signatures,
     activeSignature,
-    activeParameter:
-      signatures[activeSignature].activeParameter ?? argument.index,
+    // Past the last parameter, which highlights none: the argument matches
+    // nothing this signature shows.
+    activeParameter: active.activeParameter ?? active.parameters?.length ?? 0,
   };
 }
 
@@ -280,24 +307,26 @@ function readCursor(text: string, position: Position) {
   const lines = text.split('\n');
   const line = lines[position.line] ?? '';
   const before = line.slice(0, position.character);
-  const failures: Pos[] = [];
+  const failures: {pos: Pos; msg: string}[] = [];
   const tokens = tokenize(
     newFileBase(''),
     [...lines.slice(0, position.line), before].join('\n'),
-    pos => failures.push(pos),
+    (pos, msg) => failures.push({pos, msg}),
   ).filter(token => tokenWidth(token) > 0);
 
   const last = tokens.at(-1);
-  // The text is cut at the cursor, so a string the cursor is inside is one
-  // the scanner found unterminated.
+  // The text is cut at the cursor, so a string or block comment the cursor
+  // is inside is one the scanner found unterminated.
   const inString =
     last?.kind === LitKind.String &&
     failures.some(
-      pos => pos.line === last.pos.line && pos.col === last.pos.col,
+      ({pos}) => pos.line === last.pos.line && pos.col === last.pos.col,
     );
-  // A comment is no token: it hides between the last token and the cursor.
-  // ponytail: line comments only; inside a block comment completion still
-  // answers. Track the scanner's comment state if that ever matters.
+  const inBlockComment = failures.some(
+    ({msg}) => msg === 'block comment not terminated',
+  );
+  // A line comment is no token: it hides between the last token and the
+  // cursor.
   const gap =
     last?.pos.line === position.line + 1
       ? last.pos.col - 1 + tokenWidth(last)
@@ -308,7 +337,7 @@ function readCursor(text: string, position: Position) {
     blank: line.trim() === '',
     tokens,
     typingWord: /\w$/.test(before),
-    inText: inString || before.slice(gap).includes('//'),
+    inText: inString || inBlockComment || before.slice(gap).includes('//'),
   };
 }
 
@@ -382,6 +411,20 @@ function contains(node: ScopeOwner, cursor: Cursor): boolean {
     return blockContains(node, cursor);
   }
   if (node.body.kind === NodeKind.Block && blockContains(node.body, cursor)) {
+    return true;
+  }
+  // A function whose body is not typed yet has an empty block, placed after
+  // the blank lines below its header: those lines, indented deeper than the
+  // header, are where the body is about to be written.
+  if (
+    (node.kind === NodeKind.FuncDecl || node.kind === NodeKind.MethodDecl) &&
+    node.body.kind === NodeKind.Block &&
+    node.body.stmtList.length === 0 &&
+    cursor.blank &&
+    node.pos.line < cursor.line &&
+    cursor.line <= node.body.pos.line &&
+    cursor.col > node.pos.col
+  ) {
     return true;
   }
   // The header, and an expression body: `f(x) => x + 1`. The end is
@@ -460,6 +503,27 @@ function receiverMembers(
     .flatMap(owner => [...owner.fields, ...owner.methods]);
 }
 
+// The catalog namespace of a simple receiver holding an array, matrix or map,
+// whose natives can be called as methods: `values.push(x)`.
+function collectionOf(visible: Visible, receiver: string): string | null {
+  for (const object of lookup(visible.scopes, receiver)) {
+    if (
+      object.kind === ObjectKind.Variable ||
+      object.kind === ObjectKind.Builtin
+    ) {
+      const namespace = COLLECTION_NAMESPACES[object.type.kind];
+      if (namespace !== undefined) return namespace;
+    }
+  }
+  return null;
+}
+
+const COLLECTION_NAMESPACES: Partial<Record<TypeKind, string>> = {
+  [TypeKind.Array]: 'array',
+  [TypeKind.Matrix]: 'matrix',
+  [TypeKind.Map]: 'map',
+};
+
 // What can be selected after a dot on `receiver`.
 function members(analysis: Analysis, receiver: Object): readonly Object[] {
   switch (receiver.kind) {
@@ -518,7 +582,7 @@ const ITEM_KIND: Record<Object['kind'], CompletionItemKind> = {
   [ObjectKind.PackageName]: CompletionItemKind.Module,
 };
 
-function objectItem(object: Object): CompletionItem {
+function objectItem(analysis: Analysis, object: Object): CompletionItem {
   return {
     label: object.name,
     kind:
@@ -526,7 +590,34 @@ function objectItem(object: Object): CompletionItem {
         ? CompletionItemKind.Method
         : ITEM_KIND[object.kind],
     detail: objectDetail(object),
+    ...documented(objectDocs(analysis, object)?.summary),
   };
+}
+
+// A summary or parameter doc as an item's Markdown documentation.
+function documented(text: string | undefined): {
+  documentation?: MarkupContent;
+} {
+  return text === undefined
+    ? {}
+    : {documentation: {kind: MarkupKind.Markdown, value: editorText(text)}};
+}
+
+// The natives of `array`, `matrix` or `map` that take the collection as
+// `self`, labeled as the method a receiver calls.
+function methodItems(collection: string, receiver: string): CompletionItem[] {
+  return [...CATALOG.funcs].flatMap(([name, overloads]) =>
+    name.startsWith(`${collection}.`) && overloads[0].params[0]?.name === 'self'
+      ? [
+          {
+            label: name.slice(collection.length + 1),
+            kind: CompletionItemKind.Method,
+            detail: methodLabel(overloads[0], receiver),
+            ...documented(nativeFunctionDocs(name)?.summary),
+          },
+        ]
+      : [],
+  );
 }
 
 function objectDetail(object: Object): string | undefined {
@@ -561,6 +652,7 @@ function catalogItems(prefix: string): CompletionItem[] {
       label,
       kind: CompletionItemKind.Function,
       detail: formatNativeSignature(overloads[0]),
+      ...documented(nativeFunctionDocs(label)?.summary),
     })),
     ...[...CATALOG.vars.values()].map(native => ({
       label: native.name,
@@ -569,6 +661,7 @@ function catalogItems(prefix: string): CompletionItem[] {
           ? CompletionItemKind.Constant
           : CompletionItemKind.Variable,
       detail: typedName(native.qualifier, native.type, native.name),
+      ...documented(nativeValueDocs(native.name)?.summary),
     })),
   ];
   return entries
@@ -608,50 +701,107 @@ function ranked(
 
 // ---- signatures -----------------------------------------------------------------
 
+interface ParameterSlot {
+  readonly name: string;
+  readonly variadic: boolean;
+}
+
+// The parameter an argument goes to: the one a named argument spells, the
+// last one once a variadic one is reached, or the one at its position.
+function slotOf(
+  slots: readonly ParameterSlot[],
+  argument: {readonly index: number; readonly name: string | null},
+): ParameterSlot | undefined {
+  if (argument.name !== null) {
+    return slots.find(slot => slot.name === argument.name);
+  }
+  const last = slots.at(-1);
+  return argument.index >= slots.length && last?.variadic === true
+    ? last
+    : slots[argument.index];
+}
+
 // A parameter's label is its text inside the signature's label, which is how
 // a client finds what to highlight. A signature that lacks the parameter the
 // cursor is on has no active parameter.
 function signatureOf(
   label: string,
   params: readonly {
-    readonly name: string;
     readonly label: string;
-    readonly variadic: boolean;
+    readonly documentation: string | undefined;
   }[],
-  argument: {readonly index: number; readonly name: string | null},
+  active: number,
+  summary: string | undefined,
 ): SignatureInformation {
-  const last = params.length - 1;
-  const active =
-    argument.name !== null
-      ? params.findIndex(param => param.name === argument.name)
-      : argument.index > last && params.at(-1)?.variadic === true
-        ? last
-        : argument.index;
   return {
     label,
-    parameters: params.map(param => ({label: param.label})),
-    activeParameter: active >= 0 && active <= last ? active : undefined,
+    ...documented(summary),
+    parameters: params.map(param => ({
+      label: param.label,
+      ...documented(param.documentation),
+    })),
+    activeParameter: active >= 0 ? active : undefined,
   };
 }
 
+function functionSignature(
+  analysis: Analysis,
+  template: FunctionObject,
+  argument: {readonly index: number; readonly name: string | null},
+): SignatureInformation {
+  const docs = objectDocs(analysis, template);
+  const slots = template.decl.params.map(param => ({
+    name: param.name.value,
+    variadic: false,
+  }));
+  const slot = slotOf(slots, argument);
+  return signatureOf(
+    declaredSignature(template),
+    declaredParams(template).map((label, index) => ({
+      label,
+      documentation: docs?.params.get(slots[index]!.name),
+    })),
+    slot === undefined ? -1 : slots.indexOf(slot),
+    docs?.summary,
+  );
+}
+
 // The parameter texts repeat the spelling of `formatNativeSignature`, whose
-// line they must be found in.
-// ponytail: a staged parameter is not shown, so positional arguments after
-// one are off by one (`request.security` past `currency`). Count over
-// `native.params` if more natives stage a parameter mid-list.
+// line they must be found in. A staged parameter is not shown but keeps its
+// position, so an argument there highlights nothing. Called as a method,
+// `receiver` supplies `self`, which the label leaves out.
 function nativeSignature(
   native: NativeFunc,
   argument: {readonly index: number; readonly name: string | null},
+  receiver: string | null,
 ): SignatureInformation {
+  const docs = nativeFunctionDocs(native.name);
+  const slots = receiver === null ? native.params : native.params.slice(1);
+  const shown = slots.filter(param => param.availability === 'supported');
+  const slot = slotOf(slots, argument);
   return signatureOf(
-    formatNativeSignature(native),
-    native.params
-      .filter(param => param.availability === 'supported')
-      .map(param => ({
-        name: param.name,
-        label: `${param.name}${param.required ? '' : '?'}: ${formatNativeTypeRef(param.type)}`,
-        variadic: param.variadic,
-      })),
-    argument,
+    receiver === null
+      ? formatNativeSignature(native)
+      : methodLabel(native, receiver),
+    shown.map(param => ({
+      label: nativeParamLabel(param),
+      documentation: docs?.params.get(param.name),
+    })),
+    slot === undefined ? -1 : shown.indexOf(slot as (typeof shown)[number]),
+    docs?.summary,
   );
+}
+
+function nativeParamLabel(param: NativeFunc['params'][number]): string {
+  return `${param.variadic ? '...' : ''}${param.name}${param.required ? '' : '?'}: ${formatNativeTypeRef(param.type)}`;
+}
+
+// `values.push(value: T) → void`: a native as a receiver calls it.
+function methodLabel(native: NativeFunc, receiver: string): string {
+  const params = native.params
+    .slice(1)
+    .filter(param => param.availability === 'supported')
+    .map(nativeParamLabel);
+  const result = formatNativeSignature(native).split(' → ').at(-1);
+  return `${receiver}.${native.name.slice(native.name.indexOf('.') + 1)}(${params.join(', ')}) → ${result}`;
 }

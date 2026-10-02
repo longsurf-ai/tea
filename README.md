@@ -55,6 +55,14 @@ Use a supported LTS Node release (20, 22, or 24), then run `npm run docs:dev`
 while writing or `npm run docs:check` to validate references, navigation, and
 the packaged offline build. The hosted documentation root is `/docs`.
 
+The Reference under `docs/reference` is generated from the code it describes:
+document a library export with a `/** */` doc comment directly above it, a native
+function or value in `src/checker/catalog-docs.ts`, and a package export with
+TSDoc; the `tea` command page comes from its command definitions. Only the
+language pages in `docs/reference/language` are written by hand. Run
+`npm run docs:generate` after changing any of these; `npm test` fails when a
+public name is undocumented or an example does not compile.
+
 The Docusaurus shell in [website](website) renders the version-matched offline
 site. `tea docs` serves that packaged build locally without running a site
 builder or requiring network access.

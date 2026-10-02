@@ -663,14 +663,41 @@ export function float(
   );
 }
 
+/**
+ * Construct a captured Tea bool. Tea bools have no missing value, so this
+ * always holds `true` or `false`.
+ */
 export function bool(value: boolean): Value<boolean, 'bool'> {
   return new Value(value, 'bool');
 }
 
+/**
+ * Construct a captured Tea string; `null` is the missing string.
+ *
+ * @example
+ * ```ts
+ * text('buy').value; // 'buy'
+ * text(null).value; // null, Tea's na for strings
+ * ```
+ */
 export function text(value: string | null): Value<string | null, 'string'> {
   return new Value(value, 'string');
 }
 
+/**
+ * Construct a captured Tea color from a {@link Color}, a `#RRGGBB` or
+ * `#RRGGBBAA` hex string, or `null` for the missing color.
+ *
+ * A string goes through {@link Color.parse}, so malformed hex throws a
+ * `TypeError`.
+ *
+ * @example
+ * ```ts
+ * color('#ff0000').value?.toString(); // '#FF0000'
+ * color(new Color(0, 0, 255)).value?.toString(); // '#0000FF'
+ * color(null).value; // null
+ * ```
+ */
 export function color(
   value: string | Color | null,
 ): Value<Color | null, 'color'> {

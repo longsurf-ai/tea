@@ -135,6 +135,18 @@ describe('completion: scopes', () => {
     expect(afterIf).not.toContain('t');
   });
 
+  test('a blank line under a function header offers its parameters', () => {
+    expect(labels('f(src, len) =>\n    |')).toEqual(
+      expect.arrayContaining(['src', 'len']),
+    );
+    expect(
+      labels('type P\n    float x\n    float g(float k) =>\n        |'),
+    ).toContain('k');
+    // At the header's own indentation the line is outside the function.
+    expect(labels('f(src, len) =>\n|')).not.toContain('src');
+    expect(labels('f(src, len) =>\n    src\n|')).not.toContain('src');
+  });
+
   test('a loop offers its index, a function body its parameters', () => {
     expect(labels('for i = 0 to 3\n    s = i\n    |\n')).toEqual(
       expect.arrayContaining(['s', 'i']),
@@ -252,6 +264,10 @@ describe('completion: after a dot', () => {
       label: 'ema',
       kind: CompletionItemKind.Function,
       detail: 'ema(source, length)',
+      documentation: {
+        kind: 'markdown',
+        value: 'Exponential moving average of `source`.',
+      },
       sortText: '00',
     });
   });
@@ -327,6 +343,21 @@ describe('completion: after a dot', () => {
     ).toContain('add(');
   });
 
+  test('an array, matrix or map value lists its methods', () => {
+    const push = item('var a = array.new<float>()\nx = a.|', 'push');
+    expect(push).toMatchObject({
+      kind: CompletionItemKind.Method,
+      detail: 'a.push(value: T) → void',
+      documentation: {
+        kind: 'markdown',
+        value: expect.stringContaining('Appends'),
+      },
+    });
+    // A function of the namespace that takes no collection is no method.
+    expect(labels('var a = array.new<float>()\nx = a.|')).not.toContain('new');
+    expect(labels('m = map.new<string, int>()\nx = m.|')).toContain('put');
+  });
+
   test('an enum lists its members', () => {
     expect(complete('enum Dir\n    up\n    down\nd = Dir.|\n')).toEqual([
       {
@@ -357,11 +388,15 @@ describe('completion: after a dot', () => {
     }
   });
 
-  test('a string and a line comment complete nothing', () => {
+  test('a string and a comment complete nothing', () => {
     expect(complete('title = "see ta.|"')).toEqual([]);
     expect(complete('title = "see ta.|')).toEqual([]);
     expect(complete('x = 1 // see ta.|')).toEqual([]);
     expect(complete('// |')).toEqual([]);
+    expect(complete('/** Doubles a price, see ta.|')).toEqual([]);
+    expect(complete('/**\n * Doubles a price.\n * |')).toEqual([]);
+    // After a closed block comment, code completes again.
+    expect(labels('x = 1 /* a */ + ta.|')).toContain('ema');
     // After a string, not inside it; a `//` inside a string is no comment.
     expect(labels('x = "a" + ta.|')).toContain('ema');
     expect(labels('x = "http://a" + ta.|')).toContain('ema');
@@ -376,8 +411,10 @@ describe('signature help', () => {
     expect(help('x = math.max(|')).toEqual({
       signatures: overloads.map(overload => ({
         label: formatNativeSignature(overload),
+        documentation: {kind: 'markdown', value: expect.any(String)},
         parameters: overload.params.map(param => ({
           label: expect.stringContaining(`${param.name}: `),
+          documentation: {kind: 'markdown', value: expect.any(String)},
         })),
         activeParameter: 0,
       })),
@@ -509,6 +546,58 @@ describe('signature help', () => {
     ]) {
       expect(help(marked)).toBeNull();
     }
+  });
+
+  test('a native called as a method leaves out its receiver', () => {
+    expect(help('var a = array.new<float>()\na.push(|')).toMatchObject({
+      signatures: [{label: 'a.push(value: T) → void'}],
+      activeParameter: 0,
+    });
+    expect(help('var m = matrix.new<int>(2, 2, 0)\nm.set(0, |')).toMatchObject({
+      signatures: [{label: 'm.set(row: int, column: int, value: T) → void'}],
+      activeParameter: 1,
+    });
+  });
+
+  test('commas inside type arguments belong to them', () => {
+    expect(help('x = nz(map.new<string, int>().size(), |')).toMatchObject({
+      activeParameter: 1,
+    });
+  });
+
+  test('a parameter that cannot be passed yet keeps its position', () => {
+    // indicator(title, shorttitle, overlay): shorttitle is staged and hidden,
+    // so the second positional argument matches nothing shown.
+    const positional = help('indicator("x", |');
+    expect(positional?.signatures[0].label).toBe(
+      'indicator(title: string, overlay?: bool) → void',
+    );
+    expect(positional?.activeParameter).toBe(2);
+    expect(help('indicator("x", overlay = |')?.activeParameter).toBe(1);
+  });
+
+  test('signatures and parameters carry their documentation', () => {
+    const library = help('x = ta.sma(close, |')?.signatures[0];
+    expect(library?.documentation).toEqual({
+      kind: 'markdown',
+      value: 'Simple moving average of the last `length` values of `source`.',
+    });
+    expect(library?.parameters?.[1].documentation).toEqual({
+      kind: 'markdown',
+      value: 'Number of bars, a positive `int`.',
+    });
+    const native = help('x = nz(close, |')?.signatures[0];
+    expect(native?.parameters?.[1].documentation).toMatchObject({
+      value: expect.stringContaining('The value to use when `source` is `na`.'),
+    });
+    // A user function documents itself with a doc comment.
+    const own = help(
+      '/**\n * Doubles a price.\n * @param p The price.\n */\ndouble(float p) => p * 2\nx = double(|',
+    )?.signatures[0];
+    expect(own).toMatchObject({
+      documentation: {value: 'Doubles a price.'},
+      parameters: [{documentation: {value: 'The price.'}}],
+    });
   });
 
   test('every native parameter label is found in its signature label', () => {

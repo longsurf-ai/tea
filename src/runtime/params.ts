@@ -9,8 +9,8 @@ import type {Scalar} from './value';
 /**
  * One named parameter's declaration and current binding status. Constraints and
  * display metadata come from Tea; Module.bind validates and supplies the value.
- * A successful bind replaces parameter records atomically, so read the module's
- * current record when displaying newly bound values.
+ * Binding returns a new module and leaves the receiver unchanged, so read bound
+ * values from the module that bind returned.
  *
  * @example
  * For `length = input.int(14, minval=1)`:
@@ -18,7 +18,8 @@ import type {Scalar} from './value';
  * module.parameters[0].defaultValue; // 14
  * module.parameters[0].value;        // undefined before binding
  * const configured = module.bind({length: 20});
- * module.parameters[0].value;        // 20
+ * configured.parameters[0].value;    // 20
+ * module.parameters[0].value;        // still undefined
  * ```
  */
 export interface Parameter {

@@ -90,6 +90,21 @@ export const colors = {
   },
 };
 
+/**
+ * Tea's `str` intrinsics for generated and handwritten programs.
+ *
+ * `str.tostring(value, titles?)` formats a captured value as a Tea string: a
+ * missing value (`null` or `NaN`) becomes `'NaN'`, an enum member listed in
+ * `titles` (`[name, title]` pairs, which generated code passes for enum
+ * values) becomes its title, and anything else uses JavaScript `String()`, so
+ * colors format as canonical hex.
+ *
+ * @example
+ * ```ts
+ * str.tostring(float(2.5)).value; // '2.5'
+ * str.tostring(int(NaN)).value; // 'NaN'
+ * ```
+ */
 export const str = {
   tostring(
     value: Value<unknown>,
@@ -150,7 +165,18 @@ export function rangeNext<N extends Numeric>(
   );
 }
 
-/** @internal Read a bind-visible builtin; execution-only builtins have no value here. */
+/**
+ * Read a bind-visible builtin inside a module's generated binding
+ * calculation; hosts supply these values through {@link Module.bind} rather
+ * than calling this.
+ *
+ * Throws when `values` has no entry for `id`. `Module.bind` treats that error
+ * as context not supplied yet: the configuration stays incomplete instead of
+ * failing or keeping stale results. Execution-only builtins, which change per
+ * row, never have a value here.
+ *
+ * @internal
+ */
 export function contextValue(
   values: ReadonlyMap<number, Scalar> | undefined,
   id: number,

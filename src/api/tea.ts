@@ -13,6 +13,27 @@ export type {BindingInput, Datum, Node} from './node';
 
 const TEMPLATE_FILENAME = '<tea-template>';
 
+/**
+ * The source passed to the {@link tea} template did not compile.
+ *
+ * `errors` holds the compilation's diagnostics sorted by position. Errors in
+ * the template text are positioned in the virtual file `<tea-template>`, with
+ * 1-based lines and columns counted after the template's surrounding blank
+ * lines and common indentation are removed. `message` joins the diagnostics
+ * as `file:line:col: message` lines.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   tea`indicator("unterminated)`;
+ * } catch (error) {
+ *   if (error instanceof TeaCompileError) {
+ *     error.errors[0].msg; // 'string literal not terminated'
+ *     error.message; // '<tea-template>:1:11: string literal not terminated'
+ *   }
+ * }
+ * ```
+ */
 export class TeaCompileError extends OperationalError {
   constructor(readonly errors: readonly ErrorMsg[]) {
     super(
@@ -46,7 +67,7 @@ function dedent(source: string): string {
  * ```ts
  * const node = tea`
  *   length = input.int(14)
- *   plot(close[length])
+ *   plot("lagged", close[length])
  * `;
  * node.module.parameters[0].value; // 14
  * node.ready(); // false until a close DataStream is connected

@@ -117,6 +117,15 @@ const F32_RELATIVE_TOLERANCE = 0.00002;
 const MAX_GPU_ROW = MAX_WGSL_HISTORY_OFFSET;
 const MAX_U32 = 0xffff_ffff;
 
+/**
+ * The numeric profile every compiled artifact reports as its `numeric` field:
+ * f32 floats, i32 integers that wrap on overflow (CPU integers do not), and
+ * Tea na for division by zero and non-finite float results.
+ *
+ * `cpuTolerance` is the absolute and relative error to allow when comparing
+ * decoded GPU results with CPU execution, which computes in f64; Tea publishes
+ * it but does not apply it.
+ */
 export const WGSL_F32_NUMERIC_CONTRACT: WgslNumericContract = Object.freeze({
   float: 'f32',
   integer: 'i32',
@@ -144,14 +153,15 @@ class UnsupportedGpuSubsetError extends Error {
 
 /**
  * Lower a checked Program into a portable GPU artifact without binding data or
- * allocating a device. Logical fields use standard Arrow IPC schemas; physical
- * layouts retain WGSL offsets and scalar encodings. Unsupported Tea operations
- * return diagnostics rather than a partial shader.
+ * allocating a device. Logical fields use the embedded TypeScript module's
+ * ordinary Arrow schemas; physical layouts retain WGSL offsets and scalar
+ * encodings. Unsupported Tea operations return diagnostics rather than a
+ * partial shader.
  *
  * @example
  * ```ts
  * const errors = new Errors();
- * const program = compileToProgram([{filename: 'demo.tea', source: 'plot(close)'}], errors);
+ * const program = compileToProgram([{filename: 'demo.tea', source: 'emit "output0" close'}], errors);
  * if (program) {
  *   const result = compileProgramToWgsl(program);
  *   if (result.status === 'compiled') {

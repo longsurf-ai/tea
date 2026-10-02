@@ -6,8 +6,9 @@ semantic declaration graph; `info.ts` owns per-context occurrence facts;
 `catalog.ts` declares every host primitive; `type-catalog.ts` owns the complete
 source-facing type vocabulary and its writable projections; `binding.ts`
 creates variable objects and reassignment facts; `check.ts` walks statements
-and expressions; and `importer.ts` is the import seam (loading lives in
-`src/loader`).
+and expressions; `importer.ts` is the import seam (loading lives in
+`src/loader`); and `semantic-contexts.ts` answers tooling queries over a
+checked package (every `Info`, and the calls that reach an error).
 
 ## Invariants
 
@@ -21,11 +22,12 @@ and expressions; and `importer.ts` is the import seam (loading lives in
   vocabularies. It must never import backend `ir/node.ts` or `ir/program.ts`;
   noder remains the sole semantic-to-Program projection.
 - `Info` contains only facts about syntax occurrences in one semantic context:
-  expression types, definitions, uses, selections, scopes, calls, and
-  reassignment. The package root, every function instance, and every request
-  capture have the exact `Info` in which they were checked. No root map keyed
-  only by syntax may store a fact that can vary by instance or capture, and an
-  `Info` is never backend Program identity.
+  expression types, definitions, uses, selections, scopes, calls,
+  reassignment, and the positions of the errors it reported. The package
+  root, every function instance, and every request capture have the exact
+  `Info` in which they were checked. No root map keyed only by syntax may store
+  a fact that can vary by instance or capture, and an `Info` is never backend
+  Program identity.
 - Every call occurrence has exactly one discriminated `CallResolution`:
   native, function, constructor, or request. Noding switches on that result;
   parallel per-feature call maps are forbidden.
@@ -49,6 +51,9 @@ and expressions; and `importer.ts` is the import seam (loading lives in
   or such a direct struct field. Mutating a struct body never marks a syntactic
   root Name reassigned. The checker owns these semantic locations but no Heap
   slot, transaction, or persistence policy.
+- `catalog-docs.ts` holds the reader-facing documentation of every catalog
+  name and supported parameter; the catalog keeps the facts (signatures,
+  qualifiers, values) and the reference tests fail when a name lacks docs.
 - The catalog lists a builtin only if it is inexpressible in Tea. Visual functions are ordinary Tea source that build nominal values and emit them under explicit const-string IDs. The only headers are `library()`, which names a library, and `indicator()`, which an entry may place once as its first statement with literal arguments and a non-empty title; `strategy()`, `output()`, and `effect.emit()` have no special function definitions.
 - `Info.emits` records each checked emission's column facts. A post-check reachable-call walk canonicalizes names and checks Tea type identity and fixed set/append mode before Arrow. Plain columns have exactly one static writer path and cannot repeat within a step; multiple append writers are permitted. Each call occurrence counts independently, including omitted defaults and loops. Validation-only method instances do not create columns and defer unknown const name values.
 - Explicit returns and retained tail-return sugar share one function result. Check every returned value and reachable fallthrough; returning branches do not contribute a value to their surrounding expression. Main has no required return; source return statements belong to functions.

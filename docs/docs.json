@@ -70,58 +70,62 @@
         "tab": "Reference",
         "groups": [
           {
-            "group": "Reference",
-            "root": "reference/overview",
+            "group": "Overview",
+            "pages": ["reference/overview"]
+          },
+          {
+            "group": "Language",
             "pages": [
-              {
-                "group": "Types",
-                "root": "reference/types",
-                "pages": ["reference/types/array"]
-              },
-              {
-                "group": "Variables",
-                "root": "reference/variables",
-                "pages": ["reference/variables/close"]
-              },
-              {
-                "group": "Constants",
-                "root": "reference/constants",
-                "pages": ["reference/constants/color/red"]
-              },
-              {
-                "group": "Functions",
-                "root": "reference/functions",
-                "pages": [
-                  "reference/native-functions",
-                  "reference/functions/array/push",
-                  "reference/libraries/ta",
-                  "reference/libraries/visual",
-                  "reference/libraries/pine",
-                  "reference/libraries/geometry",
-                  "reference/libraries/broker",
-                  "reference/libraries/portfolio",
-                  "reference/libraries/trade"
-                ]
-              },
-              {
-                "group": "Keywords",
-                "root": "reference/keywords",
-                "pages": [
-                  "reference/keywords/for-in",
-                  "reference/keywords/emit",
-                  "reference/keywords/return"
-                ]
-              },
-              {
-                "group": "Operators",
-                "root": "reference/operators",
-                "pages": ["reference/operators/history"]
-              },
-              {
-                "group": "Annotations",
-                "root": "reference/annotations",
-                "pages": ["reference/annotations/version"]
-              }
+              "reference/language/lexical-structure",
+              "reference/language/types",
+              "reference/language/declarations",
+              "reference/language/expressions",
+              "reference/language/control-flow",
+              "reference/language/outputs"
+            ]
+          },
+          {
+            "group": "Built-ins",
+            "pages": [
+              "reference/builtins/core",
+              "reference/builtins/input",
+              "reference/builtins/math",
+              "reference/builtins/color",
+              "reference/builtins/array",
+              "reference/builtins/matrix",
+              "reference/builtins/map",
+              "reference/builtins/request",
+              "reference/builtins/market-data",
+              "reference/builtins/plots",
+              "reference/builtins/ta"
+            ]
+          },
+          {
+            "group": "Libraries",
+            "pages": [
+              "reference/libraries/trade",
+              "reference/libraries/broker",
+              "reference/libraries/portfolio",
+              "reference/libraries/geometry"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": ["reference/tools/cli"]
+          },
+          {
+            "group": "JavaScript API",
+            "pages": [
+              "reference/javascript/tea",
+              "reference/javascript/compiler",
+              "reference/javascript/lsp",
+              "reference/javascript/base-print",
+              "reference/javascript/runtime",
+              "reference/javascript/runtime-load",
+              "reference/javascript/codegen-codegen",
+              "reference/javascript/extension-pine",
+              "reference/javascript/codegen-wgsl",
+              "reference/javascript/runtime-gpu"
             ]
           }
         ]

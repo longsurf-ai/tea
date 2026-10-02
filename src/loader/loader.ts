@@ -112,7 +112,7 @@ export function importedFile(path: string, from: string): string | null {
 // Compiler-shipped libraries use single-segment import paths. Shipping a
 // library and placing it in the implicit prelude are separate decisions:
 // trade components stay visible as explicit source imports.
-const BUILTIN_FILES: ReadonlyMap<string, string> = new Map([
+export const BUILTIN_FILES: ReadonlyMap<string, string> = new Map([
   ['ta', 'ta.tea'],
   ['geometry', 'geometry.tea'],
   ['visual', 'visual.tea'],
@@ -124,8 +124,8 @@ const BUILTIN_FILES: ReadonlyMap<string, string> = new Map([
 
 // Namespaced implicit packages and flattened prelude packages are distinct.
 // The checker checks preludes first, because implicit `ta` reads pine's close.
-const DEFAULT_IMPLICIT: readonly string[] = ['ta'];
-const DEFAULT_PRELUDE: readonly string[] = ['visual', 'pine'];
+export const DEFAULT_IMPLICIT: readonly string[] = ['ta'];
+export const DEFAULT_PRELUDE: readonly string[] = ['visual', 'pine'];
 const LOADER_DIR = dirname(fileURLToPath(import.meta.url));
 
 function builtinFilename(filename: string): string {
@@ -158,7 +158,10 @@ export function resolveImports(
   implicitPaths: readonly string[] = DEFAULT_IMPLICIT,
   preludePaths: readonly string[] = DEFAULT_PRELUDE,
   read: ReadSource = readSourceFile,
-): Importer & {readonly files: ReadonlySet<string>} {
+): Importer & {
+  readonly files: ReadonlySet<string>;
+  readonly sources: ReadonlyMap<string, string>;
+} {
   const preludeSet = new Set(preludePaths);
   const registryWithPrelude: Registry = path =>
     preludeSet.has(path)
@@ -184,6 +187,9 @@ export function resolveImports(
 
 class Resolver implements Importer {
   readonly files = new Set<string>();
+  // The text of every library parsed, by filename, compiler-shipped ones
+  // included: tooling reads doc comments from it.
+  readonly sources = new Map<string, string>();
   private readonly cache = new Map<string, ImportOutcome>();
   private readonly loading: string[] = [];
   private implicitPackages: readonly SourcePackage[] | null = null;
@@ -267,6 +273,7 @@ class Resolver implements Importer {
   }
 
   private load(path: string, {filename, source}: PackageSource): ImportOutcome {
+    this.sources.set(filename, source);
     const problems: string[] = [];
     const file = parse(newFileBase(filename), source, (pos, msg) =>
       problems.push(`${formatPos(pos)}: ${msg}`),

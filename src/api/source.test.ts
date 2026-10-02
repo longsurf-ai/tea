@@ -47,6 +47,29 @@ describe('CSVSource', () => {
     ]);
   });
 
+  test('decodes an empty number cell as NaN and rejects an empty time', async () => {
+    const schema = new Schema([
+      new Field('time', new TimestampMillisecond(), false),
+      new Field('close', new Float64(), false),
+      new Field('volume', new Float64(), false),
+    ]);
+    const cells = await fromCSV(fixture('empty-cells.csv'), schema);
+    await expect(
+      firstValueFrom(cells.asObservable().pipe(toArray())),
+    ).resolves.toEqual([
+      {time: 100, close: 1, volume: Number.NaN},
+      {time: 200, close: Number.NaN, volume: 5},
+    ]);
+
+    const time = await fromCSV(
+      fixture('empty-time.csv'),
+      schema.select(['time', 'close']),
+    );
+    await expect(
+      firstValueFrom(time.asObservable().pipe(toArray())),
+    ).rejects.toThrow("CSV field 'time' is empty");
+  });
+
   test('uses a caller schema to decode rows in order', async () => {
     const schema = new Schema([
       new Field('time', new TimestampMillisecond(), false),

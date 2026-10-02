@@ -8,6 +8,14 @@ import type {ArrayStorage} from './js/collections/array';
 import type {MapStorage} from './js/collections/map';
 import type {MatrixStorage} from './js/collections/matrix';
 
+/**
+ * The raw payload of a drawing resource value, such as a line or label.
+ *
+ * `handle` names the resource kind and must equal the kind of the
+ * {@link Value} that carries it; `id` identifies the resource within the
+ * runtime that produced it. Outputs publish it as a detached `{kind, id}`
+ * record. See {@link resource}.
+ */
 export interface ResourceHandle {
   readonly kind: 'resource';
   readonly handle: string;
@@ -149,4 +157,13 @@ export function visitValueRefs(
     value.forEach(item => visitValueRefs(item, visit));
 }
 
+/**
+ * A plain JavaScript scalar: a parameter's value, default or option, or a fixed
+ * contextual builtin value passed to {@link Module.bind}.
+ *
+ * Colors, enum members and source series names travel as strings. Numbers are
+ * finite, except that a fixed builtin may be `NaN` for numeric na; `null` is a
+ * missing value, and as a parameter default it means the parameter has no
+ * usable default.
+ */
 export type Scalar = number | string | boolean | null;

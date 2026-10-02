@@ -136,3 +136,42 @@ describe('ta Wilder indicators', () => {
     finiteAt(5, 7, 36.30022485980952);
   });
 });
+
+describe('ta crosses and integer inputs', () => {
+  async function run(lines: readonly string[], close: readonly number[]) {
+    const sink = new OutputCapture();
+    await executeTestProgram(mustBuild(lines.join('\n')), {
+      stream: arrayStream({close}),
+      sink,
+    });
+    return (outputId: number): unknown[] =>
+      sink.emissions
+        .filter(emission => emission.outputId === outputId)
+        .map(emission => emission.channels[0]);
+  }
+
+  test('cross sees a down-cross on the bar right after an up-cross', async () => {
+    const values = await run(
+      ['emit "cross" ta.cross(close, 2)'],
+      [1, 3, 1, 3, 1],
+    );
+    expect(values(0)).toEqual([false, true, true, true, true]);
+  });
+
+  test('averages and rates of int series keep their fractions', async () => {
+    const values = await run(
+      [
+        'emit "roc" ta.roc(bar_index, 1)',
+        'emit "swma" ta.swma(bar_index)',
+        'emit "stoch" ta.stoch(bar_index, bar_index + 4, bar_index, 3)',
+        'emit "almaInt" ta.alma(bar_index, 9, 0.85, 6)',
+        'emit "almaFloat" ta.alma(bar_index, 9, 0.85, 6.0)',
+      ],
+      Array(10).fill(1),
+    );
+    expect(values(0)[4]).toBeCloseTo(100 / 3, 12);
+    expect(values(1)[3]).toBeCloseTo(1.5, 12);
+    expect(values(2)[3]).toBeCloseTo(100 / 3, 12);
+    expect(values(3)[9]).toBeCloseTo(values(4)[9] as number, 12);
+  });
+});

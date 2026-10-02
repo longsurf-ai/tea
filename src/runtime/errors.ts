@@ -2,6 +2,34 @@
 
 import {OperationalError} from '../base/operational-error';
 
+/**
+ * Host-supplied configuration or input that the compiled program cannot
+ * accept. It reports a mistake in the host's binding, never in Tea source.
+ *
+ * `Node.bind()` and `Module.bind()` throw it synchronously and leave the
+ * receiver unchanged: for an unknown or ill-typed parameter, invalid fixed
+ * context, a request path or stream name that matches no declaration or more
+ * than one, or a stream whose schema lacks a required numeric series, repeats
+ * a bound series, or disagrees with another bound stream's clock. During a
+ * step, the Pine builtin supplier throws it when its clock returns a value
+ * that is not a safe integer, or when the program reads `time` from an input
+ * without an exact epoch-millisecond time; that error fails the run and
+ * reaches its observers.
+ *
+ * @example
+ * ```ts
+ * const node = tea`
+ *   length = input.int(14)
+ *   emit "average" ta.sma(close, length)
+ * `;
+ * try {
+ *   node.bind({length: 2.5});
+ * } catch (error) {
+ *   if (error instanceof BindError) console.error(error.message);
+ *   // parameter 'length' expects a safe integer
+ * }
+ * ```
+ */
 export class BindError extends OperationalError {
   constructor(msg: string) {
     super(msg);

@@ -1,123 +1,286 @@
 //@version=1
-// Canonical scalar-net and bounded-lot accounting policies. They consume
-// broker.Fill values but never decide whether, when, or at what price an order
-// fills.
+/**
+ * Portfolios that account for a strategy's fills: cash, positions, fees, profit and drawdown.
+ *
+ * Add `import portfolio` together with `import broker` and `import trade`.
+ * Create a portfolio with {@link portfolio.new} for one net position, or with
+ * {@link portfolio.lots} for separately tracked lots, and pass it to a
+ * coordinator from the `trade` library, which applies every {@link broker.Fill}
+ * the broker returns. A portfolio never decides whether, when or at what price
+ * an order fills. Read results through the coordinator's `snapshot()`.
+ *
+ * The interfaces list what each coordinator needs from a portfolio. A type
+ * satisfies one when it has every listed method with the same parameter
+ * types, result type and `const` marking; parameter names do not matter.
+ *
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * trend = ta.sma(close, 50)
+ * crossedUp = ta.crossover(close, trend)
+ * crossedDown = ta.crossunder(close, trend)
+ *
+ * var strat = trade.nextOpen(
+ *     broker.new(commission = broker.commissionRate(0.001)),
+ *     portfolio.new(initialCash = 50000.0)
+ * )
+ * strat.begin_bar(open, bar_index)
+ * if crossedUp and strat.position_quantity() == 0.0
+ *     strat.entry("Trend", trade.Direction.long, sizing = trade.percentOfEquity(40.0))
+ * if crossedDown and strat.position_quantity() > 0.0
+ *     strat.close("Exit")
+ * strat.end_bar(close, false)
+ *
+ * metrics = strat.snapshot()
+ * plot("equity", metrics.equity)
+ * plot("max drawdown", metrics.maxDrawdown)
+ * plot("win rate", metrics.winRate)
+ * ```
+ */
 library("portfolio")
 
 import broker
 
-// PortfolioView is the shared read/report surface exposed by every canonical
-// accounting policy. Lifecycle coordination belongs to the policy-specific
-// ledger contracts below.
+/**
+ * Read-only reporting methods that every portfolio provides.
+ *
+ * Use it as a type constraint for code that only reads results.
+ * {@link portfolio.NetPortfolio} and {@link portfolio.LotPortfolio} both
+ * satisfy it.
+ * @category Interfaces
+ */
 export interface PortfolioView
+	/** Returns the cash balance. */
 	float cash() const
+	/** Returns the signed position: positive when long, negative when short. */
 	float position_quantity() const
+	/** Returns the average entry price of the open position, or `na` when flat. */
 	float position_avg_price() const
+	/** Returns all metrics as one {@link portfolio.PortfolioSnapshot}. */
 	PortfolioSnapshot snapshot() const
 
-// NetLedger is the scalar-net accounting contract. It intentionally excludes
-// the bounded per-trade reads owned by LotLedger.
+/**
+ * Net-position accounting that {@link trade.nextOpen}, {@link trade.ohlc} and {@link trade.path} require.
+ *
+ * {@link portfolio.NetPortfolio} satisfies it. It has no per-lot methods;
+ * those belong to {@link portfolio.LotLedger}.
+ * @category Interfaces
+ */
 export interface NetLedger
+	/** Returns the {@link broker.Account} view the broker checks orders against. */
 	broker.Account account() const
+	/**
+	 * Applies one fill to the position; coordinators also pass `na` when nothing filled.
+	 * @param execution the fill to apply, or `na`
+	 */
 	int apply_net(broker.Fill execution)
+	/**
+	 * Values the position at `price` and returns the new equity.
+	 * @param price price to value the position at
+	 */
 	float mark(float price)
+	/** Returns the cash balance. */
 	float cash() const
+	/** Returns the signed position: positive when long, negative when short. */
 	float position_quantity() const
+	/** Returns the average entry price of the open position, or `na` when flat. */
 	float position_avg_price() const
+	/** Returns all metrics as one {@link portfolio.PortfolioSnapshot}. */
 	PortfolioSnapshot snapshot() const
 
-// LotLedger is the bounded per-trade accounting contract. Open-trade mutation
-// remains outside this public lifecycle surface during the compatibility
-// migration.
+// LotLedger keeps open-trade mutation outside its public lifecycle surface
+// during the compatibility migration.
+/**
+ * Per-lot accounting that {@link trade.lots} requires.
+ *
+ * {@link portfolio.LotPortfolio} satisfies it.
+ * @category Interfaces
+ */
 export interface LotLedger
+	/** Returns the {@link broker.Account} view the broker checks orders against. */
 	broker.Account account() const
+	/**
+	 * Applies one fill to the open lots; coordinators also pass `na` when nothing filled.
+	 * @param execution the fill to apply, or `na`
+	 */
 	int apply_lot(broker.Fill execution)
+	/**
+	 * Values the open lots at `price` and returns the new equity.
+	 * @param price price to value the lots at
+	 */
 	float mark(float price)
+	/** Returns the cash balance. */
 	float cash() const
+	/** Returns the signed total of the open lots: positive when long, negative when short. */
 	float position_quantity() const
+	/** Returns the average entry price of the open lots, or `na` when none are open. */
 	float position_avg_price() const
+	/** Returns all metrics as one {@link portfolio.PortfolioSnapshot}. */
 	PortfolioSnapshot snapshot() const
+	/** Returns the number of open lots. */
 	int open_trade_count() const
+	/**
+	 * Returns the open lot at `index`.
+	 * @param index position from `0` to `open_trade_count() - 1`
+	 */
 	OpenTrade open_trade(int index) const
 
-// OpenTrade is the canonical per-entry portfolio record used by bounded lot
-// portfolios. Exit policy remains strategy-owned; this value carries only the
-// deterministic state needed to evaluate and account for one open entry.
+/**
+ * Accounting record of one open lot in a {@link portfolio.LotPortfolio}.
+ *
+ * It holds only what accounting needs. Keep exit rules such as stops and
+ * targets in your strategy's own state, keyed by `id`.
+ * @category Records
+ */
 export type OpenTrade
+	/** Stable trade id from the entry fill; `close_trade` and `close_trade_at_stop` take it. */
 	int id
+	/** Side the lot was opened on: `broker.Side.buy` for long, `broker.Side.sell` for short. */
 	broker.Side entrySide
+	/** Entry fill price, after slippage. */
 	float entryPrice
+	/** Lot size; always positive. */
 	float quantity
+	/** Commission paid on entry, deducted from the lot's profit when it closes. */
 	float entryFee = 0.0
 
-// PortfolioSnapshot is an immutable reporting projection. It lets a strategy
-// read a coherent set of account metrics with one component-boundary call.
+/**
+ * Copy of a portfolio's metrics at one moment.
+ *
+ * Get it from a coordinator's `snapshot()`. Ratios are fractions: `0.25`
+ * means 25%.
+ * @category Records
+ */
 export type PortfolioSnapshot
+	/** Cash balance. */
 	float cash
+	/** Signed position: positive when long, negative when short, `0` when flat. */
 	float positionQuantity
+	/** Average entry price of the open position; `na` when flat. */
 	float positionAveragePrice
+	/** Entries in the net position for a net portfolio, or open lots for a lot portfolio. */
 	int openTradeCount
+	/** Most long lots open at the same time so far; always `0` for a net portfolio. */
 	int maxLongStack
+	/** Most short lots open at the same time so far; always `0` for a net portfolio. */
 	int maxShortStack
+	/** Equity at the latest mark: cash plus the position valued at the mark price. */
 	float equity
+	/** Realized profit and loss, net of fees. */
 	float realizedPnl
+	/** Total commission paid. */
 	float totalFees
+	/** Number of fills applied. */
 	int fillCount
+	/** Number of closed trades: closed positions for a net portfolio, closed lots for a lot portfolio. */
 	int roundTripCount
+	/** Fraction of closed trades with a profit, from `0` to `1`; `0` before the first close. */
 	float winRate
+	/** Gross profit divided by gross loss; `0` when there is no loss. */
 	float profitFactor
+	/** Largest drop from peak equity, as a fraction of the peak. */
 	float maxDrawdown
+	/** Change in equity since the start, as a fraction of the initial cash. */
 	float totalReturn
 
+/**
+ * Portfolio that holds one signed net position with an average entry price.
+ *
+ * Create it with {@link portfolio.new}, which starts cash, equity and peak
+ * equity at `initialCash`, and pass it to a coordinator.
+ * Same-direction fills add to the position at a quantity-weighted average
+ * price; opposite fills reduce, close or reverse it. One round trip lasts from
+ * opening a position to closing it, however many fills that takes. The
+ * coordinator calls the methods that change the portfolio; strategies read
+ * results through the coordinator.
+ * @category Portfolios
+ */
 export type NetPortfolio
+	/** Starting cash; it must be positive, and `total_return` is measured against it. */
 	float initialCash
+	/** Most same-direction entries one position may accumulate; at least `1`. */
 	int pyramiding
+	/** `100` requires a new long position's value plus fees to fit in cash; `0` turns the check off. */
 	float marginLong
+	/** `100` requires a new short position's value plus fees to fit in equity; `0` turns the check off. */
 	float marginShort
+	/** Current cash balance. */
 	float cashValue = 0.0
+	/** Signed position: positive when long, negative when short. */
 	float positionQuantityValue = 0.0
+	/** Average entry price of the open position; `na` when flat. */
 	float entryPrice = na
+	/** Value of the open position at its entry prices, excluding fees. */
 	float entryNotional = 0.0
+	/** Entry fees of the open position not yet charged to realized profit. */
 	float entryFee = 0.0
+	/** Entries in the open position, checked against `pyramiding`; rebalance fills do not count. */
 	int openEntryCountValue = 0
+	/** Realized profit and loss, net of fees. */
 	float realizedPnlValue = 0.0
+	/** Total commission paid. */
 	float totalFeesValue = 0.0
+	/** Equity at the latest `mark`. */
 	float equityValue = 0.0
+	/** Highest equity seen by `mark`. */
 	float peakEquity = 0.0
+	/** Largest drop from peak equity, as a fraction of the peak. */
 	float maxDrawdownValue = 0.0
+	/** Number of fills applied. */
 	int fillCountValue = 0
+	/** Number of positions closed, including by reversal. */
 	int roundTripCountValue = 0
+	/** Profit realized so far by the open position, which decides whether it counts as a win when it closes. */
 	float activeTradePnlValue = 0.0
+	/** Closed positions with a profit. */
 	int winningTradeCountValue = 0
+	/** Closed positions with zero or negative profit. */
 	int losingTradeCountValue = 0
+	/** Total profit of the winning positions. */
 	float grossProfitValue = 0.0
+	/** Total loss of the losing positions, as a positive number. */
 	float grossLossValue = 0.0
+	/** Whether a rebalance fill opened the current position; it only changes the rounding order of realized profit. */
 	bool targetPositionArithmetic = false
 
+	/**
+	 * Returns the {@link broker.Account} view the broker checks orders against.
+	 *
+	 * Its `configurationValid` is `false` unless `initialCash` is positive, `pyramiding` is at least `1`, and each margin is `0` or `100`. Called by the trade coordinators.
+	 */
 	broker.Account account() const =>
 		longMarginValid = this.marginLong == 0.0 or this.marginLong == 100.0
 		shortMarginValid = this.marginShort == 0.0 or this.marginShort == 100.0
 		configurationValid = this.initialCash > 0.0 and this.pyramiding >= 1 and longMarginValid and shortMarginValid
 		broker.Account.new(this.cashValue, this.positionQuantityValue, this.openEntryCountValue, this.pyramiding, this.marginLong, this.marginShort, configurationValid)
 
+	/** Returns whether the position is zero. */
 	bool is_flat() const =>
 		this.positionQuantityValue == 0.0
 
+	/** Returns the cash available for new orders, which is the cash balance. */
 	float buying_power() const =>
 		this.cashValue
 
+	/** Returns the signed position: positive when long, negative when short. */
 	float position_quantity() const =>
 		this.positionQuantityValue
 
+	/** Returns the average entry price of the open position, or `na` when flat. */
 	float position_avg_price() const =>
 		this.entryPrice
 
+	/** Always returns `0`; only a {@link portfolio.LotPortfolio} counts stacked lots. */
 	int max_long_stack() const =>
 		0
 
+	/** Always returns `0`; only a {@link portfolio.LotPortfolio} counts stacked lots. */
 	int max_short_stack() const =>
 		0
 
+	/** Returns all metrics as one {@link portfolio.PortfolioSnapshot}. */
 	PortfolioSnapshot snapshot() const =>
 		PortfolioSnapshot.new(
 			cash = this.cashValue,
@@ -137,6 +300,13 @@ export type NetPortfolio
 			totalReturn = this.total_return()
 		)
 
+	/**
+	 * Applies one fill to cash, position, entry price, realized profit and statistics.
+	 *
+	 * It ignores `na` and fills whose quantity or price is not positive or whose fee is negative. Realized profit on a closing fill is net of the closing fee and a proportional share of the entry fees. Called by the trade coordinators; strategies normally use the coordinator instead.
+	 * @param execution the fill to apply, or `na`
+	 * @returns the number of fills applied so far.
+	 */
 	int apply_net(broker.Fill execution) =>
 		if not na(execution)
 			quantityValid = execution.quantity > 0.0
@@ -213,6 +383,13 @@ export type NetPortfolio
 				this.fillCountValue := this.fillCountValue + 1
 		this.fillCountValue
 
+	/**
+	 * Values the position at `price`, updating equity, peak equity and maximum drawdown.
+	 *
+	 * Called by the coordinators' `mark` and `end_bar`.
+	 * @param price price to value the position at
+	 * @returns the new equity.
+	 */
 	float mark(float price) =>
 		this.equityValue := this.cashValue + this.positionQuantityValue * price
 		if this.equityValue > this.peakEquity
@@ -222,72 +399,119 @@ export type NetPortfolio
 			this.maxDrawdownValue := drawdown
 		this.equityValue
 
+	/** Returns the cash balance. */
 	float cash() const =>
 		this.cashValue
 
+	/** Returns equity at the latest `mark`. */
 	float equity() const =>
 		this.equityValue
 
+	/** Returns realized profit and loss, net of fees. */
 	float realized_pnl() const =>
 		this.realizedPnlValue
 
+	/** Returns the total commission paid. */
 	float total_fees() const =>
 		this.totalFeesValue
 
+	/** Returns the number of fills applied. */
 	int fill_count() const =>
 		this.fillCountValue
 
+	/** Returns the number of positions closed, including by reversal. */
 	int round_trip_count() const =>
 		this.roundTripCountValue
 
+	/** Returns the fraction of closed positions with a profit, from `0` to `1`; `0` before the first close. */
 	float win_rate() const =>
 		this.roundTripCountValue == 0 ? 0.0 : float(this.winningTradeCountValue) / float(this.roundTripCountValue)
 
+	/** Returns gross profit divided by gross loss; `0` when there is no loss. */
 	float profit_factor() const =>
 		this.grossLossValue == 0.0 ? 0.0 : this.grossProfitValue / this.grossLossValue
 
+	/** Returns the largest drop from peak equity, as a fraction of the peak. */
 	float max_drawdown() const =>
 		this.maxDrawdownValue
 
+	/** Returns the change in equity since the start, as a fraction of `initialCash`; `na` when `initialCash` is `0`. */
 	float total_return() const =>
 		this.initialCash == 0.0 ? na : (this.equityValue - this.initialCash) / this.initialCash
 
-// LotPortfolio is the canonical bounded per-entry accounting policy. Its
-// collection state is isolated from NetPortfolio, so selecting this policy is
-// explicit and does not change the scalar GPU profile of portfolio.new().
+// LotPortfolio's collection state is isolated from NetPortfolio, so selecting
+// this policy is explicit and does not change the scalar GPU profile of
+// portfolio.new().
+/**
+ * Portfolio that tracks each entry as a separate lot with its own id, price and fee.
+ *
+ * Create it with {@link portfolio.lots}, which starts cash, equity and peak
+ * equity at `initialCash`, and pass it to {@link trade.lots}. Lots always
+ * close in full, and each closed lot counts as one round trip.
+ * The coordinator calls the methods that change the portfolio; strategies read
+ * results through the coordinator.
+ * @category Portfolios
+ */
 export type LotPortfolio
+	/** Starting cash; it must be positive, and `total_return` is measured against it. */
 	float initialCash
+	/** Most lots open at once; at least `1`. The broker rejects entries beyond it. */
 	int maxOpenTrades
+	/** `100` requires a new long lot's value plus fees to fit in cash; `0` turns the check off. */
 	float marginLong
+	/** `100` requires a new short lot's value plus fees to fit in equity; `0` turns the check off. */
 	float marginShort
+	/** The open lots, in no stable order: closing a lot moves the last lot into its place. */
 	array<OpenTrade> openTrades
+	/** Current cash balance. */
 	float cashValue = 0.0
+	/** Equity at the latest `mark`. */
 	float equityValue = 0.0
+	/** Highest equity seen by `mark`. */
 	float peakEquity = 0.0
+	/** Largest drop from peak equity, as a fraction of the peak. */
 	float maxDrawdownValue = 0.0
+	/** Realized profit and loss, net of fees. */
 	float realizedPnlValue = 0.0
+	/** Total commission paid. */
 	float totalFeesValue = 0.0
+	/** Number of fills applied. */
 	int fillCountValue = 0
+	/** Number of lots closed. */
 	int roundTripCountValue = 0
+	/** Closed lots with a profit. */
 	int winningTradeCountValue = 0
+	/** Closed lots with zero or negative profit. */
 	int losingTradeCountValue = 0
+	/** Total profit of the winning lots. */
 	float grossProfitValue = 0.0
+	/** Total loss of the losing lots, as a positive number. */
 	float grossLossValue = 0.0
+	/** Most long lots open at the same time so far. */
 	int maxLongStackValue = 0
+	/** Most short lots open at the same time so far. */
 	int maxShortStackValue = 0
 
+	/**
+	 * Returns the {@link broker.Account} view the broker checks orders against.
+	 *
+	 * It reports the open lot count against `maxOpenTrades`, and its `configurationValid` is `false` unless `initialCash` is positive, `maxOpenTrades` is at least `1` and each margin is `0` or `100`. Called by {@link trade.LotTrade}.
+	 */
 	broker.Account account() const =>
 		longMarginValid = this.marginLong == 0.0 or this.marginLong == 100.0
 		shortMarginValid = this.marginShort == 0.0 or this.marginShort == 100.0
 		configurationValid = this.initialCash > 0.0 and this.maxOpenTrades >= 1 and this.openTrades.size() <= this.maxOpenTrades and longMarginValid and shortMarginValid
 		broker.Account.new(this.cashValue, this.position_quantity(), this.openTrades.size(), this.maxOpenTrades, this.marginLong, this.marginShort, configurationValid)
 
+	/** Returns whether no lot is open. */
 	bool is_flat() const =>
 		this.openTrades.size() == 0
 
+	/** Returns the cash available for new orders, which is the cash balance. */
 	float buying_power() const =>
 		this.cashValue
 
+	/** Returns the signed total of the open lots: positive when long, negative when short. */
 	float position_quantity() const =>
 		quantity = 0.0
 		for trade in this.openTrades
@@ -295,6 +519,7 @@ export type LotPortfolio
 			quantity := quantity + direction * trade.quantity
 		quantity
 
+	/** Returns the quantity-weighted average entry price of the open lots, or `na` when none are open. */
 	float position_avg_price() const =>
 		totalQuantity = 0.0
 		totalNotional = 0.0
@@ -303,18 +528,28 @@ export type LotPortfolio
 			totalNotional := totalNotional + trade.quantity * trade.entryPrice
 		totalQuantity == 0.0 ? na : totalNotional / totalQuantity
 
+	/** Returns the number of open lots. */
 	int open_trade_count() const =>
 		this.openTrades.size()
 
+	/**
+	 * Returns the open lot at `index`.
+	 *
+	 * Lot order is not stable: closing a lot moves the last lot into its place.
+	 * @param index position from `0` to `open_trade_count() - 1`
+	 */
 	OpenTrade open_trade(int index) const =>
 		this.openTrades.get(index)
 
+	/** Returns the most long lots that were open at the same time. */
 	int max_long_stack() const =>
 		this.maxLongStackValue
 
+	/** Returns the most short lots that were open at the same time. */
 	int max_short_stack() const =>
 		this.maxShortStackValue
 
+	/** Returns all metrics as one {@link portfolio.PortfolioSnapshot}. */
 	PortfolioSnapshot snapshot() const =>
 		PortfolioSnapshot.new(
 			cash = this.cashValue,
@@ -334,6 +569,13 @@ export type LotPortfolio
 			totalReturn = this.total_return()
 		)
 
+	/**
+	 * Applies one fill: an entry opens a lot, and a close or exit closes the lot its `tradeId` names.
+	 *
+	 * A new lot's id is the fill's `tradeId`, or the fill's `id` when `tradeId` is `0`. It ignores `na`, invalid fills, other fill kinds, entries beyond `maxOpenTrades`, and closes whose side or quantity does not match the lot. Called by {@link trade.LotTrade}; strategies normally use the coordinator instead.
+	 * @param execution the fill to apply, or `na`
+	 * @returns the number of fills applied so far.
+	 */
 	int apply_lot(broker.Fill execution) =>
 		if not na(execution)
 			quantityValid = execution.quantity > 0.0
@@ -390,6 +632,13 @@ export type LotPortfolio
 								this.openTrades.set(matchedIndex, lastTrade)
 		this.fillCountValue
 
+	/**
+	 * Values the open lots at `price`, updating equity, peak equity and maximum drawdown.
+	 *
+	 * Called by {@link trade.LotTrade}'s `mark`.
+	 * @param price price to value the lots at
+	 * @returns the new equity.
+	 */
 	float mark(float price) =>
 		value = this.cashValue
 		for trade in this.openTrades
@@ -401,36 +650,58 @@ export type LotPortfolio
 		this.maxDrawdownValue := math.max(this.maxDrawdownValue, drawdown)
 		value
 
+	/** Returns the cash balance. */
 	float cash() const =>
 		this.cashValue
 
+	/** Returns equity at the latest `mark`. */
 	float equity() const =>
 		this.equityValue
 
+	/** Returns realized profit and loss, net of fees. */
 	float realized_pnl() const =>
 		this.realizedPnlValue
 
+	/** Returns the total commission paid. */
 	float total_fees() const =>
 		this.totalFeesValue
 
+	/** Returns the number of fills applied. */
 	int fill_count() const =>
 		this.fillCountValue
 
+	/** Returns the number of lots closed. */
 	int round_trip_count() const =>
 		this.roundTripCountValue
 
+	/** Returns the fraction of closed lots with a profit, from `0` to `1`; `0` before the first close. */
 	float win_rate() const =>
 		this.roundTripCountValue == 0 ? 0.0 : float(this.winningTradeCountValue) / float(this.roundTripCountValue)
 
+	/** Returns gross profit divided by gross loss; `0` when there is no loss. */
 	float profit_factor() const =>
 		this.grossLossValue == 0.0 ? 0.0 : this.grossProfitValue / this.grossLossValue
 
+	/** Returns the largest drop from peak equity, as a fraction of the peak. */
 	float max_drawdown() const =>
 		this.maxDrawdownValue
 
+	/** Returns the change in equity since the start, as a fraction of `initialCash`; `na` when `initialCash` is `0`. */
 	float total_return() const =>
 		this.initialCash == 0.0 ? na : (this.equityValue - this.initialCash) / this.initialCash
 
+/**
+ * Creates a portfolio that holds one net position, for {@link trade.nextOpen}, {@link trade.ohlc} and {@link trade.path}.
+ *
+ * Invalid settings do not stop the script; instead the broker rejects every
+ * order with `invalidConfiguration` when it would fill.
+ * @param initialCash Starting cash; must be positive.
+ * @param pyramiding Most same-direction entries one position may accumulate; at least `1`.
+ * @param marginLong `100` requires a new long position's value plus fees to fit in cash; `0` turns the check off. Other values are invalid.
+ * @param marginShort `100` requires a new short position's value plus fees to fit in equity; `0` turns the check off. Other values are invalid.
+ * @returns A {@link portfolio.NetPortfolio} whose cash and equity start at `initialCash`.
+ * @category Creating portfolios
+ */
 export new(
 	float initialCash = 1000000.0,
 	int pyramiding = 1,
@@ -439,6 +710,20 @@ export new(
 ) =>
 	NetPortfolio.new(initialCash = initialCash, pyramiding = pyramiding, marginLong = marginLong, marginShort = marginShort, cashValue = initialCash, equityValue = initialCash, peakEquity = initialCash)
 
+/**
+ * Creates a portfolio that tracks each entry as its own lot, for {@link trade.lots}.
+ *
+ * Unlike {@link portfolio.new}, the margins default to `0`, so the capital
+ * check is off unless you set them. Invalid settings do not stop the script;
+ * instead the broker rejects every order with `invalidConfiguration` when it
+ * would fill.
+ * @param initialCash Starting cash; must be positive.
+ * @param maxOpenTrades Most lots open at once; at least `1`. The broker rejects entries beyond it.
+ * @param marginLong `100` requires a new long lot's value plus fees to fit in cash; `0` turns the check off. Other values are invalid.
+ * @param marginShort `100` requires a new short lot's value plus fees to fit in equity; `0` turns the check off. Other values are invalid.
+ * @returns A {@link portfolio.LotPortfolio} with no open lots, whose cash and equity start at `initialCash`.
+ * @category Creating portfolios
+ */
 export lots(
 	float initialCash = 1000000.0,
 	int maxOpenTrades = 1,
@@ -448,5 +733,13 @@ export lots(
 	LotPortfolio.new(initialCash = initialCash, maxOpenTrades = maxOpenTrades, marginLong = marginLong, marginShort = marginShort, openTrades = array.new<OpenTrade>(), cashValue = initialCash, equityValue = initialCash, peakEquity = initialCash)
 
 // Compatibility wrapper for the original flat-or-long reference account.
+/**
+ * Creates a net portfolio with the given starting cash and default settings.
+ *
+ * Same as `portfolio.new(initialCash = initialCash)`.
+ * @param initialCash Starting cash; must be positive.
+ * @returns A {@link portfolio.NetPortfolio}.
+ * @category Creating portfolios
+ */
 export basic(float initialCash) =>
 	new(initialCash = initialCash, pyramiding = 1, marginLong = 100.0, marginShort = 100.0)

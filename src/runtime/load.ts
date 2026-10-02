@@ -1,3 +1,12 @@
+/**
+ * Turn generated TypeScript module source into a runtime `Module` inside the
+ * current process. Start with {@link loadModule}, which the {@link tea}
+ * template applies to the output of {@link generate}. The source runs as
+ * code, with `tea/runtime` as the only module it may import.
+ *
+ * @packageDocumentation
+ */
+
 import type {Module} from './module-binding';
 // Load the same ordinary TypeScript module written by the compiler.
 

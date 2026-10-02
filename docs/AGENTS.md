@@ -17,13 +17,17 @@ configuration in `../website/` exists only for the packaged offline renderer.
   policy precedence and windows, FIFO lifecycle, and the separation from
   Pine Batch sample merge. `ir.md` and `runtime.md` summarize and link to it
   rather than restating those policies independently.
-- Reference pages are mechanical projections of compiler-owned language
-  vocabulary, functions, and types. Human-facing descriptions and examples may
-  live in a metadata overlay only when completeness tests key them back to the
-  owning compiler vocabulary. Generated reference files are never edited by
-  hand.
-- Hosted navigation is owned by `docs.json`; `../website/sidebars.ts` mirrors it
-  for the packaged offline site. Directory nesting does not create additional
-  public sections implicitly.
+- The Reference is generated from the code that owns each surface:
+  `/** */` doc comments in `src/tea-lib` (parsed by
+  `src/syntax/doc-comments.ts`), `src/checker/catalog-docs.ts` for natives,
+  TSDoc on package exports, and the CLI command tree. Only
+  `reference/language/` is hand-written, because syntax has no declaration to
+  carry it; tests keep it complete against the compiler's keywords,
+  operators, types and declaration forms. Missing docs and examples that do
+  not compile fail `npm test`. Generated files are never edited by hand.
+- `docs.json` owns navigation for both renderers: `../website/sidebars.ts`
+  derives the offline sidebars from it, and generation fails when its
+  Reference tab and the generated pages disagree. Directory nesting does not
+  create additional public sections implicitly.
 - All links, examples, and assets must remain inside the independently
   extractable `tea-lang` package.

@@ -2,13 +2,16 @@
 
 Language-server projection of compiler facts. `analysis.ts` owns `analyze()`:
 text in, `Analysis` out. `name-queries.ts` owns hover, definition and
-references; `text-queries.ts` owns completion and signature help. `server.ts`
-owns `startLanguageServer()`, one session on a host-supplied `Connection`.
+references; `text-queries.ts` owns completion and signature help;
+`documentation.ts` owns the docs those show. `server.ts` owns
+`startLanguageServer()`, one session on a host-supplied `Connection`.
 `index.ts` is the `tea/lsp` export.
 
 ## Invariants
 
 - Reads checker facts; adds no semantic rule.
+- Docs are the Reference's: the doc comment above a declaration, read from
+  the compilation's texts, or `checker/catalog-docs.ts`.
 - `analyze` and the queries are pure: no cache, state, or I/O beyond the
   loader's library reads. `analyze` calls only `compileForTooling`.
 - They never throw on user text and never catch. An `InternalError` is a

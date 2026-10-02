@@ -16,8 +16,31 @@ import {stringify, type Stringifier} from 'csv-stringify';
 import {Schema} from 'apache-arrow';
 import {cloneSchema, validateRecord} from '../runtime/io';
 
+/**
+ * What a {@link WebSocketSink} does with a new message when its send queue
+ * already holds `capacity` messages.
+ *
+ * A message queues instead of sending while the socket is still connecting,
+ * while earlier messages are queued, or while the socket's `bufferedAmount`
+ * is above `highWaterMark`.
+ *
+ * - `'error'` (the default) fails the sink: the socket closes and
+ *   `completion` rejects with a `RangeError`.
+ * - `'drop-oldest'` discards the oldest queued message and queues the new one.
+ * - `'drop-newest'` discards the new message.
+ * - `'latest'` replaces the whole queue with the new message.
+ */
 export type OverflowMode = 'error' | 'drop-oldest' | 'drop-newest' | 'latest';
 
+/**
+ * How a {@link CSVSink} opens its file, as the Node.js `fs` flag of the same
+ * name.
+ *
+ * `'w'` (the default) creates or truncates the file. `'a'` appends: to a
+ * non-empty file it keeps the existing header and its column order, and
+ * requires the schema, or each row when there is no schema, to have exactly
+ * those columns; a missing or empty file is written as with `'w'`.
+ */
 export type CSVMode = 'a' | 'w';
 
 const MAX_HEADER_BYTES = 64 * 1024;
@@ -25,7 +48,9 @@ const MAX_HEADER_BYTES = 64 * 1024;
 /**
  * Write validated rows in Arrow field order, or infer columns from the first
  * row when no schema is supplied. Completion waits for the file to finish;
- * errors reject `completion`. Construction alone never opens the file.
+ * errors reject `completion`. Construction never opens the file for writing;
+ * in append mode it reads the header of an existing non-empty file and throws
+ * if that header is invalid or does not match the schema's columns.
  *
  * @example
  * ```ts
@@ -129,7 +154,8 @@ export class CSVSink<T = Record<string, unknown>> implements Observer<T> {
   }
 
   /**
-   * Finish the file, including a header-only file for an empty declared schema.
+   * Finish the file, including a header-only file when a declared schema
+   * received no rows.
    * @example `sink.complete(); await sink.completion` waits for all bytes to flush.
    */
   complete(): void {
@@ -194,6 +220,28 @@ export class CSVSink<T = Record<string, unknown>> implements Observer<T> {
   }
 }
 
+/**
+ * Print each value as one line as soon as it arrives, for inspecting a Node
+ * run or any other Observable.
+ *
+ * `format` turns a value into a line and defaults to `JSON.stringify`, so a
+ * `NaN` output prints as `null`; `writeLine` defaults to writing the line and
+ * a newline to `process.stdout`. The sink owns no file and no `completion`
+ * Promise: `complete()` only stops it, and `error()` rethrows the error it
+ * receives because there is nothing to reject.
+ *
+ * @example
+ * ```ts
+ * import {Field, Float64, Schema} from 'apache-arrow';
+ * import {of} from 'rxjs';
+ * const prices = new DataStream(
+ *   new Schema([new Field('close', new Float64(), false)]),
+ *   of({close: 10}),
+ * );
+ * tea`emit "double" close * 2`.bind(prices).to(new StdoutSink());
+ * // {"index":0,"timed":false,"provisional":false,"double":20}
+ * ```
+ */
 export class StdoutSink<T> implements Observer<T> {
   private stopped = false;
 
@@ -204,10 +252,20 @@ export class StdoutSink<T> implements Observer<T> {
       process.stdout.write(`${line}\n`),
   ) {}
 
+  /**
+   * Print one Observer value; the same as `write()`.
+   * @example `sink.next({close: 12.5})` prints `{"close":12.5}`.
+   */
   next(value: T): void {
     this.write(value);
   }
 
+  /**
+   * Format and print one value, ignoring it once the sink has stopped. If
+   * `format` or `writeLine` throws, the sink stops and rethrows that error;
+   * as a `Node.to()` observer, that fails the run.
+   * @example `sink.write({close: 12.5})` prints `{"close":12.5}` immediately.
+   */
   write(value: T): void {
     if (this.stopped) return;
     try {
@@ -217,12 +275,23 @@ export class StdoutSink<T> implements Observer<T> {
     }
   }
 
+  /**
+   * Stop the sink and rethrow `error`; a stopped sink ignores it. When RxJS
+   * delivers the error, it reports the rethrow as an unhandled error, while
+   * {@link batchRecipe} rejects with it.
+   * @example `sink.error(new Error('feed failed'))` throws that error.
+   */
   error(error: unknown): void {
     if (this.stopped) return;
     this.stopped = true;
     throw error;
   }
 
+  /**
+   * Stop the sink; later values are ignored. Nothing is buffered, so there
+   * is nothing to flush.
+   * @example `sink.complete()` ends printing without waiting for anything.
+   */
   complete(): void {
     if (this.stopped) return;
     this.stopped = true;

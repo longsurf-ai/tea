@@ -1,6 +1,6 @@
 // Purpose: Commander parsing, command dispatch, logging, and exit-code policy.
 
-import {Command, CommanderError, InvalidArgumentError} from 'commander';
+import {Command, CommanderError, InvalidArgumentError, Option} from 'commander';
 import {createConnection} from 'vscode-languageserver/node';
 import {configureLog, parseLogLevel} from '../base/log';
 import {formatPos} from '../base/pos';
@@ -11,7 +11,7 @@ import {cliFailure, type CliResult} from './result';
 import {startDocsServer} from '../docs/server';
 import {startLanguageServer} from '../lsp/server';
 
-type CliCommand =
+export type CliCommand =
   | {readonly kind: 'docs'; readonly port: number; readonly open: boolean}
   | {readonly kind: 'lsp'}
   | {
@@ -43,8 +43,12 @@ const executionHost = {
   print: (line: string) => console.log(line),
 };
 
-function parseArgs(argv: readonly string[]): CliCommand | null {
-  let selected: CliCommand | null = null;
+/**
+ * The `tea` command tree. Each action hands its parsed command to `select`;
+ * the reference documentation renders this same tree, so `--help` and the
+ * published CLI page never disagree.
+ */
+export function cliProgram(select: (command: CliCommand) => void): Command {
   const tea = new Command('tea')
     .description('Tea language compiler and runner')
     .version('0.1.0')
@@ -53,15 +57,14 @@ function parseArgs(argv: readonly string[]): CliCommand | null {
   tea
     .command('docs')
     .description('Serve the documentation website locally')
-    .option(
-      '--port <number>',
-      'port to bind (default: any available port)',
-      parsePort,
-      0,
+    .addOption(
+      new Option('--port <number>', 'port to bind')
+        .argParser(parsePort)
+        .default(0, 'any available port'),
     )
     .option('--no-open', 'do not open the documentation in a browser')
     .action((options: {port: number; open: boolean}) => {
-      selected = {kind: 'docs', port: options.port, open: options.open};
+      select({kind: 'docs', port: options.port, open: options.open});
     });
 
   tea
@@ -69,12 +72,16 @@ function parseArgs(argv: readonly string[]): CliCommand | null {
     .description('Serve the Language Server Protocol over stdin and stdout')
     .option('--stdio', 'accepted and ignored: stdio is the only transport')
     .action(() => {
-      selected = {kind: 'lsp'};
+      select({kind: 'lsp'});
     });
 
   tea
     .command('run')
-    .description('Compile and execute a Tea script over a CSV dataset')
+    .usage('<file> --input <file> [--trace] [--<input name> <value>...]')
+    .summary('Compile and execute a Tea script over a CSV dataset')
+    .description(
+      'Compile and execute a Tea script over a CSV dataset. Override an input default with a flag named after the variable that declares it, such as --length 20 for length = input.int(14).',
+    )
     .argument('<file>', 'Tea source file')
     .requiredOption('-i, --input <file>', 'CSV dataset to bind as input series')
     .option(
@@ -89,13 +96,13 @@ function parseArgs(argv: readonly string[]): CliCommand | null {
         options: {input: string; trace?: boolean},
         command: Command,
       ) => {
-        selected = {
+        select({
           kind: 'run',
           file,
           input: options.input,
           trace: options.trace === true,
           parameters: command.args.slice(1),
-        };
+        });
       },
     );
 
@@ -108,11 +115,11 @@ function parseArgs(argv: readonly string[]): CliCommand | null {
       'write emitted TypeScript here instead of stdout',
     )
     .action((file: string, options: {out?: string}) => {
-      selected = {
+      select({
         kind: 'build',
         file,
         ...(options.out === undefined ? {} : {out: options.out}),
-      };
+      });
     });
 
   tea
@@ -127,17 +134,24 @@ function parseArgs(argv: readonly string[]): CliCommand | null {
         file: string,
         options: {tokens?: boolean; ast?: boolean; ir?: boolean},
       ) => {
-        selected = {
+        select({
           kind: 'parse',
           file,
           tokens: options.tokens === true,
           ast: options.ast === true,
           ir: options.ir === true,
-        };
+        });
       },
     );
 
-  tea.parse(argv);
+  return tea;
+}
+
+function parseArgs(argv: readonly string[]): CliCommand | null {
+  let selected: CliCommand | null = null;
+  cliProgram(command => {
+    selected = command;
+  }).parse(argv);
   return selected;
 }
 

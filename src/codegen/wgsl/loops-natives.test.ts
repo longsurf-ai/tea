@@ -48,6 +48,18 @@ describe('WGSL numeric ranges', () => {
     expect(source).not.toContain('range_iteration_limit');
   });
 
+  test('lowers an int start under a float bound as a float range', () => {
+    const source = compile(
+      [
+        'total = 0.0',
+        'for i = bar_index to 2.5 by 0.5',
+        '    total += i',
+        'emit "output0" close + total',
+      ].join('\n'),
+    ).module.source;
+    expect(source).toMatch(/for \(var range_index\d+:/);
+  });
+
   test('keeps effect capacity analysis separate from loop eligibility', () => {
     const effectFree = compileProgramToWgsl(
       mustBuild(

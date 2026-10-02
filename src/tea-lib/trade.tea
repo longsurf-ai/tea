@@ -1,34 +1,111 @@
 //@version=1
-// Policy-specific trade coordinators. NextOpenTrade, OhlcTrade, and PathTrade
-// own distinct scalar-net lifecycles; LotTrade owns immediate bounded-lot
-// calls. Broker matching and portfolio accounting remain in their respective
-// components.
+/**
+ * Coordinators that run a strategy's orders through a broker and record the fills in a portfolio.
+ *
+ * Add `import trade` together with `import broker` and `import portfolio`. A
+ * coordinator owns one broker value and one portfolio value: it submits your
+ * orders to the broker, applies each fill to the portfolio, and refreshes the
+ * account the broker checks before matching continues. Pick the family that
+ * matches how your orders should fill: {@link trade.nextOpen} (next open, or
+ * this bar's close), {@link trade.ohlc} (anywhere in the bar's range),
+ * {@link trade.path} (along an ordered intrabar path, with trailing exits) or
+ * {@link trade.lots} (separate lots, executed immediately). The broker
+ * from {@link broker.new} holds one pending order and one attached exit at a
+ * time. Store the coordinator in a `var` so its state persists across bars.
+ * The [strategy model](/strategy) describes each lifecycle in detail.
+ *
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * fast = ta.ema(close, 10)
+ * slow = ta.ema(close, 30)
+ * crossedUp = ta.crossover(fast, slow)
+ * crossedDown = ta.crossunder(fast, slow)
+ *
+ * var strat = trade.nextOpen(broker.new(), portfolio.new(initialCash = 10000.0))
+ * strat.begin_bar(open, bar_index)
+ * if crossedUp and strat.position_quantity() == 0.0
+ *     strat.entry("Long", trade.Direction.long)
+ * if crossedDown and strat.position_quantity() > 0.0
+ *     strat.close("Exit")
+ * strat.end_bar(close, false)
+ * plot("equity", strat.snapshot().equity)
+ * ```
+ */
 library("trade")
 
 import broker
 import portfolio
 
+/**
+ * Side of a new position.
+ * @category Enums
+ */
 export enum Direction
+	/** A long position, opened by buying. */
 	long
+	/** A short position, opened by selling. */
 	short
 
+/**
+ * Which equity a {@link trade.Sizing} percentage is taken from.
+ * @category Enums
+ */
 export enum SizingKind
+	/** Equity from the latest `mark` or `end_bar`, read when `entry` is called. */
 	percentOfEquity
+	/** Equity at the matched price before slippage, computed by the broker when the order fills. */
 	percentOfEquityAtFill
 
+/**
+ * Percent-of-equity sizing for an entry.
+ *
+ * Create it with {@link trade.percentOfEquity} or
+ * {@link trade.percentOfEquityAtFill} and pass it as the `sizing` argument of a
+ * coordinator's `entry`.
+ * @category Sizing and targets
+ */
 export type Sizing
+	/** Which equity the percentage is taken from. */
 	SizingKind kind
+	/**
+	 * Position value as a percentage of equity, above `0` and at most `100`.
+	 *
+	 * The broker rejects other values when the order would fill.
+	 */
 	float value
+	/** Whether the budget also pays the commission; when `false`, commission is charged on top. */
 	bool commissionIncluded = false
 
-// NextOpenTrade coordinates only next-open and optional close processing.
-// It owns the concrete broker and portfolio values directly so choosing this
-// narrower policy adds no wrapper state to the generated Program.
+// NextOpenTrade owns the concrete broker and portfolio values directly so
+// choosing this narrower policy adds no wrapper state to the generated Program.
+/**
+ * Coordinator whose orders fill at the next bar's open, or optionally at this bar's close.
+ *
+ * Create it with {@link trade.nextOpen}. Each bar, call `begin_bar` before your
+ * signal logic, submit orders, then call `end_bar`. Close fills need a broker
+ * created with `processOrdersOnClose = true`. Use these methods rather than
+ * calling `broker` or `portfolio` directly.
+ * @category Coordinators
+ */
 export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
+	/** Broker that validates and fills this coordinator's orders. */
 	B broker
+	/** Portfolio that records this coordinator's fills. */
 	P portfolio
+	/** Bar index from the latest `begin_bar`, or `-1` before the first; later orders record it as `signalBarIndex`. */
 	int idx = -1
 
+	/**
+	 * Starts a bar: fills the pending order at `openPrice` and applies the fill to the portfolio.
+	 *
+	 * Call it once per bar, before your signal logic. Orders submitted later in the bar cannot fill at this open.
+	 * @param openPrice the bar's open
+	 * @param barIndex the bar's index, normally `bar_index`
+	 * @returns the last fill applied, or `na` when nothing filled.
+	 */
 	broker.Fill begin_bar(float openPrice, int barIndex) =>
 		this.idx := barIndex
 		currentBroker = this.broker
@@ -41,6 +118,16 @@ export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		not na(continuation) ? continuation : execution
 
+	/**
+	 * Submits an entry order that fills at the next open, or at this bar's close when close fills are enabled.
+	 *
+	 * Pass at most one of `qty` and `sizing` (both together are rejected); with neither, the broker sizes the entry from all available capital. An entry against the open position reverses it: the broker closes the position, then opens the new one. Adding to a position requires the same `commandId` and room under the portfolio's `pyramiding`.
+	 * @param commandId name of the order; `cancel` takes it
+	 * @param direction `trade.Direction.long` to buy or `trade.Direction.short` to sell
+	 * @param qty quantity to open or add; must be positive
+	 * @param sizing percent-of-equity sizing from {@link trade.percentOfEquity} or {@link trade.percentOfEquityAtFill}
+	 * @returns the accepted {@link broker.Order}, or `na` when the broker rejects it on submission, for example while another order is pending.
+	 */
 	broker.Order entry(string commandId, Direction direction, float qty = na, Sizing sizing = na) =>
 		side = direction == Direction.long ? broker.Side.buy : broker.Side.sell
 		float notional = na
@@ -63,19 +150,46 @@ export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
 					notional := budget
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.entry, side, qty, this.idx, notional, na, na, false, na, cashBudget, equityPercent, commissionIncluded))
 
+	/**
+	 * Submits an order that closes the whole position at the next open, or at this bar's close when enabled.
+	 *
+	 * The broker rejects it if the position is flat when it would fill.
+	 * @param commandId name of the order; `cancel` takes it
+	 * @returns the accepted order, or `na` when the broker rejects it on submission.
+	 */
 	broker.Order close(string commandId) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = currentQuantity < 0.0 ? broker.Side.buy : broker.Side.sell
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.close, side, na, this.idx))
 
+	/**
+	 * Submits an order that moves the position to `target` at the next open, or at this bar's close when enabled.
+	 *
+	 * When it fills, the broker trades the difference between the target and the position, and cancels the order if there is none. Submitting again with the same `commandId` while it is pending replaces the target.
+	 * @param commandId name of the order; `cancel` takes it
+	 * @param target target from {@link trade.targetQuantity} or {@link trade.targetPercentOfEquity}
+	 * @returns the accepted order, or `na` when the broker rejects it on submission.
+	 */
 	broker.Order rebalance(string commandId, broker.PositionTarget target) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = target.value > 0.0 ? broker.Side.buy : target.value < 0.0 ? broker.Side.sell : currentQuantity > 0.0 ? broker.Side.sell : broker.Side.buy
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.rebalance, side, na, this.idx, positionTarget = target))
 
+	/**
+	 * Cancels the pending order named `commandId`.
+	 * @param commandId name the order was submitted with
+	 * @returns the number of orders cancelled; `0` when none matched.
+	 */
 	int cancel(string commandId) =>
 		this.broker.cancel(commandId)
 
+	/**
+	 * Fills the pending order at `closePrice` when the broker processes orders on close, and applies the fill.
+	 *
+	 * Without `processOrdersOnClose = true` on the broker it fills nothing. Use it with `mark` and `finish` instead of `end_bar` to act between those steps; calling it again after submitting a new order fills that order at the same close. The reference broker makes at most two fills per bar.
+	 * @param closePrice the bar's close
+	 * @returns the last fill applied, or `na` when nothing filled.
+	 */
 	broker.Fill process_close(float closePrice) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -87,12 +201,24 @@ export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		not na(continuation) ? continuation : firstExecution
 
+	/**
+	 * Values the portfolio at `price`, updating equity, peak equity and drawdown.
+	 * @param price price to value the position at, normally `close`
+	 * @returns the new equity.
+	 */
 	float mark(float price) =>
 		currentPortfolio = this.portfolio
 		value = currentPortfolio.mark(price)
 		this.portfolio := currentPortfolio
 		value
 
+	/**
+	 * On the last bar, expires every pending order without closing the position.
+	 *
+	 * Does nothing when `isLast` is `false`.
+	 * @param isLast whether this is the last bar of the data
+	 * @returns the expired orders as a {@link broker.FinishResult}, or `na` when `isLast` is `false`.
+	 */
 	broker.FinishResult finish(bool isLast) =>
 		broker.FinishResult expired = na
 		if isLast
@@ -101,6 +227,14 @@ export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
 			this.broker := currentBroker
 		expired
 
+	/**
+	 * Ends the bar: runs `process_close`, `mark` and `finish` in that order.
+	 *
+	 * Tea has no builtin that marks the last bar, so pass `false` unless the script knows it, for example from an input.
+	 * @param closePrice the bar's close
+	 * @param isLast whether this is the last bar of the data
+	 * @returns the orders expired on the last bar, or `na` when `isLast` is `false`.
+	 */
 	broker.FinishResult end_bar(float closePrice, bool isLast) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -116,31 +250,62 @@ export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		expired
 
+	/** Returns the portfolio's cash balance. */
 	float cash() const =>
 		this.portfolio.cash()
 
+	/** Returns the signed position: positive when long, negative when short, `0` when flat. */
 	float position_quantity() const =>
 		this.portfolio.position_quantity()
 
+	/** Returns the average entry price of the open position, or `na` when flat. */
 	float position_avg_price() const =>
 		this.portfolio.position_avg_price()
 
+	/**
+	 * Returns the portfolio's metrics as one {@link portfolio.PortfolioSnapshot}.
+	 *
+	 * Its `equity` is from the latest `mark` or `end_bar`.
+	 */
 	portfolio.PortfolioSnapshot snapshot() const =>
 		this.portfolio.snapshot()
 
+	/** Returns whether an order is pending. */
 	bool has_pending() const =>
 		this.broker.has_pending()
 
+	/** Returns whether the pending order is an entry. */
 	bool has_pending_entry() const =>
 		this.broker.has_pending_entry()
 
-// OhlcTrade coordinates unordered OHLC range matching without deterministic
-// path or trailing-exit state in its public policy surface.
+/**
+ * Coordinator that matches pending orders and one stop/target exit against each bar's high-low range.
+ *
+ * Create it with {@link trade.ohlc}. It does not assume whether the high or
+ * the low came first and has no trailing exits; use {@link trade.PathTrade}
+ * when either matters. Each bar, call `begin_bar`, submit orders and exits,
+ * then call `end_bar`. Use these methods rather than calling `broker` or
+ * `portfolio` directly.
+ * @category Coordinators
+ */
 export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
+	/** Broker that validates and fills this coordinator's orders. */
 	B broker
+	/** Portfolio that records this coordinator's fills. */
 	P portfolio
+	/** Bar index from the latest `begin_bar`, or `-1` before the first; later orders record it as `signalBarIndex`. */
 	int idx = -1
 
+	/**
+	 * Starts a bar: fills the pending order, then the attached exit, against this bar's range.
+	 *
+	 * Market orders fill at the open. A stop entry or exit fills at the open when the bar gaps past its price, otherwise at that price. If the bar reaches both the exit's stop and target, the broker assumes the extreme nearer the open came first; a tie goes to the stop.
+	 * @param openPrice the bar's open
+	 * @param highPrice the bar's high
+	 * @param lowPrice the bar's low
+	 * @param barIndex the bar's index, normally `bar_index`
+	 * @returns a {@link broker.BarMatches}: `pending` holds the order's fill, `reversalClose` the closing fill when that order reversed the position, and `exit` the exit's fill; each is `na` when absent.
+	 */
 	broker.BarMatches begin_bar(float openPrice, float highPrice, float lowPrice, int barIndex) =>
 		this.idx := barIndex
 		currentBroker = this.broker
@@ -156,6 +321,17 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		broker.BarMatches.new(pendingExecution, exitExecution, not na(continuation) ? firstExecution : na)
 
+	/**
+	 * Submits a market or stop entry order; it fills in a later bar, or at this bar's close when enabled.
+	 *
+	 * Pass at most one of `qty` and `sizing` (both together are rejected); with neither, the broker sizes the entry from all available capital. An entry against the open position reverses it: the broker closes the position, then opens the new one. Adding to a position requires the same `commandId` and room under the portfolio's `pyramiding`. Resubmitting a pending stop entry with the same `commandId` and a new `stop` replaces it.
+	 * @param commandId name of the order; exits and `cancel` refer to it
+	 * @param direction `trade.Direction.long` to buy or `trade.Direction.short` to sell
+	 * @param qty quantity to open or add; must be positive
+	 * @param sizing percent-of-equity sizing from {@link trade.percentOfEquity} or {@link trade.percentOfEquityAtFill}
+	 * @param stop stop price that makes this a stop entry: a long triggers at or above it, a short at or below it
+	 * @returns the accepted {@link broker.Order}, or `na` when the broker rejects it on submission, for example while another order is pending.
+	 */
 	broker.Order entry(string commandId, Direction direction, float qty = na, Sizing sizing = na, float stop = na) =>
 		side = direction == Direction.long ? broker.Side.buy : broker.Side.sell
 		float notional = na
@@ -178,24 +354,64 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 					notional := budget
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.entry, side, qty, this.idx, notional, na, stop, false, na, cashBudget, equityPercent, commissionIncluded))
 
+	/**
+	 * Attaches a stop and/or target exit that closes the whole position opened by entry `fromEntry`.
+	 *
+	 * Give `stop`, `target` or both; for a long the stop must be below the target, for a short above it. `fromEntry` must name the pending entry or the entry that opened the position. One exit is attached at a time: resubmitting the same `commandId` and `fromEntry` replaces it, and closing the position cancels it.
+	 * @param commandId name of the exit; `cancel` takes it
+	 * @param fromEntry `commandId` of the entry the exit belongs to
+	 * @param stop stop price
+	 * @param target target price
+	 * @param activateOnEntryBar whether the exit may fill on the bar its entry fills
+	 * @returns the accepted order, or `na` when the broker rejects it on submission.
+	 */
 	broker.Order exit(string commandId, string fromEntry, float stop = na, float target = na, bool activateOnEntryBar = false) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = currentQuantity < 0.0 ? broker.Side.buy : broker.Side.sell
 		this.broker.submit_exit(broker.Command.new(commandId, broker.CommandKind.exit, side, na, this.idx, na, fromEntry, stop, activateOnEntryBar, target))
 
+	/**
+	 * Submits an order that closes the whole position at the next open, or at this bar's close when enabled.
+	 *
+	 * The broker rejects it if the position is flat when it would fill.
+	 * @param commandId name of the order; `cancel` takes it
+	 * @returns the accepted order, or `na` when the broker rejects it on submission.
+	 */
 	broker.Order close(string commandId) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = currentQuantity < 0.0 ? broker.Side.buy : broker.Side.sell
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.close, side, na, this.idx))
 
+	/**
+	 * Submits an order that moves the position to `target` at the next open, or at this bar's close when enabled.
+	 *
+	 * When it fills, the broker trades the difference between the target and the position, and cancels the order if there is none. Submitting again with the same `commandId` while it is pending replaces the target.
+	 * @param commandId name of the order; `cancel` takes it
+	 * @param target target from {@link trade.targetQuantity} or {@link trade.targetPercentOfEquity}
+	 * @returns the accepted order, or `na` when the broker rejects it on submission.
+	 */
 	broker.Order rebalance(string commandId, broker.PositionTarget target) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = target.value > 0.0 ? broker.Side.buy : target.value < 0.0 ? broker.Side.sell : currentQuantity > 0.0 ? broker.Side.sell : broker.Side.buy
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.rebalance, side, na, this.idx, positionTarget = target))
 
+	/**
+	 * Cancels the pending order or attached exit named `commandId`.
+	 *
+	 * Cancelling a pending entry also cancels an exit attached to it while no position is open.
+	 * @param commandId name the order was submitted with
+	 * @returns the number of orders cancelled; `0` when none matched.
+	 */
 	int cancel(string commandId) =>
 		this.broker.cancel(commandId)
 
+	/**
+	 * Fills the pending order at `closePrice` when the broker processes orders on close, and applies the fill.
+	 *
+	 * Without `processOrdersOnClose = true` on the broker it fills nothing, and it never triggers the attached exit. Use it with `mark` and `finish` instead of `end_bar` to act between those steps; calling it again after submitting a new order fills that order at the same close. The reference broker makes at most two fills per bar.
+	 * @param closePrice the bar's close
+	 * @returns the last fill applied, or `na` when nothing filled.
+	 */
 	broker.Fill process_close(float closePrice) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -207,12 +423,24 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		not na(continuation) ? continuation : firstExecution
 
+	/**
+	 * Values the portfolio at `price`, updating equity, peak equity and drawdown.
+	 * @param price price to value the position at, normally `close`
+	 * @returns the new equity.
+	 */
 	float mark(float price) =>
 		currentPortfolio = this.portfolio
 		value = currentPortfolio.mark(price)
 		this.portfolio := currentPortfolio
 		value
 
+	/**
+	 * On the last bar, expires the pending order and attached exit without closing the position.
+	 *
+	 * Does nothing when `isLast` is `false`.
+	 * @param isLast whether this is the last bar of the data
+	 * @returns the expired orders as a {@link broker.FinishResult}, or `na` when `isLast` is `false`.
+	 */
 	broker.FinishResult finish(bool isLast) =>
 		broker.FinishResult expired = na
 		if isLast
@@ -221,6 +449,14 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 			this.broker := currentBroker
 		expired
 
+	/**
+	 * Ends the bar: runs `process_close`, `mark` and `finish` in that order.
+	 *
+	 * Tea has no builtin that marks the last bar, so pass `false` unless the script knows it, for example from an input.
+	 * @param closePrice the bar's close
+	 * @param isLast whether this is the last bar of the data
+	 * @returns the orders expired on the last bar, or `na` when `isLast` is `false`.
+	 */
 	broker.FinishResult end_bar(float closePrice, bool isLast) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -236,31 +472,65 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		expired
 
+	/** Returns the portfolio's cash balance. */
 	float cash() const =>
 		this.portfolio.cash()
 
+	/** Returns the signed position: positive when long, negative when short, `0` when flat. */
 	float position_quantity() const =>
 		this.portfolio.position_quantity()
 
+	/** Returns the average entry price of the open position, or `na` when flat. */
 	float position_avg_price() const =>
 		this.portfolio.position_avg_price()
 
+	/**
+	 * Returns the portfolio's metrics as one {@link portfolio.PortfolioSnapshot}.
+	 *
+	 * Its `equity` is from the latest `mark` or `end_bar`.
+	 */
 	portfolio.PortfolioSnapshot snapshot() const =>
 		this.portfolio.snapshot()
 
+	/** Returns whether an order or attached exit is pending. */
 	bool has_pending() const =>
 		this.broker.has_pending()
 
+	/** Returns whether the pending order is an entry. */
 	bool has_pending_entry() const =>
 		this.broker.has_pending_entry()
 
-// PathTrade coordinates deterministic intrabar path matching and therefore
-// exposes the full fixed and trailing exit command surface.
+/**
+ * Coordinator that replays each bar as an ordered price path, with fixed and trailing exits.
+ *
+ * Create it with {@link trade.path}. The path runs from the open to the
+ * nearer of the high and low, then to the farther one, then to the close;
+ * when both are equally far, the low comes first. When an order fills partway
+ * along the path, its exit only sees the rest of the bar. Each bar, call
+ * `begin_bar`, attach or adjust exits, call `continue_bar`, submit new orders,
+ * then call `end_bar`. Use these methods rather than calling `broker` or
+ * `portfolio` directly.
+ * @category Coordinators
+ */
 export type PathTrade<B: broker.PathBroker, P: portfolio.NetLedger>
+	/** Broker that validates and fills this coordinator's orders. */
 	B broker
+	/** Portfolio that records this coordinator's fills. */
 	P portfolio
+	/** Bar index from the latest `begin_bar`, or `-1` before the first; later orders record it as `signalBarIndex`. */
 	int idx = -1
 
+	/**
+	 * Starts a bar: fills the pending order along this bar's path and records where it filled.
+	 *
+	 * Market orders fill at the open; a stop entry fills at the open when the bar gaps past its stop, otherwise where the path crosses it. The attached exit is not checked here; `continue_bar` checks it on the rest of the path, so an exit derived from this fill can be attached first.
+	 * @param openPrice the bar's open
+	 * @param highPrice the bar's high
+	 * @param lowPrice the bar's low
+	 * @param closePrice the bar's close
+	 * @param barIndex the bar's index, normally `bar_index`
+	 * @returns a {@link broker.BarMatches}: `pending` holds the order's fill and `reversalClose` the closing fill when that order reversed the position, each `na` when absent; `exit` is always `na`.
+	 */
 	broker.BarMatches begin_bar(float openPrice, float highPrice, float lowPrice, float closePrice, int barIndex) =>
 		this.idx := barIndex
 		currentBroker = this.broker
@@ -274,6 +544,16 @@ export type PathTrade<B: broker.PathBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		broker.BarMatches.new(pendingExecution, na, not na(continuation) ? firstExecution : na)
 
+	/**
+	 * Checks the attached exit, including its trailing stop, along the part of the bar after `begin_bar`'s fill.
+	 *
+	 * Call it after `begin_bar` and any exit changes, with the same prices. When nothing filled in `begin_bar`, it checks the whole bar.
+	 * @param openPrice the bar's open
+	 * @param highPrice the bar's high
+	 * @param lowPrice the bar's low
+	 * @param closePrice the bar's close
+	 * @returns the exit's fill, or `na` when the exit did not trigger.
+	 */
 	broker.Fill continue_bar(float openPrice, float highPrice, float lowPrice, float closePrice) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -283,6 +563,17 @@ export type PathTrade<B: broker.PathBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		execution
 
+	/**
+	 * Submits a market or stop entry order that fills in a later bar.
+	 *
+	 * Pass at most one of `qty` and `sizing` (both together are rejected); with neither, the broker sizes the entry from all available capital. An entry against the open position reverses it: the broker closes the position, then opens the new one. Adding to a position requires the same `commandId` and room under the portfolio's `pyramiding`. Resubmitting a pending stop entry with the same `commandId` and a new `stop` replaces it.
+	 * @param commandId name of the order; exits and `cancel` refer to it
+	 * @param direction `trade.Direction.long` to buy or `trade.Direction.short` to sell
+	 * @param qty quantity to open or add; must be positive
+	 * @param sizing percent-of-equity sizing from {@link trade.percentOfEquity} or {@link trade.percentOfEquityAtFill}
+	 * @param stop stop price that makes this a stop entry: a long triggers at or above it, a short at or below it
+	 * @returns the accepted {@link broker.Order}, or `na` when the broker rejects it on submission, for example while another order is pending.
+	 */
 	broker.Order entry(string commandId, Direction direction, float qty = na, Sizing sizing = na, float stop = na) =>
 		side = direction == Direction.long ? broker.Side.buy : broker.Side.sell
 		float notional = na
@@ -305,24 +596,67 @@ export type PathTrade<B: broker.PathBroker, P: portfolio.NetLedger>
 					notional := budget
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.entry, side, qty, this.idx, notional, na, stop, false, na, cashBudget, equityPercent, commissionIncluded))
 
+	/**
+	 * Attaches a fixed and/or trailing exit that closes the whole position opened by entry `fromEntry`.
+	 *
+	 * Give any of `stop`, `target` and the trailing pair `trailPrice` with `trailOffset`; for a long the stop must be below the target, for a short above it. Once active, the trailing stop takes the place of `stop` whenever it is tighter. `fromEntry` must name the pending entry or the entry that opened the position. One exit is attached at a time: resubmitting the same `commandId` and `fromEntry` replaces it, and closing the position cancels it.
+	 * @param commandId name of the exit; `cancel` takes it
+	 * @param fromEntry `commandId` of the entry the exit belongs to
+	 * @param stop stop price
+	 * @param target target price
+	 * @param activateOnEntryBar whether the exit may fill on the bar its entry fills
+	 * @param trailPrice price that activates the trailing stop
+	 * @param trailOffset distance the trailing stop keeps from the best price reached since activation
+	 * @returns the accepted order, or `na` when the broker rejects it on submission.
+	 */
 	broker.Order exit(string commandId, string fromEntry, float stop = na, float target = na, bool activateOnEntryBar = false, float trailPrice = na, float trailOffset = na) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = currentQuantity < 0.0 ? broker.Side.buy : broker.Side.sell
 		this.broker.submit_exit(broker.Command.new(commandId, broker.CommandKind.exit, side, na, this.idx, na, fromEntry, stop, activateOnEntryBar, target, trailPrice = trailPrice, trailOffset = trailOffset))
 
+	/**
+	 * Submits an order that closes the whole position at the next open.
+	 *
+	 * The broker rejects it if the position is flat when it would fill.
+	 * @param commandId name of the order; `cancel` takes it
+	 * @returns the accepted order, or `na` when the broker rejects it on submission.
+	 */
 	broker.Order close(string commandId) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = currentQuantity < 0.0 ? broker.Side.buy : broker.Side.sell
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.close, side, na, this.idx))
 
+	/**
+	 * Submits an order that moves the position to `target` at the next open.
+	 *
+	 * When it fills, the broker trades the difference between the target and the position, and cancels the order if there is none. Submitting again with the same `commandId` while it is pending replaces the target.
+	 * @param commandId name of the order; `cancel` takes it
+	 * @param target target from {@link trade.targetQuantity} or {@link trade.targetPercentOfEquity}
+	 * @returns the accepted order, or `na` when the broker rejects it on submission.
+	 */
 	broker.Order rebalance(string commandId, broker.PositionTarget target) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = target.value > 0.0 ? broker.Side.buy : target.value < 0.0 ? broker.Side.sell : currentQuantity > 0.0 ? broker.Side.sell : broker.Side.buy
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.rebalance, side, na, this.idx, positionTarget = target))
 
+	/**
+	 * Cancels the pending order or attached exit named `commandId`.
+	 *
+	 * Cancelling a pending entry also cancels an exit attached to it while no position is open.
+	 * @param commandId name the order was submitted with
+	 * @returns the number of orders cancelled; `0` when none matched.
+	 */
 	int cancel(string commandId) =>
 		this.broker.cancel(commandId)
 
+	/**
+	 * Ends the bar: marks the portfolio at `closePrice` and, on the last bar, expires pending orders.
+	 *
+	 * This family never fills orders at the close. Tea has no builtin that marks the last bar, so pass `false` unless the script knows it, for example from an input.
+	 * @param closePrice the bar's close
+	 * @param isLast whether this is the last bar of the data
+	 * @returns the orders expired on the last bar as a {@link broker.FinishResult}, or `na` when `isLast` is `false`.
+	 */
 	broker.FinishResult end_bar(float closePrice, bool isLast) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -334,35 +668,77 @@ export type PathTrade<B: broker.PathBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		expired
 
+	/** Returns the portfolio's cash balance. */
 	float cash() const =>
 		this.portfolio.cash()
 
+	/** Returns the signed position: positive when long, negative when short, `0` when flat. */
 	float position_quantity() const =>
 		this.portfolio.position_quantity()
 
+	/** Returns the average entry price of the open position, or `na` when flat. */
 	float position_avg_price() const =>
 		this.portfolio.position_avg_price()
 
+	/**
+	 * Returns the portfolio's metrics as one {@link portfolio.PortfolioSnapshot}.
+	 *
+	 * Its `equity` is from the latest `end_bar`.
+	 */
 	portfolio.PortfolioSnapshot snapshot() const =>
 		this.portfolio.snapshot()
 
+	/** Returns whether an order or attached exit is pending. */
 	bool has_pending() const =>
 		this.broker.has_pending()
 
+	/** Returns whether the pending order is an entry. */
 	bool has_pending_entry() const =>
 		this.broker.has_pending_entry()
 
+/**
+ * Coordinator for independently accounted lots whose orders execute immediately, without waiting for a later bar.
+ *
+ * Create it with {@link trade.lots}. `entry` and `close_trade` execute at the
+ * close captured by `begin_bar`; `close_trade_at_stop` executes when the bar
+ * reached the stop. Each entry opens a lot with its own trade id. Each bar,
+ * call `begin_bar`, then entries and closes, then `mark`. Keep per-lot exit
+ * rules, such as stops, in your own state keyed by the trade id. Use these
+ * methods rather than calling `broker` or `portfolio` directly.
+ * @category Coordinators
+ */
 export type LotTrade<B: broker.ImmediateBroker, P: portfolio.LotLedger>
+	/** Broker that validates and executes this coordinator's orders. */
 	B broker
+	/** Portfolio that records each lot. */
 	P portfolio
+	/** Bar index from the latest `begin_bar`, or `-1` before the first; later orders record it as `signalBarIndex`. */
 	int idx = -1
+	/** Close captured by the latest `begin_bar`; `entry`, `close_trade` and `mark` use it as their price. */
 	float closePrice = na
 
+	/**
+	 * Starts a bar by recording the close and bar index that later calls in the bar use.
+	 * @param closePrice the bar's close
+	 * @param barIndex the bar's index, normally `bar_index`
+	 * @returns `barIndex`.
+	 */
 	int begin_bar(float closePrice, int barIndex) =>
 		this.closePrice := closePrice
 		this.idx := barIndex
 		this.idx
 
+	/**
+	 * Opens a new lot at the captured close, first closing every lot on the opposite side.
+	 *
+	 * Give exactly one of `qty` and `notional`, positive; otherwise the entry is rejected before anything closes. If an opposite lot fails to close, the entry is skipped. The broker rejects entries beyond the portfolio's `maxOpenTrades`.
+	 * @param commandId name of the entry order
+	 * @param reversalCommandId name of the orders that close opposite lots
+	 * @param direction side of the new lot
+	 * @param qty quantity of the new lot
+	 * @param notional value of the new lot; the broker converts it to a quantity at the fill price
+	 * @returns the entry's fill, whose `tradeId` identifies the new lot, or `na` when no lot opened.
+	 */
 	broker.Fill entry(string commandId, string reversalCommandId, Direction direction, float qty = na, float notional = na) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -395,6 +771,14 @@ export type LotTrade<B: broker.ImmediateBroker, P: portfolio.LotLedger>
 		this.portfolio := currentPortfolio
 		execution
 
+	/**
+	 * Closes the open lot `tradeId` now, at the captured close.
+	 *
+	 * The close is rejected when no open lot has that id.
+	 * @param commandId name of the closing order
+	 * @param tradeId trade id of the lot, from its entry fill
+	 * @returns the closing fill, or `na` when the close was rejected.
+	 */
 	broker.Fill close_trade(string commandId, int tradeId) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -421,6 +805,19 @@ export type LotTrade<B: broker.ImmediateBroker, P: portfolio.LotLedger>
 		this.portfolio := currentPortfolio
 		execution
 
+	/**
+	 * Closes lot `tradeId` if this bar reached `stopPrice`; the broker decides the fill price.
+	 *
+	 * A long lot's stop is reached when the low is at or below it, a short lot's when the high is at or above it. The fill is based on the open when the bar gapped past the stop, otherwise on the stop. If the stop was not reached, nothing happens; if it was, the close is rejected when the lot is missing or was not opened on `entrySide`.
+	 * @param commandId name of the closing order
+	 * @param tradeId trade id of the lot, from its entry fill
+	 * @param entrySide side the lot was opened on: `broker.Side.buy` for a long lot, `broker.Side.sell` for a short one
+	 * @param openPrice the bar's open
+	 * @param highPrice the bar's high
+	 * @param lowPrice the bar's low
+	 * @param stopPrice the lot's stop level
+	 * @returns the closing fill, or `na` when the stop was not reached or the close was rejected.
+	 */
 	broker.Fill close_trade_at_stop(string commandId, int tradeId, broker.Side entrySide, float openPrice, float highPrice, float lowPrice, float stopPrice) =>
 		broker.Fill execution = na
 		closeSide = entrySide == broker.Side.buy ? broker.Side.sell : broker.Side.buy
@@ -450,44 +847,230 @@ export type LotTrade<B: broker.ImmediateBroker, P: portfolio.LotLedger>
 			this.portfolio := currentPortfolio
 		execution
 
+	/**
+	 * Values the lots at the close captured by `begin_bar`, updating equity, peak equity and drawdown.
+	 * @returns the new equity.
+	 */
 	float mark() =>
 		currentPortfolio = this.portfolio
 		value = currentPortfolio.mark(this.closePrice)
 		this.portfolio := currentPortfolio
 		value
 
+	/** Returns the portfolio's cash balance. */
 	float cash() const =>
 		this.portfolio.cash()
 
+	/** Returns the signed total of the open lots: positive when long, negative when short. */
 	float position_quantity() const =>
 		this.portfolio.position_quantity()
 
+	/** Returns the average entry price of the open lots, or `na` when none are open. */
 	float position_avg_price() const =>
 		this.portfolio.position_avg_price()
 
+	/**
+	 * Returns the portfolio's metrics as one {@link portfolio.PortfolioSnapshot}.
+	 *
+	 * Its `equity` is from the latest `mark`.
+	 */
 	portfolio.PortfolioSnapshot snapshot() const =>
 		this.portfolio.snapshot()
 
+/**
+ * Sizes an entry as a percentage of the portfolio's marked equity, read when `entry` is called.
+ *
+ * Marked equity comes from the latest `mark` or `end_bar`, or is the initial
+ * cash before the first one. With `commissionIncluded`, the commission is paid
+ * out of the budget; otherwise it is charged on top. If the percentage is not
+ * above `0` and at most `100`, or the marked equity is not positive, the
+ * broker rejects the order when it would fill.
+ * @param percent Percentage of equity, above `0` and at most `100`.
+ * @param commissionIncluded Whether the budget also pays the commission.
+ * @returns A {@link trade.Sizing} for the `sizing` argument of `entry`.
+ * @category Sizing and targets
+ */
 export percentOfEquity(float percent, bool commissionIncluded = false) =>
 	Sizing.new(SizingKind.percentOfEquity, percent, commissionIncluded)
 
+/**
+ * Sizes an entry as a percentage of equity at the moment the order fills.
+ *
+ * The broker values equity as cash plus the position at the matched price
+ * before slippage; when the entry reverses a position, that is after the
+ * closing fill. With `commissionIncluded`, the commission is paid out of the
+ * budget; otherwise it is charged on top. If the percentage is not above `0`
+ * and at most `100`, the broker rejects the order when it would fill.
+ * @param percent Percentage of equity, above `0` and at most `100`.
+ * @param commissionIncluded Whether the budget also pays the commission.
+ * @returns A {@link trade.Sizing} for the `sizing` argument of `entry`.
+ * @category Sizing and targets
+ */
 export percentOfEquityAtFill(float percent, bool commissionIncluded = false) =>
 	Sizing.new(SizingKind.percentOfEquityAtFill, percent, commissionIncluded)
 
+/**
+ * Creates a rebalance target for an exact signed position size.
+ * @param quantity Target position: positive for long, negative for short, `0` for flat.
+ * @returns A {@link broker.PositionTarget} for a coordinator's `rebalance`.
+ * @category Sizing and targets
+ */
 export targetQuantity(float quantity) =>
 	broker.PositionTarget.new(broker.PositionTargetKind.quantity, quantity)
 
+/**
+ * Creates a rebalance target worth a signed percentage of equity when the order fills.
+ *
+ * The broker rejects a target beyond `100` percent in either direction when it
+ * is submitted, and rejects the order when equity at the fill price is not
+ * positive.
+ * @param percent Target position value as a percentage of equity, from `-100` to `100`; negative means short.
+ * @returns A {@link broker.PositionTarget} for a coordinator's `rebalance`.
+ * @category Sizing and targets
+ */
 export targetPercentOfEquity(float percent) =>
 	broker.PositionTarget.new(broker.PositionTargetKind.percentOfEquity, percent)
 
+/**
+ * Creates a coordinator whose orders fill at the next bar's open, or at this bar's close when enabled.
+ *
+ * Each bar, call `begin_bar(open, bar_index)` before your signal logic and
+ * `end_bar(close, false)` after it. With a broker created with
+ * `processOrdersOnClose = true`, `end_bar` also fills orders at the close,
+ * including orders submitted earlier in the same bar. A broker or portfolio
+ * without the required methods is a compile error.
+ *
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * upper = ta.highest(high, 20)
+ * lower = ta.lowest(low, 20)
+ *
+ * var strat = trade.nextOpen(
+ *     broker.new(processOrdersOnClose = true),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * strat.begin_bar(open, bar_index)
+ * if close > upper[1] and strat.position_quantity() == 0.0
+ *     strat.entry("Breakout", trade.Direction.long, sizing = trade.percentOfEquity(50.0))
+ * if close < lower[1] and strat.position_quantity() > 0.0
+ *     strat.close("Breakdown")
+ * // processOrdersOnClose lets end_bar fill these orders at this bar's close.
+ * strat.end_bar(close, false)
+ * ```
+ * @param broker A broker with the {@link broker.NextOpenBroker} methods, normally from {@link broker.new}.
+ * @param portfolio A portfolio with the {@link portfolio.NetLedger} methods, normally from {@link portfolio.new}.
+ * @returns A {@link trade.NextOpenTrade} that owns both values.
+ * @category Creating coordinators
+ */
 export nextOpen(broker, portfolio) =>
 	NextOpenTrade.new(broker, portfolio)
 
+/**
+ * Creates a coordinator that matches orders and one stop/target exit against each bar's high-low range.
+ *
+ * Each bar, call `begin_bar(open, high, low, bar_index)`, submit orders and
+ * exits, then call `end_bar(close, false)`. Use {@link trade.path} instead
+ * when the order of the high and low matters or you need trailing exits.
+ *
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * upper = ta.highest(high, 20)
+ *
+ * var strat = trade.ohlc(broker.new(), portfolio.new(initialCash = 10000.0))
+ * strat.begin_bar(open, high, low, bar_index)
+ * if strat.position_quantity() == 0.0 and not na(upper)
+ *     // Resubmitting the same ids each bar moves the pending stop entry and its exit.
+ *     strat.entry("Breakout", trade.Direction.long, qty = 10.0, stop = upper)
+ *     strat.exit("Bracket", fromEntry = "Breakout", stop = upper * 0.95, target = upper * 1.1)
+ * strat.end_bar(close, false)
+ * ```
+ * @param broker A broker with the {@link broker.OhlcBroker} methods, normally from {@link broker.new}.
+ * @param portfolio A portfolio with the {@link portfolio.NetLedger} methods, normally from {@link portfolio.new}.
+ * @returns A {@link trade.OhlcTrade} that owns both values.
+ * @category Creating coordinators
+ */
 export ohlc(broker, portfolio) =>
 	OhlcTrade.new(broker, portfolio)
 
+/**
+ * Creates a coordinator that replays each bar as an ordered price path, with fixed and trailing exits.
+ *
+ * Each bar, call `begin_bar(open, high, low, close, bar_index)`, attach or
+ * adjust exits, call `continue_bar(open, high, low, close)`, submit new
+ * orders, then call `end_bar(close, false)`.
+ *
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * fast = ta.ema(close, 10)
+ * slow = ta.ema(close, 30)
+ * crossedUp = ta.crossover(fast, slow)
+ *
+ * var strat = trade.path(broker.new(), portfolio.new(initialCash = 10000.0))
+ * fills = strat.begin_bar(open, high, low, close, bar_index)
+ * if not na(fills.pending) and strat.position_quantity() > 0.0
+ *     // Derive the exit from the entry price; continue_bar checks the rest of this bar.
+ *     entryPrice = strat.position_avg_price()
+ *     strat.exit("Trail", fromEntry = "Long", stop = entryPrice * 0.95, activateOnEntryBar = true, trailPrice = entryPrice * 1.05, trailOffset = entryPrice * 0.02)
+ * strat.continue_bar(open, high, low, close)
+ * if crossedUp and strat.position_quantity() == 0.0
+ *     strat.entry("Long", trade.Direction.long, qty = 10.0)
+ * strat.end_bar(close, false)
+ * ```
+ * @param broker A broker with the {@link broker.PathBroker} methods, normally from {@link broker.new}.
+ * @param portfolio A portfolio with the {@link portfolio.NetLedger} methods, normally from {@link portfolio.new}.
+ * @returns A {@link trade.PathTrade} that owns both values.
+ * @category Creating coordinators
+ */
 export path(broker, portfolio) =>
 	PathTrade.new(broker, portfolio)
 
+/**
+ * Creates a coordinator that opens and closes independently accounted lots immediately, within the current bar.
+ *
+ * Each bar, call `begin_bar(close, bar_index)`, then `entry`, `close_trade` or
+ * `close_trade_at_stop`, then `mark()`. Each entry fill carries the `tradeId`
+ * that later closes refer to.
+ *
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * basis = ta.sma(close, 20)
+ * crossedUp = ta.crossover(close, basis)
+ * crossedDown = ta.crossunder(close, basis)
+ *
+ * var strat = trade.lots(broker.new(), portfolio.lots(initialCash = 10000.0))
+ * var int lotId = 0
+ * var float lotStop = na
+ * strat.begin_bar(close, bar_index)
+ * if lotId > 0
+ *     stopFill = strat.close_trade_at_stop("Stop", lotId, broker.Side.buy, open, high, low, lotStop)
+ *     if not na(stopFill)
+ *         lotId := 0
+ * if lotId > 0 and crossedDown
+ *     strat.close_trade("Exit", lotId)
+ *     lotId := 0
+ * if lotId == 0 and crossedUp
+ *     entryFill = strat.entry("Long", "Cover", trade.Direction.long, notional = 1000.0)
+ *     if not na(entryFill)
+ *         lotId := entryFill.tradeId
+ *         lotStop := close * 0.97
+ * strat.mark()
+ * ```
+ * @param broker A broker with the {@link broker.ImmediateBroker} methods, normally from {@link broker.new}.
+ * @param portfolio A portfolio with the {@link portfolio.LotLedger} methods, normally from {@link portfolio.lots}.
+ * @returns A {@link trade.LotTrade} that owns both values.
+ * @category Creating coordinators
+ */
 export lots(broker, portfolio) =>
 	LotTrade.new(broker, portfolio)

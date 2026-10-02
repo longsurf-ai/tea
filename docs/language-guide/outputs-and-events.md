@@ -11,7 +11,7 @@ starting from an empty list. Emissions capture the value at that instant.
 
 Visual helpers follow this same output model. `plot("price", close, "Price")`
 returns and emits a plot description. Its ID is `price`; its title is `Price`.
-Consult [visual declarations](../reference/libraries/visual.md) for exact options.
+Consult [plots and alerts](../reference/builtins/plots.md) for exact options.
 
 ## Alert events
 

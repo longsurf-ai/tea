@@ -1059,3 +1059,21 @@ describe('enumeration for tooling', () => {
     ).toBe(false);
   });
 });
+
+describe('tuple declarations', () => {
+  test.each(['var', 'varip', 'const'])(
+    '%s tuple declarations are rejected while checking',
+    mode => {
+      const result = checkText(`${mode} [a, b] = [close, open]\nemit "a" a\n`);
+      expect(result.errors.map(error => error.msg)).toContain(
+        `${mode} tuple declarations are not supported yet`,
+      );
+    },
+  );
+
+  test('plain tuple declarations destructure', () => {
+    expect(checkText('[a, b] = [close, open]\nemit "a" a\n').errors).toEqual(
+      [],
+    );
+  });
+});

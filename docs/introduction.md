@@ -49,7 +49,7 @@ Feel free to jump straight to the part you need.
 | Another symbol or timeframe                                        | [Requests](requests.md)                                                           |
 | Reusable source modules                                            | [Imports](imports.md)                                                             |
 | Aliasing, collections, history, realtime and rollback              | [Memory model](memory-model.md)                                                   |
-| Exact built-in signatures and supported library exports            | [Reference](reference/overview.md)                                                |
+| Exact syntax, built-ins, libraries, the `tea` command and the API  | [Reference](reference/overview.md)                                                |
 | A complete first program                                           | [Write your first indicator](getting-started/Write%20your%20first%20indicator.md) |
 
 
