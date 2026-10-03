@@ -203,3 +203,16 @@ describe('ta correlation', () => {
     expect(values).toEqual([NaN, 1]);
   });
 });
+
+describe('ta lengths', () => {
+  test('a length that reaches 0 while running stops the run', async () => {
+    const sink = new OutputCapture();
+    await expect(
+      executeTestProgram(mustBuild('emit "s" ta.sma(close, bar_index)'), {
+        stream: arrayStream({close: [1, 2, 3]}),
+        sink,
+      }),
+    ).rejects.toThrow('RUNTIME_ERROR: ta.sma: length must be at least 1');
+    expect(sink.emissions).toEqual([]);
+  });
+});

@@ -157,8 +157,9 @@ const BUILTIN_PAGES: readonly BuiltinPage[] = [
   {
     slug: 'core',
     title: 'Core functions',
-    description: 'Missing values, conversions and script declarations.',
-    intro: 'Global functions available in every script without a namespace.',
+    description:
+      'Missing values, conversions, script declarations and script errors.',
+    intro: 'Functions available in every script without an import.',
     natives: name =>
       [
         'na',
@@ -166,6 +167,7 @@ const BUILTIN_PAGES: readonly BuiltinPage[] = [
         'int',
         'float',
         'str.tostring',
+        'runtime.error',
         'indicator',
         'library',
       ].includes(name),

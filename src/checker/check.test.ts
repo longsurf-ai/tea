@@ -963,13 +963,49 @@ describe('diagnostics', () => {
     );
   });
 
+  test('a runtime.error that certainly runs is a compile error at the call', () => {
+    const errorsOf = (src: string) =>
+      checkText(src).errors.map(error => error.msg);
+    const guarded = [
+      'f(int n) =>',
+      '    if n <= 0',
+      '        runtime.error("n must be positive")',
+      '    n * 2',
+    ];
+    // Constant conditions that select the call.
+    expect(errorsOf('if true\n    runtime.error("always")')).toEqual([
+      'always',
+    ]);
+    expect(
+      errorsOf(
+        'if false\n    runtime.error("dead")\nelse if true\n    runtime.error("else")',
+      ),
+    ).toEqual(['else']);
+    expect(errorsOf([...guarded, 'x = f(0)'].join('\n'))).toEqual([
+      'n must be positive',
+    ]);
+    expect(errorsOf('x = ta.sma(close, 0)')).toEqual([
+      'ta.sma: length must be at least 1',
+    ]);
+    // Nothing known for sure: checked only when it runs.
+    for (const source of [
+      [...guarded, 'x = f(3)', 'y = f(bar_index)'].join('\n'),
+      'if close > 100\n    runtime.error("series")',
+      'for i = 0 to 2\n    if true\n        runtime.error("loop")',
+      'g(int n) =>\n    if close > 1\n        return 1\n    if n <= 0\n        runtime.error("after return")\n    2\nx = g(0)',
+      'x = ta.sma(close, bar_index)',
+      'length = input.int(0)\nx = ta.sma(close, length)',
+    ]) {
+      expect(errorsOf(source)).toEqual([]);
+    }
+  });
+
   test('switch matches by ==, so it rejects what == rejects', () => {
     const errorsOf = (src: string) =>
       checkText(src).errors.map(error => error.msg);
     const subjects = {
-      'P': 'struct P\n    float x\np = P.new(1)\nx = switch p\n    p => 1\n    => 0',
-      'array<int>':
-        'a = array.from(1, 2)\nx = switch a\n    a => 1\n    => 0',
+      P: 'struct P\n    float x\np = P.new(1)\nx = switch p\n    p => 1\n    => 0',
+      'array<int>': 'a = array.from(1, 2)\nx = switch a\n    a => 1\n    => 0',
       '[int, int]': 'x = switch [1, 2]\n    [1, 2] => 1\n    => 0',
     };
     for (const [type, source] of Object.entries(subjects)) {

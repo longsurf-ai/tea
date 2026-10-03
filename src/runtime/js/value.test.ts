@@ -1,7 +1,17 @@
 // Purpose: Captured-value arithmetic, type domains, and transactional series contracts.
 
 import {expect, expectTypeOf, test} from 'vitest';
-import {colors, historyDepth, math, na, nz, rangeNext, str} from '../native';
+import {
+  colors,
+  historyDepth,
+  math,
+  na,
+  nz,
+  rangeNext,
+  runtime,
+  str,
+} from '../native';
+import {ExecutionError} from '../errors';
 import {Input, Series} from './series';
 import {Context} from './context';
 import {Module} from '../module-binding';
@@ -127,6 +137,9 @@ test('native methods share numeric, color, missing-value, and progress rules', (
   expect(math.floor(float(-1.1)).value).toBe(-2);
   expect(math.round(float(1.235), int(2)).value).toBe(1.24);
   expect(math.sqrt(float(-1)).value).toBeNaN();
+  expect(() => runtime.error(text('stop'))).toThrow(
+    new ExecutionError('RUNTIME_ERROR', 'stop'),
+  );
   // Math.pow(NaN, 0) is 1; an na base still gives na.
   expect(math.pow(float(NaN), int(0)).value).toBeNaN();
   expect(math.pow(int(NaN), int(0)).value).toBeNaN();

@@ -54,8 +54,8 @@
           "kind": "entries",
           "id": "reference/builtins/core",
           "title": "Core functions",
-          "description": "Missing values, conversions and script declarations.",
-          "intro": "Global functions available in every script without a namespace.",
+          "description": "Missing values, conversions, script declarations and script errors.",
+          "intro": "Functions available in every script without an import.",
           "commonParameters": [],
           "entries": [
             {
@@ -208,6 +208,25 @@
               "returns": "The text form of `value`; `\"NaN\"` when `value` is `na`.",
               "members": null,
               "body": "Numbers use the shortest form that reads back as the same number: `3.0` gives `\"3\"`, `0.1 + 0.2` gives `\"0.30000000000000004\"`, and very large or small numbers use exponent notation such as `\"1e+21\"`. There is no format argument; round with [`math.round`](#math.round) first to limit the decimals. A `bool` gives `\"true\"` or `\"false\"`, a color its hex code such as `\"#FF5252\"` (with two more digits when it is transparent), and an enum member its title, or its name when it has no title.\n\n```tea\nemit \"label\" \"Close: \" + str.tostring(math.round(close, 2))\n```"
+            },
+            {
+              "id": "runtime.error",
+              "symbols": ["runtime.error"],
+              "kind": "function",
+              "category": "Script control",
+              "summary": "Stops the script with an error message.",
+              "signatures": ["runtime.error(message: string) → void"],
+              "parameters": [
+                {
+                  "name": "message",
+                  "type": "series string",
+                  "defaultValue": null,
+                  "description": "The error message."
+                }
+              ],
+              "returns": null,
+              "members": null,
+              "body": "When a call runs, the run stops: no output is published for that bar or any later one, and the host receives the message. When the conditions around a call are all constants that make it run, it is a compile error at the call instead, so `ta.sma(close, 0)` is rejected where it is written. A call inside a loop, inside a `switch`, or after a statement that can leave the block early is only checked when it runs.\n\n```tea\nlength = input.int(14)\nif length < 2\n    runtime.error(\"length must be at least 2\")\n```"
             }
           ]
         },

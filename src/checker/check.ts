@@ -243,6 +243,11 @@ class Checker {
   private methodErrorAttempts = 0;
   private validatingMethod = false;
   private returnValues: TypeAndValue[] | null = null;
+  // Whether the code being checked runs whenever its script or function body
+  // does: every enclosing `if` has a constant condition that selects it, and
+  // no loop, `switch` arm or earlier `return` stands in the way. A
+  // `runtime.error` that certainly runs is a compile error.
+  private certain = true;
   private readonly reportedMethodDiagnostics = new Map<
     MethodObject,
     Set<string>
@@ -3678,15 +3683,19 @@ class Checker {
     }
     const savedFlowQualifier = this.flowQualifier;
     this.flowQualifier = joinQualifiers(savedFlowQualifier, condTv.qualifier);
+    const savedCertain = this.certain;
+    this.certain = savedCertain && condTv.value === true;
     const thenTv = this.checkBlock(e.then);
     let elseType: Type | null = null;
     if (e.else !== null) {
+      this.certain = savedCertain && condTv.value === false;
       const elseTv =
         e.else.kind === NodeKind.IfExpr
           ? this.checkExpr(e.else)
           : this.checkBlock(e.else);
       elseType = elseTv.type;
     }
+    this.certain = savedCertain;
     this.flowQualifier = savedFlowQualifier;
     // Mismatched branch types are legal in statement position; the structure
     // then simply has no value, and value-position consumers report that.
@@ -3837,6 +3846,8 @@ class Checker {
     }
     let type: Type | null = null;
     let sawDefault = false;
+    const savedCertain = this.certain;
+    this.certain = false;
     for (const [index, arm] of e.arms.entries()) {
       if (arm.pattern === null) {
         if (sawDefault) {
@@ -3877,6 +3888,7 @@ class Checker {
       if (!alwaysReturns(arm.body))
         type = type === null ? armTv.type : unifyOrVoid(type, armTv.type);
     }
+    this.certain = savedCertain;
     this.flowQualifier = savedFlowQualifier;
     return {type: type ?? VoidType, qualifier: Qualifier.Series, value: null};
   }
@@ -3888,8 +3900,14 @@ class Checker {
     this.blockDepth += 1;
     let last: TypeAndValue | null = null;
     let qualifier: Qualifier = Qualifier.Const;
+    const savedCertain = this.certain;
     for (const [i, stmt] of b.stmtList.entries()) {
+      const returns = this.returnValues?.length ?? 0;
       const tv = this.checkStmt(stmt);
+      // After a statement that may return, the rest of the block may not run.
+      if ((this.returnValues?.length ?? 0) > returns) {
+        this.certain = false;
+      }
       if (tv !== null) {
         // A block's result may be consumed at bind time. Its qualifier must
         // therefore account for every evaluated statement, not only the last
@@ -3903,6 +3921,7 @@ class Checker {
     }
     this.blockDepth -= 1;
     this.scope = savedScope;
+    this.certain = savedCertain;
     const result = last ?? VOID_TV;
     return {...result, qualifier};
   }
@@ -4580,10 +4599,13 @@ class Checker {
     this.instanceStack.push(instance);
     const savedReturns = this.returnValues;
     this.returnValues = [];
+    const savedCertain = this.certain;
+    this.certain = true;
     let bodyTv =
       decl.body.kind === NodeKind.Block
         ? this.checkBlock(decl.body)
         : this.checkExpr(decl.body);
+    this.certain = savedCertain;
     const returned = this.returnValues;
     this.returnValues = savedReturns;
     this.instanceStack.pop();
@@ -4772,6 +4794,22 @@ class Checker {
           } else {
             receiver = {mode: 'value', value: checked};
           }
+        }
+        if (
+          candidate.name === 'runtime.error' &&
+          this.certain &&
+          this.loopDepth === 0 &&
+          !this.validatingMethod
+        ) {
+          const message = outcome.args[0]
+            ? this.tvOf(outcome.args[0]).value
+            : null;
+          this.error(
+            c.pos,
+            typeof message === 'string'
+              ? message
+              : 'runtime.error always runs here',
+          );
         }
         const resolved: NativeCall = {
           kind: CallKind.Native,

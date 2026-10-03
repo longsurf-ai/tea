@@ -782,6 +782,7 @@ function lowerNative(
         : '';
     return `str.tostring(${args[0]}${titles})`;
   }
+  if (native === 'runtime.error') return `runtime.error(${args[0]})`;
   if (native === 'color.new' || native === 'color.rgb')
     return `colors.${native.slice(6)}(${args.join(', ')})`;
   if (native.startsWith('math.')) {

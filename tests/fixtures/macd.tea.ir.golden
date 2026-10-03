@@ -76,6 +76,13 @@ func ma(source: series float, length: input int, maType: input string): series f
           Read name:length: input int
 func ta.ema(source#1: series float, length#1: input int): series float
   body: BlockExpr: series float
+    IfExpr: series void
+      cond: Binary Lt: input bool
+        Read name:length#1: input int
+        Const 1: const int
+      then: BlockExpr: const void
+        CallNative runtime.error write: series void
+          Const "ta.ema: length must be at least 1": const string
     Assign
       target: Read name:alpha: input float
       value: Binary Div: input float
@@ -105,6 +112,13 @@ func ta.ema(source#1: series float, length#1: input int): series float
     value: Read name:e: series float
 func ta.sma(source#2: series float, length#2: input int): series float
   body: BlockExpr: series float
+    IfExpr: series void
+      cond: Binary Lt: input bool
+        Read name:length#2: input int
+        Const 1: const int
+      then: BlockExpr: const void
+        CallNative runtime.error write: series void
+          Const "ta.sma: length must be at least 1": const string
     Assign
       target: Read name:sum: series float
       value: Const 0: const float

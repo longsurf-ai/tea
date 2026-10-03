@@ -30,8 +30,10 @@ describe('generic WGSL capability boundary', () => {
       seriesInputCount: 2,
       builtinInputCount: 1,
       persistentRootCount: 1,
-      functionCount: 38,
-      mutableMethodCount: 15,
+      // end_bar(close, false) never runs BrokerEmulator.finish, so the
+      // program does not contain it.
+      functionCount: 37,
+      mutableMethodCount: 14,
       callSiteSlotCount: 14,
       outputCount: 13,
       resultChannelCount: 8,
@@ -59,6 +61,12 @@ describe('generic WGSL capability boundary', () => {
         source: '\nvar float keep = 1.0\nemit "output1" keep',
         code: 'series-row-count-unavailable',
       },
+      // A length known only at bind time keeps ta's runtime.error guard,
+      // which has no GPU rule yet; a constant length leaves none.
+      {
+        source: '\nlength = input.int(2)\nemit "output0" ta.sma(close, length)',
+        code: 'native-call-lowering-unimplemented',
+      },
     ] as const;
 
     for (const entry of cases) {
@@ -66,6 +74,13 @@ describe('generic WGSL capability boundary', () => {
       expect(report.eligible).toBe(false);
       expect(report.issues.map(issue => issue.code)).toContain(entry.code);
     }
+  });
+
+  test('a constant ta length leaves no guard for the GPU', () => {
+    expect(
+      analyzeWgslEligibility(mustBuild('\nemit "output0" ta.sma(close, 3)'))
+        .eligible,
+    ).toBe(true);
   });
 
   test('accepts declaration-site persistent initialization from the first active row', () => {

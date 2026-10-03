@@ -118,6 +118,7 @@ export function generate(program: Program): string {
     'math',
     'colors',
     'str',
+    'runtime',
     'na',
     'nz',
     'historyDepth',

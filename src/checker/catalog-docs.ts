@@ -187,6 +187,18 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       ),
       category: 'Conversions',
     },
+    'runtime.error': {
+      summary: 'Stops the script with an error message.',
+      params: {message: 'The error message.'},
+      details:
+        'When a call runs, the run stops: no output is published for that bar or any later one, and the host receives the message. When the conditions around a call are all constants that make it run, it is a compile error at the call instead, so `ta.sma(close, 0)` is rejected where it is written. A call inside a loop, inside a `switch`, or after a statement that can leave the block early is only checked when it runs.',
+      example: lines(
+        'length = input.int(14)',
+        'if length < 2',
+        '    runtime.error("length must be at least 2")',
+      ),
+      category: 'Script control',
+    },
 
     // ---- input ----------------------------------------------------------------
     'input.int': {

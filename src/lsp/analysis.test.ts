@@ -124,6 +124,14 @@ describe('errors positioned in a library body', () => {
     expect(rendered(analysis)).toEqual([`1:6-12 ${IN_EMA}`]);
   });
 
+  test('an invalid constant length is marked on the call that passes it', () => {
+    const [line, ...rest] = rendered(analyzeText('s = ta.sma(close, 0)\n'));
+    expect(rest).toEqual([]);
+    expect(line).toMatch(
+      /^0:4-10 in ta\.sma \(tea-lib\/ta\.tea:\d+:\d+\): ta\.sma: length must be at least 1$/,
+    );
+  });
+
   test('every error of one call is kept, on the same range', () => {
     const lines = rendered(analyzeText('s = ta.variance("x", 3)\n'));
     expect(lines.length).toBe(2);

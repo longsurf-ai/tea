@@ -48,6 +48,8 @@ library("ta")
  * @category Moving averages
  */
 export sma(source, int length) =>
+	if length < 1
+		runtime.error("ta.sma: length must be at least 1")
 	sum = 0.0
 	for i = 0 to length - 1
 		sum += source[i]
@@ -69,6 +71,8 @@ export sma(source, int length) =>
  * @category Moving averages
  */
 export ema(source, int length) =>
+	if length < 1
+		runtime.error("ta.ema: length must be at least 1")
 	alpha = 2.0 / (length + 1)
 	var float e = na
 	e := na(e) ? source : alpha * source + (1 - alpha) * e
@@ -90,6 +94,8 @@ export ema(source, int length) =>
  * @category Moving averages
  */
 export rma(source, int length) =>
+	if length < 1
+		runtime.error("ta.rma: length must be at least 1")
 	alpha = 1.0 / length
 	var float r = na
 	var float seedSum = 0.0
@@ -117,6 +123,8 @@ export rma(source, int length) =>
  * @category Moving averages
  */
 export wma(source, int length) =>
+	if length < 1
+		runtime.error("ta.wma: length must be at least 1")
 	norm = 0.0
 	sum = 0.0
 	for i = 0 to length - 1
@@ -139,6 +147,8 @@ export wma(source, int length) =>
  * @category Moving averages
  */
 export vwma(source, int length) =>
+	if length < 1
+		runtime.error("ta.vwma: length must be at least 1")
 	sma(source * volume, length) / sma(volume, length)
 
 /**
@@ -156,6 +166,8 @@ export vwma(source, int length) =>
  * @category Moving averages
  */
 export hma(source, int length) =>
+	if length < 1
+		runtime.error("ta.hma: length must be at least 1")
 	wma(2 * wma(source, math.floor(length / 2)) - wma(source, length), math.round(math.sqrt(length)))
 
 /**
@@ -190,6 +202,8 @@ export swma(source) =>
  * @category Moving averages
  */
 export alma(source, int length, offset, sigma) =>
+	if length < 1
+		runtime.error("ta.alma: length must be at least 1")
 	m = offset * (length - 1)
 	s = float(length) / sigma
 	norm = 0.0
@@ -217,6 +231,8 @@ export alma(source, int length, offset, sigma) =>
  * @category Moving averages
  */
 export linreg(source, int length, int offset) =>
+	if length < 1
+		runtime.error("ta.linreg: length must be at least 1")
 	sumX = 0.0
 	sumY = 0.0
 	sumXY = 0.0
@@ -247,6 +263,8 @@ export linreg(source, int length, int offset) =>
  * @category Moving averages
  */
 export cog(source, int length) =>
+	if length < 1
+		runtime.error("ta.cog: length must be at least 1")
 	sum = 0.0
 	num = 0.0
 	for i = 0 to length - 1
@@ -267,6 +285,8 @@ export cog(source, int length) =>
  * @category Momentum
  */
 export change(source, int length = 1) =>
+	if length < 1
+		runtime.error("ta.change: length must be at least 1")
 	source - source[length]
 
 /**
@@ -281,6 +301,8 @@ export change(source, int length = 1) =>
  * @category Momentum
  */
 export mom(source, int length) =>
+	if length < 1
+		runtime.error("ta.mom: length must be at least 1")
 	source - source[length]
 
 /**
@@ -294,6 +316,8 @@ export mom(source, int length) =>
  * @category Momentum
  */
 export roc(source, int length) =>
+	if length < 1
+		runtime.error("ta.roc: length must be at least 1")
 	100.0 * (source - source[length]) / source[length]
 
 /**
@@ -310,6 +334,8 @@ export roc(source, int length) =>
  * @category Momentum
  */
 export rsi(source, int length) =>
+	if length < 1
+		runtime.error("ta.rsi: length must be at least 1")
 	up = rma(math.max(change(source), 0), length)
 	down = rma(math.max(-change(source), 0), length)
 	down == 0 ? 100.0 : up == 0 ? 0.0 : 100.0 - 100.0 / (1 + up / down)
@@ -327,6 +353,8 @@ export rsi(source, int length) =>
  * @category Momentum
  */
 export cmo(source, int length) =>
+	if length < 1
+		runtime.error("ta.cmo: length must be at least 1")
 	sumUp = 0.0
 	sumDown = 0.0
 	for i = 0 to length - 1
@@ -349,6 +377,10 @@ export cmo(source, int length) =>
  * @category Momentum
  */
 export tsi(source, int shortLength, int longLength) =>
+	if shortLength < 1
+		runtime.error("ta.tsi: shortLength must be at least 1")
+	if longLength < 1
+		runtime.error("ta.tsi: longLength must be at least 1")
 	diff = change(source)
 	100 * (ema(ema(diff, longLength), shortLength) / ema(ema(math.abs(diff), longLength), shortLength))
 
@@ -378,6 +410,8 @@ export tsi(source, int shortLength, int longLength) =>
  * @category Momentum
  */
 export stoch(source, h, l, int length) =>
+	if length < 1
+		runtime.error("ta.stoch: length must be at least 1")
 	lowestLow = lowest(l, length)
 	100.0 * (source - lowestLow) / (highest(h, length) - lowestLow)
 
@@ -394,6 +428,8 @@ export stoch(source, h, l, int length) =>
  * @category Momentum
  */
 export cci(source, int length) =>
+	if length < 1
+		runtime.error("ta.cci: length must be at least 1")
 	mean = sma(source, length)
 	md = 0.0
 	for i = 0 to length - 1
@@ -414,6 +450,8 @@ export cci(source, int length) =>
  * @category Momentum
  */
 export wpr(int length) =>
+	if length < 1
+		runtime.error("ta.wpr: length must be at least 1")
 	upper = highest(high, length)
 	lower = lowest(low, length)
 	100 * (close - upper) / (upper - lower)
@@ -434,6 +472,8 @@ export wpr(int length) =>
  * @category Momentum
  */
 export mfi(source, int length) =>
+	if length < 1
+		runtime.error("ta.mfi: length must be at least 1")
 	upper = 0.0
 	lower = 0.0
 	for i = 0 to length - 1
@@ -468,6 +508,12 @@ export mfi(source, int length) =>
  * @category Momentum
  */
 export macd(source, int fastLength, int slowLength, int signalLength) =>
+	if fastLength < 1
+		runtime.error("ta.macd: fastLength must be at least 1")
+	if slowLength < 1
+		runtime.error("ta.macd: slowLength must be at least 1")
+	if signalLength < 1
+		runtime.error("ta.macd: signalLength must be at least 1")
 	fast = ema(source, fastLength)
 	slow = ema(source, slowLength)
 	macdLine = fast - slow
@@ -499,6 +545,10 @@ export macd(source, int fastLength, int slowLength, int signalLength) =>
  * @category Momentum
  */
 export dmi(int diLength, int adxSmoothing) =>
+	if diLength < 1
+		runtime.error("ta.dmi: diLength must be at least 1")
+	if adxSmoothing < 1
+		runtime.error("ta.dmi: adxSmoothing must be at least 1")
 	up = change(high)
 	down = -change(low)
 	trur = rma(tr(true), diLength)
@@ -540,6 +590,8 @@ export tr(handleNa = true) =>
  * @category Volatility and channels
  */
 export atr(int length) =>
+	if length < 1
+		runtime.error("ta.atr: length must be at least 1")
 	rma(tr(true), length)
 
 /**
@@ -553,6 +605,8 @@ export atr(int length) =>
  * @category Volatility and channels
  */
 export dev(source, int length) =>
+	if length < 1
+		runtime.error("ta.dev: length must be at least 1")
 	mean = sma(source, length)
 	sum = 0.0
 	for i = 0 to length - 1
@@ -571,6 +625,8 @@ export dev(source, int length) =>
  * @category Volatility and channels
  */
 export variance(source, int length, biased = true) =>
+	if length < 1
+		runtime.error("ta.variance: length must be at least 1")
 	// Center the window before averaging so a constant decimal stays exactly
 	// zero and small spreads do not lose precision against a large price level.
 	anchor = source
@@ -596,6 +652,8 @@ export variance(source, int length, biased = true) =>
  * @category Volatility and channels
  */
 export stdev(source, int length, biased = true) =>
+	if length < 1
+		runtime.error("ta.stdev: length must be at least 1")
 	math.sqrt(variance(source, length, biased))
 
 /**
@@ -609,6 +667,8 @@ export stdev(source, int length, biased = true) =>
  * @category Volatility and channels
  */
 export range(source, int length) =>
+	if length < 1
+		runtime.error("ta.range: length must be at least 1")
 	highest(source, length) - lowest(source, length)
 
 /**
@@ -633,6 +693,8 @@ export range(source, int length) =>
  * @category Volatility and channels
  */
 export bb(source, int length, mult) =>
+	if length < 1
+		runtime.error("ta.bb: length must be at least 1")
 	basis = sma(source, length)
 	spread = mult * stdev(source, length, true)
 	[basis, basis + spread, basis - spread]
@@ -651,6 +713,8 @@ export bb(source, int length, mult) =>
  * @category Volatility and channels
  */
 export bbw(source, int length, mult) =>
+	if length < 1
+		runtime.error("ta.bbw: length must be at least 1")
 	basis = sma(source, length)
 	2 * mult * stdev(source, length, true) / basis * 100
 
@@ -679,6 +743,8 @@ export bbw(source, int length, mult) =>
  * @category Volatility and channels
  */
 export kc(source, int length, mult, useTrueRange = true) =>
+	if length < 1
+		runtime.error("ta.kc: length must be at least 1")
 	basis = ema(source, length)
 	span = useTrueRange ? tr(true) : high - low
 	spanEma = ema(span, length)
@@ -699,6 +765,8 @@ export kc(source, int length, mult, useTrueRange = true) =>
  * @category Volatility and channels
  */
 export kcw(source, int length, mult, useTrueRange = true) =>
+	if length < 1
+		runtime.error("ta.kcw: length must be at least 1")
 	[kcMid, kcUp, kcLow] = kc(source, length, mult, useTrueRange)
 	(kcUp - kcLow) / kcMid
 
@@ -726,6 +794,8 @@ export kcw(source, int length, mult, useTrueRange = true) =>
  * @category Volatility and channels
  */
 export supertrend(factor, int atrPeriod) =>
+	if atrPeriod < 1
+		runtime.error("ta.supertrend: atrPeriod must be at least 1")
 	src = hl2
 	atrValue = atr(atrPeriod)
 	upperBand = src + factor * atrValue
@@ -886,6 +956,8 @@ export cross(source1, source2) =>
  * @category Crosses and conditions
  */
 export rising(source, int length) =>
+	if length < 1
+		runtime.error("ta.rising: length must be at least 1")
 	result = true
 	for i = 0 to length - 1
 		result := result and source[i] > source[i + 1]
@@ -904,6 +976,8 @@ export rising(source, int length) =>
  * @category Crosses and conditions
  */
 export falling(source, int length) =>
+	if length < 1
+		runtime.error("ta.falling: length must be at least 1")
 	result = true
 	for i = 0 to length - 1
 		result := result and source[i] < source[i + 1]
@@ -939,6 +1013,8 @@ export barssince(condition) =>
  * @category Crosses and conditions
  */
 export highest(source, int length) =>
+	if length < 1
+		runtime.error("ta.highest: length must be at least 1")
 	h = source
 	for i = 1 to length - 1
 		h := math.max(h, source[i])
@@ -954,6 +1030,8 @@ export highest(source, int length) =>
  * @category Crosses and conditions
  */
 export lowest(source, int length) =>
+	if length < 1
+		runtime.error("ta.lowest: length must be at least 1")
 	l = source
 	for i = 1 to length - 1
 		l := math.min(l, source[i])
@@ -973,6 +1051,8 @@ export lowest(source, int length) =>
  * @category Crosses and conditions
  */
 export highestbars(source, int length) =>
+	if length < 1
+		runtime.error("ta.highestbars: length must be at least 1")
 	best = source
 	offsetBars = 0
 	for i = 1 to length - 1
@@ -996,6 +1076,8 @@ export highestbars(source, int length) =>
  * @category Crosses and conditions
  */
 export lowestbars(source, int length) =>
+	if length < 1
+		runtime.error("ta.lowestbars: length must be at least 1")
 	worst = source
 	offsetBars = 0
 	for i = 1 to length - 1
@@ -1028,6 +1110,10 @@ export lowestbars(source, int length) =>
  * @category Crosses and conditions
  */
 export pivothigh(source, int leftbars, int rightbars) =>
+	if leftbars < 0
+		runtime.error("ta.pivothigh: leftbars must not be negative")
+	if rightbars < 0
+		runtime.error("ta.pivothigh: rightbars must not be negative")
 	pivot = source[rightbars]
 	confirmed = true
 	for i = 0 to leftbars + rightbars
@@ -1052,6 +1138,10 @@ export pivothigh(source, int leftbars, int rightbars) =>
  * @category Crosses and conditions
  */
 export pivotlow(source, int leftbars, int rightbars) =>
+	if leftbars < 0
+		runtime.error("ta.pivotlow: leftbars must not be negative")
+	if rightbars < 0
+		runtime.error("ta.pivotlow: rightbars must not be negative")
 	pivot = source[rightbars]
 	confirmed = true
 	for i = 0 to leftbars + rightbars
@@ -1121,6 +1211,8 @@ export min(source) =>
  * @category Accumulation and statistics
  */
 export correlation(source1, source2, int length) =>
+	if length < 1
+		runtime.error("ta.correlation: length must be at least 1")
 	// Center each window on its current value, as variance does, so a constant
 	// decimal series has exactly zero spread and gives na.
 	anchor1 = source1
@@ -1158,6 +1250,8 @@ export correlation(source1, source2, int length) =>
  * @category Accumulation and statistics
  */
 export percentrank(source, int length) =>
+	if length < 1
+		runtime.error("ta.percentrank: length must be at least 1")
 	count = 0
 	for i = 1 to length
 		if source[i] <= source

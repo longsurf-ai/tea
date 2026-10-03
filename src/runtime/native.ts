@@ -1,6 +1,7 @@
 // Purpose: Scalar Tea intrinsics shared by handwritten and generated programs.
 
 import {fatal} from '../base/print';
+import {ExecutionError} from './errors';
 import {Color} from './color';
 import type {Scalar} from './value';
 import {Value, bool, color, float, int, text, type Numeric} from './js/value';
@@ -121,6 +122,19 @@ export const str = {
         ? 'NaN'
         : (titles.find(([name]) => name === raw)?.[1] ?? String(raw)),
     );
+  },
+};
+
+/**
+ * `runtime.error(message)`: stops the run with an {@link ExecutionError} whose
+ * code is `RUNTIME_ERROR` and whose message is the script's.
+ *
+ * @example `runtime.error(text('length must be at least 1'))` throws
+ * `RUNTIME_ERROR: length must be at least 1`.
+ */
+export const runtime = {
+  error(message: Value<string | null, 'string'>): never {
+    throw new ExecutionError('RUNTIME_ERROR', message.value ?? 'na');
   },
 };
 

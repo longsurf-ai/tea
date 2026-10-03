@@ -955,6 +955,17 @@ function buildFuncs(): NativeFunc[] {
       StringType,
       JoinResult,
     ),
+    // Stops the run, so it is never pure: it neither folds nor runs at bind
+    // time, and a call stays where it is written.
+    {
+      ...func(
+        'runtime.error',
+        [req('message', StringType, Qualifier.Series)],
+        VoidType,
+        Qualifier.Series,
+      ),
+      runtimeEffect: 'write',
+    },
     func(
       'color.new',
       [

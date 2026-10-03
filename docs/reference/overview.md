@@ -26,7 +26,7 @@ Built-in signatures read `name(param: type, optional?: type, ...rest: type) → 
 
 | Page                                     | Covers                                                                        |
 | ---------------------------------------- | ----------------------------------------------------------------------------- |
-| [Core functions](./builtins/core.md)     | Missing values, conversions and script declarations.                          |
+| [Core functions](./builtins/core.md)     | Missing values, conversions, script declarations and script errors.           |
 | [input](./builtins/input.md)             | Script inputs a host can set without editing the source.                      |
 | [math](./builtins/math.md)               | Arithmetic helpers and mathematical constants.                                |
 | [color](./builtins/color.md)             | Color construction and Tea’s standard palette.                                |

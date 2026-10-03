@@ -54,7 +54,8 @@ export type ExecutionErrorCode =
   | 'HEAP_LIMIT_EXCEEDED'
   | 'FIXED_VALUE_STORAGE_LIMIT_EXCEEDED'
   | 'NA_STRUCT_WRITE'
-  | 'VALUE_LAYOUT_MISMATCH';
+  | 'VALUE_LAYOUT_MISMATCH'
+  | 'RUNTIME_ERROR';
 
 export class ExecutionError extends OperationalError {
   constructor(

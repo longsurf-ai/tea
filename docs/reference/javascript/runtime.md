@@ -69,6 +69,7 @@ bind it with [`Module.bind`](./runtime.md#module), create a [`Context`](./runtim
 | [`Scalar`](#scalar)                             | A plain JavaScript scalar: a parameter's value, default or option, or a fixed contextual builtin value passed to [`Module.bind`](./runtime.md#module).                                                                                                                               |
 | [`colors`](#colors)                             | Colors reuse the canonical encoding also used by constant folding.                                                                                                                                                                                                                   |
 | [`math`](#math)                                 | Numeric intrinsics preserve Tea's result kind and normalize overflow to NA.                                                                                                                                                                                                          |
+| [`runtime`](#runtime)                           | `runtime.error(message)`: stops the run with an `ExecutionError` whose code is `RUNTIME_ERROR` and whose message is the script's.                                                                                                                                                    |
 | [`str`](#str)                                   | Tea's `str` intrinsics for generated and handwritten programs.                                                                                                                                                                                                                       |
 
 ## Functions
@@ -1648,6 +1649,19 @@ const math: {
 ```
 
 **Example:** `math.round(float(1.235), int(2)).value` is 1.24.
+
+### runtime
+
+`runtime.error(message)`: stops the run with an `ExecutionError` whose code is `RUNTIME_ERROR` and whose message is the script's.
+
+```ts
+const runtime: {
+  error(message: Value<string | null, "string">): never;
+};
+```
+
+**Example:** `runtime.error(text('length must be at least 1'))` throws
+`RUNTIME_ERROR: length must be at least 1`.
 
 ### str
 
