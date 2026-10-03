@@ -3572,7 +3572,9 @@
               "kind": "function",
               "category": "Moving averages",
               "summary": "Arnaud Legoux moving average: a bell-curve-weighted average of the last `length` values of `source`.",
-              "signatures": ["ta.alma(source, int length, offset, sigma)"],
+              "signatures": [
+                "ta.alma(source, int length, offset, sigma, bool floor = false)"
+              ],
               "parameters": [
                 {
                   "name": "source",
@@ -3597,6 +3599,12 @@
                   "type": null,
                   "defaultValue": null,
                   "description": "Narrowness of the curve; larger values concentrate the weight near the peak."
+                },
+                {
+                  "name": "floor",
+                  "type": "bool",
+                  "defaultValue": "false",
+                  "description": "`true` rounds the peak position down to a whole bar."
                 }
               ],
               "returns": "The weighted mean; `na` for the first `length - 1` bars and while any value in the window is `na`.",
@@ -3789,8 +3797,10 @@
               "symbols": ["ta.tsi"],
               "kind": "function",
               "category": "Momentum",
-              "summary": "True strength index of `source`, from `-100` to `100`.",
-              "signatures": ["ta.tsi(source, int shortLength, int longLength)"],
+              "summary": "True strength index of `source`, from `-1` to `1`.",
+              "signatures": [
+                "ta.tsi(source, int short_length, int long_length)"
+              ],
               "parameters": [
                 {
                   "name": "source",
@@ -3799,13 +3809,13 @@
                   "description": "Series to measure, usually [`close`](#close)."
                 },
                 {
-                  "name": "shortLength",
+                  "name": "short_length",
                   "type": "int",
                   "defaultValue": null,
                   "description": "Length of the second smoothing, in bars."
                 },
                 {
-                  "name": "longLength",
+                  "name": "long_length",
                   "type": "int",
                   "defaultValue": null,
                   "description": "Length of the first smoothing, in bars."
@@ -3813,7 +3823,7 @@
               ],
               "returns": "The index; `na` on the first bar and until `source` has changed.",
               "members": null,
-              "body": "The bar-to-bar change of `source` is smoothed twice with [`ta.ema`](#ta.ema),\nfirst over `longLength` bars and then over `shortLength` bars, and divided by\nthe absolute change smoothed the same way, times `100`."
+              "body": "The bar-to-bar change of `source` is smoothed twice with [`ta.ema`](#ta.ema),\nfirst over `long_length` bars and then over `short_length` bars, and divided\nby the absolute change smoothed the same way."
             },
             {
               "id": "ta.stoch",
@@ -3928,7 +3938,7 @@
               "category": "Momentum",
               "summary": "Moving average convergence divergence of `source`, with its signal line and histogram.",
               "signatures": [
-                "ta.macd(\n    source,\n    int fastLength,\n    int slowLength,\n    int signalLength\n)"
+                "ta.macd(source, int fastlen, int slowlen, int siglen)"
               ],
               "parameters": [
                 {
@@ -3938,19 +3948,19 @@
                   "description": "Series to measure, usually [`close`](#close)."
                 },
                 {
-                  "name": "fastLength",
+                  "name": "fastlen",
                   "type": "int",
                   "defaultValue": null,
                   "description": "Length of the fast average, in bars."
                 },
                 {
-                  "name": "slowLength",
+                  "name": "slowlen",
                   "type": "int",
                   "defaultValue": null,
                   "description": "Length of the slow average, in bars."
                 },
                 {
-                  "name": "signalLength",
+                  "name": "siglen",
                   "type": "int",
                   "defaultValue": null,
                   "description": "Length of the signal line's average, in bars."
@@ -3991,16 +4001,16 @@
               "kind": "function",
               "category": "Volatility and channels",
               "summary": "True range of the current bar.",
-              "signatures": ["ta.tr(handleNa = true)"],
+              "signatures": ["ta.tr(handle_na = true)"],
               "parameters": [
                 {
-                  "name": "handleNa",
+                  "name": "handle_na",
                   "type": null,
                   "defaultValue": "true",
                   "description": "What to return when the previous [`close`](#close) is `na`, as on the first bar: `true` gives `high - low`, `false` gives `na`."
                 }
               ],
-              "returns": "The true range, or the `handleNa` result when the previous close is `na`.",
+              "returns": "The true range, or the `handle_na` result when the previous close is `na`.",
               "members": null,
               "body": "It is the largest of `high - low`, `math.abs(high - close[1])` and\n`math.abs(low - close[1])`, using [`high`](#high), [`low`](#low) and\n[`close`](#close)."
             },
@@ -4229,7 +4239,7 @@
                   "name": "useTrueRange",
                   "type": null,
                   "defaultValue": "true",
-                  "description": "`true` measures each bar's range with [`ta.tr`](#ta.tr); `false` uses `high - low`."
+                  "description": "`true` measures each bar's range with `ta.tr(false)`, so the range is `na` on the first bar; `false` uses `high - low`."
                 }
               ],
               "returns": "A tuple `[middle, upper, lower]`.",
@@ -4750,9 +4760,9 @@
                   "description": "Number of previous bars, a positive `int`."
                 }
               ],
-              "returns": "A percentage from `0` to `100`.",
+              "returns": "A percentage from `0` to `100`; `na` for the first `length` bars and while `source` or any of the previous `length` values is `na`.",
               "members": null,
-              "body": "The result is `100 * count / length`. Earlier values that are `na`, including\nbars before the first, are not counted, so the result is not `na` during the\nfirst `length` bars; if `source` itself is `na`, it is `0`."
+              "body": "The result is `100 * count / length`."
             }
           ]
         }

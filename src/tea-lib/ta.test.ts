@@ -216,3 +216,60 @@ describe('ta lengths', () => {
     expect(sink.emissions).toEqual([]);
   });
 });
+
+describe('ta matches Pine v6', () => {
+  async function run(lines: readonly string[]) {
+    const sink = new OutputCapture();
+    await executeTestProgram(mustBuild(lines.join('\n')), {
+      stream: csvStream(DATA),
+      sink,
+    });
+    return (outputId: number): unknown[] =>
+      sink.emissions
+        .filter(emission => emission.outputId === outputId)
+        .map(emission => emission.channels[0]);
+  }
+
+  test('tsi is a ratio from -1 to 1, not a percentage', async () => {
+    const values = await run(['emit "tsi" ta.tsi(close, 2, 3)']);
+    const tsi = values(0).filter(value => !Number.isNaN(value)) as number[];
+    expect(tsi.length).toBeGreaterThan(0);
+    expect(tsi.every(value => value >= -1 && value <= 1)).toBe(true);
+  });
+
+  test('percentrank is na while its window holds na, including warm-up', async () => {
+    const values = await run([
+      'x = bar_index == 5 ? na : close',
+      'emit "rank" ta.percentrank(x, 2)',
+    ]);
+    // closes 9, 11, 10, 12, 9, 14, 10, 15; bar 5 is na.
+    expect(values(0)).toEqual([NaN, NaN, 50, 100, 0, NaN, NaN, NaN]);
+  });
+
+  test('kc measures range with ta.tr(false), so its bands start on bar 1', async () => {
+    const values = await run([
+      '[m, upper, l] = ta.kc(close, 3, 1)',
+      '[m2, upperHighLow, l2] = ta.kc(close, 3, 1, false)',
+      'emit "upper" upper',
+      'emit "upperHighLow" upperHighLow',
+    ]);
+    expect(values(0)[0]).toBeNaN();
+    expect(values(0)[1]).not.toBeNaN();
+    expect(values(1)[0]).not.toBeNaN();
+  });
+
+  test('alma takes Pine’s floor, and Pine’s parameter names work as named arguments', async () => {
+    const values = await run([
+      'emit "floored" ta.alma(close, 4, 0.85, 6, true)',
+      'emit "peak2" ta.alma(close, 4, 2.0 / 3.0, 6)',
+      'emit "tr" ta.tr(handle_na = false)',
+      '[macdLine, s, h] = ta.macd(close, fastlen = 2, slowlen = 3, siglen = 2)',
+      'emit "macd" macdLine',
+      'emit "tsi" ta.tsi(close, short_length = 2, long_length = 3)',
+    ]);
+    // floor(0.85 * 3) = 2, the same peak as an offset of 2/3.
+    expect(values(0).slice(3)).toEqual(values(1).slice(3));
+    expect(values(2)[0]).toBeNaN();
+    expect(values(3)[0]).toBe(0);
+  });
+});

@@ -44,7 +44,7 @@ Available in every script as `ta.name` without an import.
 | [`ta.roc`](#roc)                 | Rate of change: the percentage change of `source` from `length` bars ago.                                                               |
 | [`ta.rsi`](#rsi)                 | Relative strength index of `source`, from `0` to `100`.                                                                                 |
 | [`ta.cmo`](#cmo)                 | Chande momentum oscillator of `source`, from `-100` to `100`.                                                                           |
-| [`ta.tsi`](#tsi)                 | True strength index of `source`, from `-100` to `100`.                                                                                  |
+| [`ta.tsi`](#tsi)                 | True strength index of `source`, from `-1` to `1`.                                                                                      |
 | [`ta.stoch`](#stoch)             | Stochastic oscillator: where `source` sits between the lowest `l` and highest `h` of the last `length` bars.                            |
 | [`ta.cci`](#cci)                 | Commodity channel index of `source`.                                                                                                    |
 | [`ta.wpr`](#wpr)                 | Williams %R: where [`close`](./market-data.md#close) sits within the range of the last `length` bars, from `-100` to `0`.               |
@@ -216,15 +216,16 @@ newest.
 Arnaud Legoux moving average: a bell-curve-weighted average of the last `length` values of `source`.
 
 ```tea
-ta.alma(source, int length, offset, sigma)
+ta.alma(source, int length, offset, sigma, bool floor = false)
 ```
 
-| Parameter | Type  | Description                                                                  |
-| --------- | ----- | ---------------------------------------------------------------------------- |
-| `source`  |       | Series to average, usually [`close`](./market-data.md#close).                |
-| `length`  | `int` | Number of bars, a positive `int`.                                            |
-| `offset`  |       | Position of the peak weight, from `0` (oldest value) to `1` (newest value).  |
-| `sigma`   |       | Narrowness of the curve; larger values concentrate the weight near the peak. |
+| Parameter | Type   | Default | Description                                                                  |
+| --------- | ------ | ------- | ---------------------------------------------------------------------------- |
+| `source`  |        |         | Series to average, usually [`close`](./market-data.md#close).                |
+| `length`  | `int`  |         | Number of bars, a positive `int`.                                            |
+| `offset`  |        |         | Position of the peak weight, from `0` (oldest value) to `1` (newest value).  |
+| `sigma`   |        |         | Narrowness of the curve; larger values concentrate the weight near the peak. |
+| `floor`   | `bool` | `false` | `true` rounds the peak position down to a whole bar.                         |
 
 **Returns:** The weighted mean; `na` for the first `length - 1` bars and while any value in the window is `na`.
 
@@ -359,23 +360,23 @@ Over the last `length` bar-to-bar changes, it is
 
 ### tsi
 
-True strength index of `source`, from `-100` to `100`.
+True strength index of `source`, from `-1` to `1`.
 
 ```tea
-ta.tsi(source, int shortLength, int longLength)
+ta.tsi(source, int short_length, int long_length)
 ```
 
-| Parameter     | Type  | Description                                                   |
-| ------------- | ----- | ------------------------------------------------------------- |
-| `source`      |       | Series to measure, usually [`close`](./market-data.md#close). |
-| `shortLength` | `int` | Length of the second smoothing, in bars.                      |
-| `longLength`  | `int` | Length of the first smoothing, in bars.                       |
+| Parameter      | Type  | Description                                                   |
+| -------------- | ----- | ------------------------------------------------------------- |
+| `source`       |       | Series to measure, usually [`close`](./market-data.md#close). |
+| `short_length` | `int` | Length of the second smoothing, in bars.                      |
+| `long_length`  | `int` | Length of the first smoothing, in bars.                       |
 
 **Returns:** The index; `na` on the first bar and until `source` has changed.
 
 The bar-to-bar change of `source` is smoothed twice with [`ta.ema`](./ta.md#ema),
-first over `longLength` bars and then over `shortLength` bars, and divided by
-the absolute change smoothed the same way, times `100`.
+first over `long_length` bars and then over `short_length` bars, and divided
+by the absolute change smoothed the same way.
 
 ### stoch
 
@@ -466,15 +467,15 @@ instead of making the result `na`.
 Moving average convergence divergence of `source`, with its signal line and histogram.
 
 ```tea
-ta.macd(source, int fastLength, int slowLength, int signalLength)
+ta.macd(source, int fastlen, int slowlen, int siglen)
 ```
 
-| Parameter      | Type  | Description                                                   |
-| -------------- | ----- | ------------------------------------------------------------- |
-| `source`       |       | Series to measure, usually [`close`](./market-data.md#close). |
-| `fastLength`   | `int` | Length of the fast average, in bars.                          |
-| `slowLength`   | `int` | Length of the slow average, in bars.                          |
-| `signalLength` | `int` | Length of the signal line's average, in bars.                 |
+| Parameter | Type  | Description                                                   |
+| --------- | ----- | ------------------------------------------------------------- |
+| `source`  |       | Series to measure, usually [`close`](./market-data.md#close). |
+| `fastlen` | `int` | Length of the fast average, in bars.                          |
+| `slowlen` | `int` | Length of the slow average, in bars.                          |
+| `siglen`  | `int` | Length of the signal line's average, in bars.                 |
 
 **Returns:** A tuple `[macdLine, signalLine, histogram]`, where `histogram` is `macdLine - signalLine`.
 
@@ -526,14 +527,14 @@ emit "ADX" adx
 True range of the current bar.
 
 ```tea
-ta.tr(handleNa = true)
+ta.tr(handle_na = true)
 ```
 
-| Parameter  | Default | Description                                                                                                                                     |
-| ---------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `handleNa` | `true`  | What to return when the previous [`close`](./market-data.md#close) is `na`, as on the first bar: `true` gives `high - low`, `false` gives `na`. |
+| Parameter   | Default | Description                                                                                                                                     |
+| ----------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `handle_na` | `true`  | What to return when the previous [`close`](./market-data.md#close) is `na`, as on the first bar: `true` gives `high - low`, `false` gives `na`. |
 
-**Returns:** The true range, or the `handleNa` result when the previous close is `na`.
+**Returns:** The true range, or the `handle_na` result when the previous close is `na`.
 
 It is the largest of `high - low`, `math.abs(high - close[1])` and
 `math.abs(low - close[1])`, using [`high`](./market-data.md#high), [`low`](./market-data.md#low) and
@@ -668,12 +669,12 @@ Keltner Channels: an exponential average of `source` with bands `mult` average r
 ta.kc(source, int length, mult, useTrueRange = true)
 ```
 
-| Parameter      | Type  | Default | Description                                                                             |
-| -------------- | ----- | ------- | --------------------------------------------------------------------------------------- |
-| `source`       |       |         | Series to average, usually [`close`](./market-data.md#close).                           |
-| `length`       | `int` |         | Smoothing length in bars.                                                               |
-| `mult`         |       |         | Band distance in average ranges.                                                        |
-| `useTrueRange` |       | `true`  | `true` measures each bar's range with [`ta.tr`](./ta.md#tr); `false` uses `high - low`. |
+| Parameter      | Type  | Default | Description                                                                                                             |
+| -------------- | ----- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `source`       |       |         | Series to average, usually [`close`](./market-data.md#close).                                                           |
+| `length`       | `int` |         | Smoothing length in bars.                                                                                               |
+| `mult`         |       |         | Band distance in average ranges.                                                                                        |
+| `useTrueRange` |       | `true`  | `true` measures each bar's range with `ta.tr(false)`, so the range is `na` on the first bar; `false` uses `high - low`. |
 
 **Returns:** A tuple `[middle, upper, lower]`.
 
@@ -1079,8 +1080,6 @@ ta.percentrank(source, int length)
 | `source`  |       | Series to rank.                            |
 | `length`  | `int` | Number of previous bars, a positive `int`. |
 
-**Returns:** A percentage from `0` to `100`.
+**Returns:** A percentage from `0` to `100`; `na` for the first `length` bars and while `source` or any of the previous `length` values is `na`.
 
-The result is `100 * count / length`. Earlier values that are `na`, including
-bars before the first, are not counted, so the result is not `na` during the
-first `length` bars; if `source` itself is `na`, it is `0`.
+The result is `100 * count / length`.
