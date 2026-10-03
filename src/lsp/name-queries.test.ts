@@ -290,6 +290,8 @@ describe('definition', () => {
 
 describe('reference name', () => {
   test('a shipped or native name is the one the reference documents', () => {
+    const exported = analyze({filename: 'obv.tea', source: 'x = ta.obv'});
+    expect(referenceName(exported, {line: 0, character: 8})).toBe('ta.obv');
     expect(referenceName(analysis, on(14, 'ema'))).toBe('ta.ema');
     expect(referenceName(analysis, on(17, 'plot'))).toBe('plot');
     expect(referenceName(analysis, on(10, 'close'))).toBe('close');

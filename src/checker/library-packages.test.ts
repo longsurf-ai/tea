@@ -397,14 +397,32 @@ describe('exported input aliases', () => {
     });
   });
 
-  test('only input.series may initialize an exported variable', () => {
+  test('any other exported value is computed on every bar and read-only', () => {
     const computed = checkWith(
       {lib: 'library("lib")\nexport x = close + 1\n'},
-      'import lib\nvalue = 1',
+      'import lib\nvalue = lib.x\nprevious = lib.x[1]',
+    );
+    expect(messages(computed)).toEqual([]);
+    const value = computed.checked.pkg.scope.lookup('value');
+    expect(value).toMatchObject({qualifier: Qualifier.Series});
+
+    const assigned = checkWith(
+      {
+        lib: 'library("lib")\nexport x = close + 1\nexport f() =>\n    x := 2\n    x\n',
+      },
+      'import lib\nvalue = lib.f()',
     );
     expect(
-      hasMessage(computed, 'library variables may only alias input.series'),
+      hasMessage(assigned, "cannot assign 'x'", 'computed on every bar'),
     ).toBe(true);
+
+    const requested = checkWith(
+      {
+        lib: 'library("lib")\nexport x = request.security("AAPL", "D", close)\n',
+      },
+      'import lib\nvalue = lib.x',
+    );
+    expect(hasMessage(requested, 'cannot make requests')).toBe(true);
   });
 
   test('no package may redeclare or assign a prelude input alias', () => {

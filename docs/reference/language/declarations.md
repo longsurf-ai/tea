@@ -556,6 +556,7 @@ export type Name
 export enum Name
 export interface Name
 export name = input.series("column")
+export name = expression
 ```
 
 `export` makes a library's declaration available to files that import it.
@@ -565,8 +566,13 @@ values and `var` variables.
 - Exporting a struct exports its fields and methods; exporting an enum exports
   its members.
 - `export name = input.series("column")` publishes an input alias: a
-  `series float` read from the input column of that name, as `close` is. It is
-  the only exported variable form.
+  `series float` read from the input column of that name, as `close` is.
+- `export name = expression` publishes a value computed on every bar, as
+  `ta.obv` is. A script that reads it computes it once per bar, before its own
+  statements, so every read agrees, including a read inside an `if` and a
+  history read such as `ta.obv[1]`. The expression may read market data and
+  call functions that keep state; it cannot emit, make a request or change
+  other state, and nothing may assign the exported name.
 - An exported function cannot call `input.*`.
 - `export` is a contextual keyword: `export = 1` declares a variable named
   `export`.
@@ -582,7 +588,8 @@ indicator("Title", overlay = true)
   once, and `name` must be a valid name that is not a reserved keyword. The top
   level of a library may contain only imports, function, type, enum and
   interface declarations, `const` declarations, private `var` declarations
-  with one name and a type annotation, and exported input aliases.
+  with one name and a type annotation, exported input aliases, and exported
+  values computed on every bar.
 - `indicator("Title")` describes an entry script to its host: a title and
   whether to draw over the price chart. It is optional; when present it is the
   first statement, written once, with literal arguments and a non-empty title.

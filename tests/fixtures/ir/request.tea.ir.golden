@@ -34,23 +34,29 @@ request[0] name="daily" mode=sample context_order=0,1 capture=float result=float
               Const 1: const int
         InitName e
           Const na: const float
-        Assign
-          target: Read name:e: series float
-          value: IfExpr: series float
-            cond: CallNative na pure: series bool
-              Read name:e: series float
-            then: BlockExpr: series float
-              value: Read name:source: series float
-            else: BlockExpr: series float
-              value: Binary Add: series float
-                Binary Mul: series float
-                  Read name:alpha: input float
-                  Read name:source: series float
-                Binary Mul: series float
-                  Binary Sub: input float
-                    Const 1: const int
-                    Read name:alpha: input float
+        IfExpr: series float
+          cond: Unary Not: series bool
+            CallNative na pure: series bool
+              Read name:source: series float
+          then: BlockExpr: series float
+            Assign
+              target: Read name:e: series float
+              value: IfExpr: series float
+                cond: CallNative na pure: series bool
                   Read name:e: series float
+                then: BlockExpr: series float
+                  value: Read name:source: series float
+                else: BlockExpr: series float
+                  value: Binary Add: series float
+                    Binary Mul: series float
+                      Read name:alpha: input float
+                      Read name:source: series float
+                    Binary Mul: series float
+                      Binary Sub: input float
+                        Const 1: const int
+                        Read name:alpha: input float
+                      Read name:e: series float
+            value: Read name:e: series float
         value: Read name:e: series float
     body:
       Assign

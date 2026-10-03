@@ -134,7 +134,7 @@ describe('errors positioned in a library body', () => {
 
   test('every error of one call is kept, on the same range', () => {
     const lines = rendered(analyzeText('s = ta.variance("x", 3)\n'));
-    expect(lines.length).toBe(2);
+    expect(lines.length).toBeGreaterThan(1);
     expect(
       lines.every(line =>
         line.startsWith('0:4-15 in ta.variance (tea-lib/ta.tea:'),

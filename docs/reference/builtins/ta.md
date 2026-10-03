@@ -16,6 +16,9 @@ them. A call inside a loop shares one history and state across all iterations.
 See [values and control flow](../../language-guide/values-and-control-flow.md).
 
 Most results are `na` until enough bars have arrived; each entry states when.
+After that, a window function leaves out the `na` values in its window and is
+`na` only when none is left. A few, such as [`ta.swma`](./ta.md#swma) and
+[`ta.change`](./ta.md#change), say instead that an `na` value makes the result `na`.
 The [time-series guide](../../language-guide/time-series.md) covers warm-up and
 crossing rules.
 
@@ -27,59 +30,67 @@ emit "signal" close > open and risingThree
 
 Available in every script as `ta.name` without an import.
 
-| Name                             | Description                                                                                                                             |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| [`ta.sma`](#sma)                 | Simple moving average of the last `length` values of `source`.                                                                          |
-| [`ta.ema`](#ema)                 | Exponential moving average of `source`.                                                                                                 |
-| [`ta.rma`](#rma)                 | Wilder's moving average of `source`, the smoothing behind [`ta.rsi`](./ta.md#rsi), [`ta.atr`](./ta.md#atr) and [`ta.dmi`](./ta.md#dmi). |
-| [`ta.wma`](#wma)                 | Linearly weighted moving average of the last `length` values of `source`.                                                               |
-| [`ta.vwma`](#vwma)               | Volume-weighted moving average of the last `length` values of `source`.                                                                 |
-| [`ta.hma`](#hma)                 | Hull moving average of `source`.                                                                                                        |
-| [`ta.swma`](#swma)               | Symmetrically weighted moving average of the last four values of `source`.                                                              |
-| [`ta.alma`](#alma)               | Arnaud Legoux moving average: a bell-curve-weighted average of the last `length` values of `source`.                                    |
-| [`ta.linreg`](#linreg)           | Value of the least-squares line through the last `length` values of `source`, `offset` bars before the current bar.                     |
-| [`ta.cog`](#cog)                 | Center of gravity of the last `length` values of `source`.                                                                              |
-| [`ta.change`](#change)           | Difference between `source` now and `length` bars ago.                                                                                  |
-| [`ta.mom`](#mom)                 | Momentum: `source` minus its value `length` bars ago.                                                                                   |
-| [`ta.roc`](#roc)                 | Rate of change: the percentage change of `source` from `length` bars ago.                                                               |
-| [`ta.rsi`](#rsi)                 | Relative strength index of `source`, from `0` to `100`.                                                                                 |
-| [`ta.cmo`](#cmo)                 | Chande momentum oscillator of `source`, from `-100` to `100`.                                                                           |
-| [`ta.tsi`](#tsi)                 | True strength index of `source`, from `-1` to `1`.                                                                                      |
-| [`ta.stoch`](#stoch)             | Stochastic oscillator: where `source` sits between the lowest `l` and highest `h` of the last `length` bars.                            |
-| [`ta.cci`](#cci)                 | Commodity channel index of `source`.                                                                                                    |
-| [`ta.wpr`](#wpr)                 | Williams %R: where [`close`](./market-data.md#close) sits within the range of the last `length` bars, from `-100` to `0`.               |
-| [`ta.mfi`](#mfi)                 | Money flow index of `source`, from `0` to `100`.                                                                                        |
-| [`ta.macd`](#macd)               | Moving average convergence divergence of `source`, with its signal line and histogram.                                                  |
-| [`ta.dmi`](#dmi)                 | Directional movement index: the +DI and -DI lines and the ADX trend strength, each from `0` to `100`.                                   |
-| [`ta.tr`](#tr)                   | True range of the current bar.                                                                                                          |
-| [`ta.atr`](#atr)                 | Average true range: [`ta.tr`](./ta.md#tr) smoothed with [`ta.rma`](./ta.md#rma) over `length` bars.                                     |
-| [`ta.dev`](#dev)                 | Mean absolute deviation of the last `length` values of `source` from their average.                                                     |
-| [`ta.variance`](#variance)       | Variance of the last `length` values of `source`.                                                                                       |
-| [`ta.stdev`](#stdev)             | Standard deviation of the last `length` values of `source`.                                                                             |
-| [`ta.range`](#range)             | Difference between the highest and lowest of the last `length` values of `source`.                                                      |
-| [`ta.bb`](#bb)                   | Bollinger Bands: the average of `source` with bands `mult` standard deviations above and below it.                                      |
-| [`ta.bbw`](#bbw)                 | Bollinger Band width as a percentage of the middle band.                                                                                |
-| [`ta.kc`](#kc)                   | Keltner Channels: an exponential average of `source` with bands `mult` average ranges above and below it.                               |
-| [`ta.kcw`](#kcw)                 | Keltner Channel width as a fraction of the middle line.                                                                                 |
-| [`ta.supertrend`](#supertrend)   | Supertrend: a trailing line on one side of price, and the trend direction.                                                              |
-| [`ta.sar`](#sar)                 | Parabolic SAR: a trailing stop that moves faster toward price as the trend makes new extremes.                                          |
-| [`ta.crossover`](#crossover)     | True on the bar where `source1` moves above `source2`.                                                                                  |
-| [`ta.crossunder`](#crossunder)   | True on the bar where `source1` moves below `source2`.                                                                                  |
-| [`ta.cross`](#cross)             | True on the bar where `source1` crosses `source2` in either direction.                                                                  |
-| [`ta.rising`](#rising)           | True when `source` rose on each of the last `length` bars.                                                                              |
-| [`ta.falling`](#falling)         | True when `source` fell on each of the last `length` bars.                                                                              |
-| [`ta.barssince`](#barssince)     | Number of bars since `condition` was last `true`.                                                                                       |
-| [`ta.highest`](#highest)         | Highest of the last `length` values of `source`, including the current one.                                                             |
-| [`ta.lowest`](#lowest)           | Lowest of the last `length` values of `source`, including the current one.                                                              |
-| [`ta.highestbars`](#highestbars) | Bar offset of the highest of the last `length` values of `source`, as `0` or a negative number.                                         |
-| [`ta.lowestbars`](#lowestbars)   | Bar offset of the lowest of the last `length` values of `source`, as `0` or a negative number.                                          |
-| [`ta.pivothigh`](#pivothigh)     | Value of a pivot high, reported `rightbars` bars after it, otherwise `na`.                                                              |
-| [`ta.pivotlow`](#pivotlow)       | Value of a pivot low, reported `rightbars` bars after it, otherwise `na`.                                                               |
-| [`ta.cum`](#cum)                 | Running total of `source` since the first bar.                                                                                          |
-| [`ta.max`](#max)                 | Highest value of `source` seen so far.                                                                                                  |
-| [`ta.min`](#min)                 | Lowest value of `source` seen so far.                                                                                                   |
-| [`ta.correlation`](#correlation) | Correlation coefficient of the last `length` values of `source1` and `source2`, from `-1` to `1`.                                       |
-| [`ta.percentrank`](#percentrank) | Percentage of the previous `length` values of `source` that are less than or equal to its current value.                                |
+| Name                             | Description                                                                                                                                                                                                     |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`ta.sma`](#sma)                 | Simple moving average of the last `length` values of `source`.                                                                                                                                                  |
+| [`ta.ema`](#ema)                 | Exponential moving average of `source`.                                                                                                                                                                         |
+| [`ta.rma`](#rma)                 | Wilder's moving average of `source`, the smoothing behind [`ta.rsi`](./ta.md#rsi), [`ta.atr`](./ta.md#atr) and [`ta.dmi`](./ta.md#dmi).                                                                         |
+| [`ta.wma`](#wma)                 | Linearly weighted moving average of the last `length` values of `source`.                                                                                                                                       |
+| [`ta.vwma`](#vwma)               | Volume-weighted moving average of the last `length` values of `source`.                                                                                                                                         |
+| [`ta.hma`](#hma)                 | Hull moving average of `source`.                                                                                                                                                                                |
+| [`ta.swma`](#swma)               | Symmetrically weighted moving average of the last four values of `source`.                                                                                                                                      |
+| [`ta.alma`](#alma)               | Arnaud Legoux moving average: a bell-curve-weighted average of the last `length` values of `source`.                                                                                                            |
+| [`ta.linreg`](#linreg)           | Value of the least-squares line through the last `length` values of `source`, `offset` bars before the current bar.                                                                                             |
+| [`ta.cog`](#cog)                 | Center of gravity of the last `length` values of `source`.                                                                                                                                                      |
+| [`ta.change`](#change)           | Difference between `source` now and `length` bars ago.                                                                                                                                                          |
+| [`ta.mom`](#mom)                 | Momentum: `source` minus its value `length` bars ago.                                                                                                                                                           |
+| [`ta.roc`](#roc)                 | Rate of change: the percentage change of `source` from `length` bars ago.                                                                                                                                       |
+| [`ta.rsi`](#rsi)                 | Relative strength index of `source`, from `0` to `100`.                                                                                                                                                         |
+| [`ta.cmo`](#cmo)                 | Chande momentum oscillator of `source`, from `-100` to `100`.                                                                                                                                                   |
+| [`ta.tsi`](#tsi)                 | True strength index of `source`, from `-1` to `1`.                                                                                                                                                              |
+| [`ta.stoch`](#stoch)             | Stochastic oscillator: where `source` sits between the lowest `l` and highest `h` of the last `length` bars.                                                                                                    |
+| [`ta.cci`](#cci)                 | Commodity channel index of `source`.                                                                                                                                                                            |
+| [`ta.wpr`](#wpr)                 | Williams %R: where [`close`](./market-data.md#close) sits within the range of the last `length` bars, from `-100` to `0`.                                                                                       |
+| [`ta.mfi`](#mfi)                 | Money flow index of `source`, from `0` to `100`.                                                                                                                                                                |
+| [`ta.macd`](#macd)               | Moving average convergence divergence of `source`, with its signal line and histogram.                                                                                                                          |
+| [`ta.dmi`](#dmi)                 | Directional movement index: the +DI and -DI lines and the ADX trend strength, each from `0` to `100`.                                                                                                           |
+| [`ta.tr`](#tr)                   | True range of the current bar.                                                                                                                                                                                  |
+| [`ta.atr`](#atr)                 | Average true range: [`ta.tr`](./ta.md#tr) smoothed with [`ta.rma`](./ta.md#rma) over `length` bars.                                                                                                             |
+| [`ta.dev`](#dev)                 | Mean absolute deviation of the last `length` values of `source` from their average.                                                                                                                             |
+| [`ta.variance`](#variance)       | Variance of the last `length` values of `source`.                                                                                                                                                               |
+| [`ta.stdev`](#stdev)             | Standard deviation of the last `length` values of `source`.                                                                                                                                                     |
+| [`ta.range`](#range)             | Difference between the highest and lowest of the last `length` values of `source`.                                                                                                                              |
+| [`ta.bb`](#bb)                   | Bollinger Bands: the average of `source` with bands `mult` standard deviations above and below it.                                                                                                              |
+| [`ta.bbw`](#bbw)                 | Bollinger Band width as a percentage of the middle band.                                                                                                                                                        |
+| [`ta.kc`](#kc)                   | Keltner Channels: an exponential average of `source` with bands `mult` average ranges above and below it.                                                                                                       |
+| [`ta.kcw`](#kcw)                 | Keltner Channel width as a fraction of the middle line.                                                                                                                                                         |
+| [`ta.supertrend`](#supertrend)   | Supertrend: a trailing line on one side of price, and the trend direction.                                                                                                                                      |
+| [`ta.sar`](#sar)                 | Parabolic SAR: a trailing stop that moves faster toward price as the trend makes new extremes.                                                                                                                  |
+| [`ta.crossover`](#crossover)     | True on the bar where `source1` moves above `source2`.                                                                                                                                                          |
+| [`ta.crossunder`](#crossunder)   | True on the bar where `source1` moves below `source2`.                                                                                                                                                          |
+| [`ta.cross`](#cross)             | True on the bar where `source1` crosses `source2` in either direction.                                                                                                                                          |
+| [`ta.rising`](#rising)           | True when `source` is greater than each of its previous `length` values.                                                                                                                                        |
+| [`ta.falling`](#falling)         | True when `source` is less than each of its previous `length` values.                                                                                                                                           |
+| [`ta.barssince`](#barssince)     | Number of bars since `condition` was last `true`.                                                                                                                                                               |
+| [`ta.highest`](#highest)         | Highest of the last `length` values of `source`, including the current one.                                                                                                                                     |
+| [`ta.lowest`](#lowest)           | Lowest of the last `length` values of `source`, including the current one.                                                                                                                                      |
+| [`ta.highestbars`](#highestbars) | Bar offset of the highest of the last `length` values of `source`, as `0` or a negative number.                                                                                                                 |
+| [`ta.lowestbars`](#lowestbars)   | Bar offset of the lowest of the last `length` values of `source`, as `0` or a negative number.                                                                                                                  |
+| [`ta.pivothigh`](#pivothigh)     | Value of a pivot high, reported `rightbars` bars after it, otherwise `na`.                                                                                                                                      |
+| [`ta.pivotlow`](#pivotlow)       | Value of a pivot low, reported `rightbars` bars after it, otherwise `na`.                                                                                                                                       |
+| [`ta.cum`](#cum)                 | Running total of `source` since the first bar.                                                                                                                                                                  |
+| [`ta.max`](#max)                 | Highest value of `source` seen so far.                                                                                                                                                                          |
+| [`ta.min`](#min)                 | Lowest value of `source` seen so far.                                                                                                                                                                           |
+| [`ta.correlation`](#correlation) | Correlation coefficient of the last `length` values of `source1` and `source2`, from `-1` to `1`.                                                                                                               |
+| [`ta.percentrank`](#percentrank) | Percentage of the previous `length` values of `source` that are less than or equal to its current value.                                                                                                        |
+| [`ta.obv`](#obv)                 | On-balance volume: the running total of [`volume`](./market-data.md#volume), added on bars where [`close`](./market-data.md#close) rose and subtracted on bars where it fell.                                   |
+| [`ta.accdist`](#accdist)         | Accumulation/distribution: the running total of each bar's volume, weighted by where [`close`](./market-data.md#close) sits between [`low`](./market-data.md#low) and [`high`](./market-data.md#high).          |
+| [`ta.pvt`](#pvt)                 | Price-volume trend: the running total of each bar's [`volume`](./market-data.md#volume), weighted by the relative change of [`close`](./market-data.md#close).                                                  |
+| [`ta.iii`](#iii)                 | Intraday intensity index of the current bar: where [`close`](./market-data.md#close) sits between [`low`](./market-data.md#low) and [`high`](./market-data.md#high), times [`volume`](./market-data.md#volume). |
+| [`ta.wvad`](#wvad)               | Williams variable accumulation/distribution of the current bar.                                                                                                                                                 |
+| [`ta.wad`](#wad)                 | Williams accumulation/distribution: the running total of each bar's move from its true low on an up bar, or from its true high on a down bar.                                                                   |
+| [`ta.nvi`](#nvi)                 | Negative volume index: starts at `1` and moves with [`close`](./market-data.md#close), by its relative change, only on bars whose [`volume`](./market-data.md#volume) fell from the previous bar.               |
+| [`ta.pvi`](#pvi)                 | Positive volume index: starts at `1` and moves with [`close`](./market-data.md#close), by its relative change, only on bars whose [`volume`](./market-data.md#volume) rose from the previous bar.               |
 
 ## Moving averages
 
@@ -96,7 +107,10 @@ ta.sma(source, int length)
 | `source`  |       | Series to average, usually [`close`](./market-data.md#close). |
 | `length`  | `int` | Number of bars, a positive `int`.                             |
 
-**Returns:** The mean; `na` for the first `length - 1` bars and while any value in the window is `na`.
+**Returns:** The mean; `na` for the first `length - 1` bars and when every value in the window is `na`.
+
+Values that are `na` are left out: the mean is over the window's other
+values.
 
 ### ema
 
@@ -111,13 +125,12 @@ ta.ema(source, int length)
 | `source`  |       | Series to average, usually [`close`](./market-data.md#close). |
 | `length`  | `int` | Smoothing length in bars; larger values react more slowly.    |
 
-**Returns:** The average; `na` before the first value of `source` and on bars where `source` is `na`.
+**Returns:** The average; `na` before the first value of `source`.
 
 Each bar moves the average toward `source` by `2 / (length + 1)` of the
 difference. It starts from the first value of `source` instead of waiting for
-`length` bars. An `na` value restarts it: the result is `na` on that bar, and
-the average starts over from the next value. Compare [`ta.rma`](./ta.md#rma), which
-waits for `length` values and skips `na`.
+`length` bars, and a bar where `source` is `na` leaves it unchanged.
+Compare [`ta.rma`](./ta.md#rma), which waits for `length` values.
 
 ### rma
 
@@ -152,10 +165,11 @@ ta.wma(source, int length)
 | `source`  |       | Series to average, usually [`close`](./market-data.md#close). |
 | `length`  | `int` | Number of bars, a positive `int`.                             |
 
-**Returns:** The weighted mean; `na` for the first `length - 1` bars and while any value in the window is `na`.
+**Returns:** The weighted mean; `na` for the first `length - 1` bars and when every value in the window is `na`.
 
 The newest value has weight `length`, the one before it `length - 1`, and so
-on down to `1` for the oldest.
+on down to `1` for the oldest. Values that are `na` are left out with their
+weights.
 
 ### vwma
 
@@ -170,10 +184,10 @@ ta.vwma(source, int length)
 | `source`  |       | Series to average, usually [`close`](./market-data.md#close). |
 | `length`  | `int` | Number of bars, a positive `int`.                             |
 
-**Returns:** The weighted mean; `na` for the first `length - 1` bars, while any price or volume in the window is `na`, and when the window's total volume is `0`.
+**Returns:** The weighted mean; `na` for the first `length - 1` bars and when the bars used have no volume.
 
-It is `ta.sma(source * volume, length) / ta.sma(volume, length)`, weighting
-each bar by its [`volume`](./market-data.md#volume).
+It is the sum of `source * volume` divided by the sum of [`volume`](./market-data.md#volume), over
+the window's bars where both are known.
 
 ### hma
 
@@ -188,11 +202,11 @@ ta.hma(source, int length)
 | `source`  |       | Series to average, usually [`close`](./market-data.md#close). |
 | `length`  | `int` | Number of bars, an `int` of at least `2`.                     |
 
-**Returns:** The average; `na` for the first `length + math.round(math.sqrt(length)) - 2` bars and while an `na` value of `source` is still inside its windows.
+**Returns:** The average; `na` for the first `length + math.floor(math.sqrt(length)) - 2` bars.
 
-It is the [`ta.wma`](./ta.md#wma) over `math.round(math.sqrt(length))` bars of
+It is the [`ta.wma`](./ta.md#wma) over `math.floor(math.sqrt(length))` bars of
 `2 * ta.wma(source, length / 2) - ta.wma(source, length)`, with `length / 2`
-rounded down.
+rounded down. Like [`ta.wma`](./ta.md#wma), it leaves out `na` values.
 
 ### swma
 
@@ -265,11 +279,11 @@ ta.cog(source, int length)
 | `source`  |       | Series to measure, usually [`close`](./market-data.md#close). |
 | `length`  | `int` | Number of bars, a positive `int`.                             |
 
-**Returns:** The center of gravity; `na` for the first `length - 1` bars, while any value in the window is `na`, and when the values sum to `0`.
+**Returns:** The center of gravity; `na` for the first `length - 1` bars, when every value in the window is `na`, and when the known values sum to `0`.
 
 It is minus the sum of `source[i] * (i + 1)` divided by the sum of
 `source[i]`, for `i` from `0` (the current bar) to `length - 1`, so it is
-negative when the values are positive.
+negative when the values are positive. Values that are `na` are left out.
 
 ## Momentum
 
@@ -353,10 +367,11 @@ ta.cmo(source, int length)
 | `source`  |       | Series to measure, usually [`close`](./market-data.md#close). |
 | `length`  | `int` | Number of changes, a positive `int`.                          |
 
-**Returns:** The oscillator; `na` for the first `length` bars, while any value in the window is `na`, and when `source` did not change over the window.
+**Returns:** The oscillator; `na` for the first `length` bars, when no change in the window is known, and when `source` did not change over the window.
 
 Over the last `length` bar-to-bar changes, it is
-`100 * (gains - losses) / (gains + losses)`.
+`100 * (gains - losses) / (gains + losses)`. A change that involves an `na`
+value is left out.
 
 ### tsi
 
@@ -393,7 +408,7 @@ ta.stoch(source, h, l, int length)
 | `l`       |       | Series whose lowest value is the bottom of the range, usually [`low`](./market-data.md#low). |
 | `length`  | `int` | Number of bars, a positive `int`.                                                            |
 
-**Returns:** The percentage; `na` for the first `length - 1` bars, while any value in the windows is `na`, and when the range is `0`.
+**Returns:** The percentage; `na` for the first `length - 1` bars, when `source` is `na` or a window has no known value, and when the range is `0`. Values that are `na` are left out of the windows.
 
 It is `100 * (source - lowest) / (highest - lowest)`, from `0` to `100` when
 `source` lies within that range. The result is not smoothed; pass it to
@@ -419,10 +434,11 @@ ta.cci(source, int length)
 | `source`  |       | Series to measure, such as [`hlc3`](./market-data.md#hlc3). |
 | `length`  | `int` | Number of bars, a positive `int`.                           |
 
-**Returns:** The index; `na` for the first `length - 1` bars, while any value in the window is `na`, and when all values in the window are equal.
+**Returns:** The index; `na` for the first `length - 1` bars, when `source` is `na`, and when the known values in the window are all equal.
 
 It is `(source - mean) / (0.015 * deviation)`, where `mean` is the
 [`ta.sma`](./ta.md#sma) and `deviation` the [`ta.dev`](./ta.md#dev) of the last `length` values.
+Values that are `na` are left out of both.
 
 ### wpr
 
@@ -454,13 +470,12 @@ ta.mfi(source, int length)
 | `source`  |       | Price series, usually [`hlc3`](./market-data.md#hlc3). |
 | `length`  | `int` | Number of bars, a positive `int`.                      |
 
-**Returns:** The index; `0` when bars in the window fell but none rose, and `na` when none fell or the volume of a bar that rose or fell is `na`.
+**Returns:** The index; `na` for the first `length` bars and when no bar in the window fell, and `0` when bars fell but none rose.
 
 Money flow is `source * volume`, using [`volume`](./market-data.md#volume). Over the last `length`
 bars, the flows of bars where `source` rose and of bars where it fell are
-summed separately, and the result is `100 - 100 / (1 + rising / falling)`.
-Bars whose change cannot be computed, such as the first bar, are left out
-instead of making the result `na`.
+summed separately, and the result is `100 - 100 / (1 + rising / falling)`. A
+bar whose change or flow involves an `na` value is left out.
 
 ### macd
 
@@ -567,7 +582,9 @@ ta.dev(source, int length)
 | `source`  |       | Series to measure.                |
 | `length`  | `int` | Number of bars, a positive `int`. |
 
-**Returns:** The deviation; `na` for the first `length - 1` bars and while any value in the window is `na`.
+**Returns:** The deviation; `na` for the first `length - 1` bars and when every value in the window is `na`.
+
+Values that are `na` are left out.
 
 ### variance
 
@@ -577,13 +594,16 @@ Variance of the last `length` values of `source`.
 ta.variance(source, int length, biased = true)
 ```
 
-| Parameter | Type  | Default | Description                                                                                          |
-| --------- | ----- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `source`  |       |         | Series to measure.                                                                                   |
-| `length`  | `int` |         | Number of bars, a positive `int`.                                                                    |
-| `biased`  |       | `true`  | `true` divides by `length` (population variance); `false` divides by `length - 1` (sample variance). |
+| Parameter | Type  | Default | Description                                                                                |
+| --------- | ----- | ------- | ------------------------------------------------------------------------------------------ |
+| `source`  |       |         | Series to measure.                                                                         |
+| `length`  | `int` |         | Number of bars, a positive `int`.                                                          |
+| `biased`  |       | `true`  | `true` divides by `n` (population variance); `false` divides by `n - 1` (sample variance). |
 
-**Returns:** The variance; `na` for the first `length - 1` bars, while any value in the window is `na`, and for a sample variance of one value.
+**Returns:** The variance; `na` for the first `length - 1` bars, when every value in the window is `na`, and for a sample variance of one value.
+
+Values that are `na` are left out, so `n` below is the number of known values
+in the window.
 
 ### stdev
 
@@ -614,7 +634,9 @@ ta.range(source, int length)
 | `source`  |       | Series to measure.                |
 | `length`  | `int` | Number of bars, a positive `int`. |
 
-**Returns:** The range; `na` for the first `length - 1` bars and while any value in the window is `na`.
+**Returns:** The range; `na` for the first `length - 1` bars and when every value in the window is `na`.
+
+Values that are `na` are left out.
 
 ### bb
 
@@ -827,39 +849,39 @@ ta.cross(source1, source2)
 
 ### rising
 
-True when `source` rose on each of the last `length` bars.
+True when `source` is greater than each of its previous `length` values.
 
 ```tea
 ta.rising(source, int length)
 ```
 
-| Parameter | Type  | Description                                    |
-| --------- | ----- | ---------------------------------------------- |
-| `source`  |       | Series to test.                                |
-| `length`  | `int` | Number of consecutive rises, a positive `int`. |
+| Parameter | Type  | Description                                |
+| --------- | ----- | ------------------------------------------ |
+| `source`  |       | Series to test.                            |
+| `length`  | `int` | Number of previous bars, a positive `int`. |
 
-**Returns:** `true` when every rise happened, otherwise `false`; `false` for the first `length` bars.
+**Returns:** `true` when `source` exceeds every known previous value, otherwise `false`; `false` for the first `length` bars.
 
-Each value must be strictly greater than the one before it, so `length`
-rises span `length + 1` values. A comparison with `na` is `false`.
+Previous values that are `na` are left out; the result is `false` when
+`source` is `na` or none of the previous values is known.
 
 ### falling
 
-True when `source` fell on each of the last `length` bars.
+True when `source` is less than each of its previous `length` values.
 
 ```tea
 ta.falling(source, int length)
 ```
 
-| Parameter | Type  | Description                                    |
-| --------- | ----- | ---------------------------------------------- |
-| `source`  |       | Series to test.                                |
-| `length`  | `int` | Number of consecutive falls, a positive `int`. |
+| Parameter | Type  | Description                                |
+| --------- | ----- | ------------------------------------------ |
+| `source`  |       | Series to test.                            |
+| `length`  | `int` | Number of previous bars, a positive `int`. |
 
-**Returns:** `true` when every fall happened, otherwise `false`; `false` for the first `length` bars.
+**Returns:** `true` when `source` is below every known previous value, otherwise `false`; `false` for the first `length` bars.
 
-Each value must be strictly less than the one before it, so `length` falls
-span `length + 1` values. A comparison with `na` is `false`.
+Previous values that are `na` are left out; the result is `false` when
+`source` is `na` or none of the previous values is known.
 
 ### barssince
 
@@ -888,9 +910,10 @@ ta.highest(source, int length)
 | `source`  |       | Series to search, usually [`high`](./market-data.md#high). |
 | `length`  | `int` | Number of bars, a positive `int`.                          |
 
-**Returns:** The highest value; `na` for the first `length - 1` bars and while any value in the window is `na`.
+**Returns:** The highest value; `na` for the first `length - 1` bars and when every value in the window is `na`.
 
-To compare against earlier bars only, read the result's history:
+Values that are `na` are left out. To compare against earlier bars only, read
+the result's history:
 
 ```tea
 upper = ta.highest(high, 20)
@@ -910,7 +933,9 @@ ta.lowest(source, int length)
 | `source`  |       | Series to search, usually [`low`](./market-data.md#low). |
 | `length`  | `int` | Number of bars, a positive `int`.                        |
 
-**Returns:** The lowest value; `na` for the first `length - 1` bars and while any value in the window is `na`.
+**Returns:** The lowest value; `na` for the first `length - 1` bars and when every value in the window is `na`.
+
+Values that are `na` are left out.
 
 ### highestbars
 
@@ -925,11 +950,10 @@ ta.highestbars(source, int length)
 | `source`  |       | Series to search, usually [`high`](./market-data.md#high). |
 | `length`  | `int` | Number of bars, a positive `int`.                          |
 
-**Returns:** An `int` from `1 - length` to `0`.
+**Returns:** An `int` from `1 - length` to `0`; `na` for the first `length - 1` bars and when every value in the window is `na`.
 
 `0` is the current bar and `-1` the previous one; ties go to the most recent
-bar. Values that are `na`, including bars before the first, are skipped, so
-the result is never `na`; if `source` itself is `na`, it is `0`.
+bar. Values that are `na` are left out.
 
 ### lowestbars
 
@@ -944,11 +968,10 @@ ta.lowestbars(source, int length)
 | `source`  |       | Series to search, usually [`low`](./market-data.md#low). |
 | `length`  | `int` | Number of bars, a positive `int`.                        |
 
-**Returns:** An `int` from `1 - length` to `0`.
+**Returns:** An `int` from `1 - length` to `0`; `na` for the first `length - 1` bars and when every value in the window is `na`.
 
 `0` is the current bar and `-1` the previous one; ties go to the most recent
-bar. Values that are `na`, including bars before the first, are skipped, so
-the result is never `na`; if `source` itself is `na`, it is `0`.
+bar. Values that are `na` are left out.
 
 ### pivothigh
 
@@ -1012,10 +1035,9 @@ ta.cum(source)
 | --------- | -------------------------------------------------------------- |
 | `source`  | Series to add up, such as [`volume`](./market-data.md#volume). |
 
-**Returns:** The sum so far; `na` from the first `na` value of `source` onward.
+**Returns:** The sum so far; `na` before the first value of `source`.
 
-An `na` value is not skipped: once `source` is `na`, this and every later
-result is `na`. Wrap `source` in [`nz`](./core.md#nz) to count missing values as `0`.
+Values that are `na` are left out: the total keeps its value on those bars.
 
 ### max
 
@@ -1029,10 +1051,9 @@ ta.max(source)
 | --------- | ---------------- |
 | `source`  | Series to track. |
 
-**Returns:** The running maximum; `na` before the first value and on bars where `source` is `na`.
+**Returns:** The running maximum; `na` before the first value of `source`.
 
-An `na` value resets it: the result is `na` on that bar and starts over from
-the next value, forgetting earlier ones.
+Values that are `na` are left out: the result keeps its value on those bars.
 
 ### min
 
@@ -1046,10 +1067,9 @@ ta.min(source)
 | --------- | ---------------- |
 | `source`  | Series to track. |
 
-**Returns:** The running minimum; `na` before the first value and on bars where `source` is `na`.
+**Returns:** The running minimum; `na` before the first value of `source`.
 
-An `na` value resets it: the result is `na` on that bar and starts over from
-the next value, forgetting earlier ones.
+Values that are `na` are left out: the result keeps its value on those bars.
 
 ### correlation
 
@@ -1065,7 +1085,9 @@ ta.correlation(source1, source2, int length)
 | `source2` |       | Second series.                    |
 | `length`  | `int` | Number of bars, a positive `int`. |
 
-**Returns:** Pearson's correlation; `na` for the first `length - 1` bars, while any value in either window is `na`, and when either series is constant over the window.
+**Returns:** Pearson's correlation; `na` for the first `length - 1` bars, when no bar in the window has both values, and when either series is constant over the bars used.
+
+Bars where either value is `na` are left out.
 
 ### percentrank
 
@@ -1083,3 +1105,87 @@ ta.percentrank(source, int length)
 **Returns:** A percentage from `0` to `100`; `na` for the first `length` bars and while `source` or any of the previous `length` values is `na`.
 
 The result is `100 * count / length`.
+
+## Volume
+
+### obv
+
+On-balance volume: the running total of [`volume`](./market-data.md#volume), added on bars where [`close`](./market-data.md#close) rose and subtracted on bars where it fell.
+
+```tea
+obv = cum(math.sign(change(close)) * volume)
+```
+
+It is `ta.cum(math.sign(ta.change(close)) * volume)`, computed once per bar
+for the whole script.
+
+### accdist
+
+Accumulation/distribution: the running total of each bar's volume, weighted by where [`close`](./market-data.md#close) sits between [`low`](./market-data.md#low) and [`high`](./market-data.md#high).
+
+```tea
+accdist = cum(high == low ? 0.0 : (2 * close - low - high) / (high - low) * volume)
+```
+
+Each bar adds `(2 * close - low - high) / (high - low) * volume`, or `0` when
+`high` equals `low`.
+
+### pvt
+
+Price-volume trend: the running total of each bar's [`volume`](./market-data.md#volume), weighted by the relative change of [`close`](./market-data.md#close).
+
+```tea
+pvt = cum(change(close) / close[1] * volume)
+```
+
+It is `ta.cum(ta.change(close) / close[1] * volume)`.
+
+### iii
+
+Intraday intensity index of the current bar: where [`close`](./market-data.md#close) sits between [`low`](./market-data.md#low) and [`high`](./market-data.md#high), times [`volume`](./market-data.md#volume).
+
+```tea
+iii = (2 * close - high - low) / (high - low) * volume
+```
+
+It is `(2 * close - high - low) / (high - low) * volume`; `na` when `high`
+equals `low`.
+
+### wvad
+
+Williams variable accumulation/distribution of the current bar.
+
+```tea
+wvad = (close - open) / (high - low) * volume
+```
+
+It is `(close - open) / (high - low) * volume`; `na` when `high` equals
+`low`.
+
+### wad
+
+Williams accumulation/distribution: the running total of each bar's move from its true low on an up bar, or from its true high on a down bar.
+
+```tea
+wad = cum(williamsGain())
+```
+
+The true low is the lower of [`low`](./market-data.md#low) and the previous [`close`](./market-data.md#close); the
+true high is the higher of [`high`](./market-data.md#high) and the previous close. A bar where
+`close` did not change adds `0`.
+
+### nvi
+
+Negative volume index: starts at `1` and moves with [`close`](./market-data.md#close), by its relative change, only on bars whose [`volume`](./market-data.md#volume) fell from the previous bar.
+
+```tea
+nvi = volumeIndex(true)
+```
+
+### pvi
+
+Positive volume index: starts at `1` and moves with [`close`](./market-data.md#close), by its relative change, only on bars whose [`volume`](./market-data.md#volume) rose from the previous bar.
+
+```tea
+pvi = volumeIndex(false)
+```

@@ -22,7 +22,7 @@
           "id": "reference/language/declarations",
           "title": "Declarations",
           "description": "Variables and assignment, functions, struct and enum types, methods, interfaces, type parameters, imports, exports and headers.",
-          "markdown": "A declaration introduces a name. A variable is visible from its declaration to\nthe end of the block that declares it, including nested blocks. Functions,\ntypes, enums, interfaces and imports are declared at the top level, and their\nnames are visible throughout the file.\n\n## Variables\n\n### Declaration: `=`\n\n```text\nname = expression\nType name = expression\n```\n\nDeclares a new variable in the current block and gives it the value of\n`expression`. A plain declaration runs every time execution reaches it, so a\ntop-level declaration is computed again on every step.\n\n- Without an annotation, the variable takes the initializer's type. An `na`\n  initializer needs an annotation: `float level = na`.\n- With an annotation, the initializer must convert to that type (see\n  [conversions](#reference/language/types)). Variable annotations take no\n  [qualifier](#reference/language/types).\n- The initializer must have a value: a call that returns nothing, or an `if`\n  whose branches have different types, is an error.\n- A name can be declared once in a block. A nested block, loop or function may\n  declare the same name again; the new variable hides the outer one until the\n  block ends. Use `:=` to change the outer variable instead.\n- Built-in names such as `close`, `ta`, `plot`, `color` and `true` cannot be\n  declared.\n- A `request.*` call must be the whole initializer of a plain top-level\n  declaration; see requests.\n\n```tea\nspread = high - low\nfloat lastPeak = na\narray<float> closes = array.from(close)\nemit \"spread\" spread\n```\n\nA declaration in a nested block hides the outer variable:\n\n```tea\nlevel = 1\nif close > open\n    level = 2\n    emit \"inner\" level // 2\nemit \"outer\" level     // 1\n```\n\n### `var`\n\n```text\nvar name = expression\nvar Type name = expression\n```\n\nInitializes the variable once, the first time execution reaches the\ndeclaration. On later steps the declaration is skipped and the variable keeps\nits value; change it with `:=` or a collection update.\n\n- A `var` variable is always `series`.\n- Inside a function, each call written in the source has its own variable.\n- If the initializer does not finish, because it executes a `return` or the\n  step fails, the variable stays uninitialized and the initializer runs again\n  the next time it is reached.\n- On live data a row can run several times before it is confirmed. Each run\n  starts from the variable's value confirmed on the previous row, so\n  reassignments made by an unconfirmed run are discarded. Changes to the\n  fields of a struct the variable refers to are kept.\n- The initializer cannot call a function that executes `emit`, and `var`\n  cannot destructure a tuple.\n\n```tea\nvar int count = 0\nif close > open\n    count += 1\nemit \"upCloses\" count\n```\n\nThe memory model\ndefines persistence on live rows in full.\n\n### `varip`\n\n```text\nvarip name = expression\nvarip Type name = expression\n```\n\nLike `var`, except that values assigned during an unconfirmed run of a\nrow are kept for the next run instead of being discarded. Use it to count or\naccumulate the updates within one live row.\n\n```tea\nvarip int updates = 0\nupdates += 1\nemit \"updates\" updates\n```\n\n### `const`\n\n```text\nconst name = expression\nconst Type name = expression\n```\n\nDeclares a value fixed during compilation. The initializer must be a\ncompile-time constant: literals, other constants, built-in constants such as\n`color.red`, enum members, and operators applied to them (see\n[`const`](#reference/language/types)).\n\n- A `const` variable cannot be reassigned and has no history: `length[1]` is\n  an error.\n- Its value can be used where a compile-time value is required, such as an\n  output name or an `input.*` default.\n\n```tea\nconst string prefix = \"band\"\nconst int length = 20\nemit (prefix + \".upper\") ta.sma(high, length)\n```\n\n### Tuple destructuring\n\n```text\n[name1, name2, ...] = expression\n```\n\nDeclares one variable for each element of a tuple: the value of a function or\nblock that ends in `[a, b]`, a tuple literal, or an `if`, `switch` or loop\nwhose body ends in tuples.\n\n- The number of names must equal the number of elements.\n- A tuple cannot be kept in one variable: with a tuple-valued `f`, `pair = f()`\n  is an error.\n- `var`, `varip` and `const` cannot destructure, and destructured names cannot\n  be reassigned together with `:=`.\n\n```tea\nbounds(float a, float b) => [math.min(a, b), math.max(a, b)]\n\n[bottom, top] = bounds(open, close)\nemit \"bottom\" bottom\nemit \"top\" top\n```\n\n### Reassignment: `:=`\n\n```text\ntarget := expression\n```\n\nGives an existing variable or struct field a new value.\n\n- `target` is a variable declared earlier in this block or an enclosing one,\n  or a field: `point.x`, `this.x`.\n- The value must convert to the target's type.\n- `const` variables, built-in names and undeclared names cannot be assigned.\n  `values[0] := x` is an error, because `values[0]` is a\n  [history](#reference/language/expressions) read; use `values.set(0, x)`.\n- Inside a function or method, variables declared outside it cannot be\n  reassigned, except that a library's functions may update the library's own\n  `var` variables. Fields of structs reached through outside variables can be\n  assigned.\n- A variable that is reassigned anywhere is `series`.\n- Assigning a struct value rebinds the variable to that reference; it does not\n  copy fields.\n- As the last statement of a block, an assignment gives the block its value.\n\n```tea\ndir = 0\ndir := close > open ? 1 : -1\nemit \"dir\" dir\n```\n\n### Compound assignment: `+=` `-=` `*=` `/=` `%=`\n\n`target op= value` is `target := target op value`, using the\n[arithmetic](#reference/language/expressions) rules: an `int` target needs an `int` result\n(`count += 1.5` is an error), `/=` on an `int` truncates, and `+=` on a\n`string` concatenates.\n\n```tea\nvar float total = 0.0\ntotal += close - open\nvar string trail = \"\"\ntrail += close > open ? \"+\" : \"-\"\nemit \"total\" total\nemit \"trail\" trail\n```\n\n## Functions\n\n### Function declarations: `=>`\n\n```text\nname(parameters) => expression\n\nname(parameters) =>\n    statements\n    result\n```\n\n- Functions are declared at the top level of a file and are visible\n  throughout it, including above the declaration.\n- The body is one expression, or an indented block whose value is the value of\n  its last statement. [`return`](#reference/language/control-flow) leaves earlier.\n- The result type is inferred and cannot be written. Every `return` value and\n  the final value must share a type (`int` and `float` give `float`); a\n  function cannot return a value on one path and none on another.\n- A function reads variables declared outside it but cannot reassign them or\n  update collections stored in them; in a library, functions may update the\n  library's own `var` variables. A function can change fields of structs it\n  reaches.\n- A function cannot call itself, directly or through other functions.\n- A function is not a value: it can only be called.\n- State belongs to the call as written. Each call in the source has its own\n  `var` variables and its own history of the function's parameters and locals.\n\n```tea\nspreadRatio(float a, float b) =>\n    gap = math.abs(a - b)\n    gap / math.max(a, b)\n\nemit \"ratio\" spreadRatio(high, low)\n```\n\n```tea\ncounter() =>\n    var int calls = 0\n    calls += 1\n    calls\n\nfirst = counter()\nsecond = counter()\nemit \"first\" first   // 1, 2, 3, ...\nemit \"second\" second // also 1, 2, 3, ...\n```\n\n### Parameters\n\n```text\nname\nType name\nqualifier Type name\n... = default\n```\n\n- A typed parameter converts its argument to that type and rejects arguments\n  that do not convert. An untyped parameter takes the argument's type; the\n  body is checked for each combination of argument types it is called with.\n  An `na` argument needs a typed parameter.\n- A [qualifier](#reference/language/types) caps how variable the\n  argument may be: `simple int length` rejects a `series` argument. A\n  qualifier needs a type after it.\n- `= default` makes the parameter optional. The default is evaluated for each\n  call that omits the argument, and may use earlier parameters and variables\n  declared outside the function.\n- Parameter names are unique within one declaration.\n- A parameter is a local variable: the body may reassign it without affecting\n  the caller. It keeps its argument's qualifier, so a constant string argument\n  can be forwarded to `emit`.\n\n```tea\nscaled(float value, simple float factor = 2.0) => value * factor\n\nemit \"double\" scaled(close)\nemit \"triple\" scaled(close, factor = 3.0)\n```\n\nCalls pass arguments by position, then by name; see\n[calls](#reference/language/expressions).\n\n## `struct` and `type`\n\n```text\nstruct Name\n    Type field\n    Type field = default\n    ResultType method(Type param) => body\n```\n\n`struct Name` and the block form `type Name` declare the same kind of type; the\ntwo keywords are interchangeable. A struct is a nominal reference type:\nassigning a struct value copies the reference, so every copy sees the same\nfields. See the memory model.\n\n- Types are declared at the top level. Their names are visible throughout the\n  file, so fields can refer to types declared later and to the type itself.\n- Fields and methods may be interleaved and share one namespace.\n- Structs have no `==`; test for a missing reference with `na(x)`.\n- In a library, `export struct Name` makes the type, its fields and its\n  methods available to importers.\n\n### Fields\n\n```text\nType name\nType name = default\n```\n\n- One field per line. Fields take no qualifier and no `var` or `varip`:\n  persistence belongs to the variable that holds the struct.\n- A field may hold the struct's own type, directly or through other types and\n  collections. Such a recursive type cannot be [emitted](#reference/language/outputs).\n- A default is evaluated each time a constructor omits the field. It may read\n  variables and constants declared outside the type, but not other fields or\n  `this`. It can construct a type, or name an enum member, only when that type\n  or enum is declared above this one.\n\n```tea\nstruct Node\n    int value\n    Node next = na\n\nhead = Node.new(1, Node.new(2))\nemit \"second\" head.next.value // 2\n```\n\n### Construction: `.new()`\n\n```text\nName.new(value, ..., field = value)\n```\n\n- Positional arguments fill fields in declaration order; methods do not\n  count. Named arguments set fields by name.\n- Every field without a default must be given.\n- Each call creates a new object. The result is `series`.\n- `Name(...)` without `.new` is an error. An imported type is constructed with\n  `pkg.Name.new(...)`.\n- A type can be constructed only below its declaration.\n\n```tea\nstruct Point\n    float x\n    float y = 0.0\n\norigin = Point.new(0.0)\np = Point.new(y = 2.0, x = 1.0)\np.x := 3.0\nemit \"x\" p.x            // 3\nemit \"originY\" origin.y // 0\n```\n\n### Methods\n\n```text\nResultType name(Type param, ...) => body\nResultType name(Type param, ...) const => body\n```\n\nA method is declared inside a struct body and called as\n`value.name(arguments)` on any value of that type: a variable, a field, a\ncollection element or a history read.\n\n- The result type is required; `void` declares a method without a value.\n  Every parameter needs a type, and may have a qualifier and a default.\n- `this` is the value the method was called on.\n- A `void` method's body must not end with a value. An assignment produces\n  one, so end such a body with a bare `return`.\n- Defaults are evaluated where the type is declared: they may read variables\n  declared outside the type, but not `this` or other parameters.\n- Method bodies follow the same rules as function bodies, and are checked even\n  when the method is never called.\n- Through an `na` reference, a mutable method stops the step with a runtime\n  error; a `const` method reads empty field values.\n- A method call's result is `series`.\n\n```tea\nstruct Counter\n    int value = 0\n\n    int add(int amount) =>\n        this.value += amount\n        this.value\n\n    int read() const => this.value\n\n    void reset() =>\n        this.value := 0\n        return\n\ncounter = Counter.new()\ncounter.add(2)\nemit \"value\" counter.read() // 2\n```\n\n### `this`\n\nInside a method, `this` refers to the receiver. It is used only to select a\nfield or method, as in `this.value` or `this.add(1)`; a bare `this` cannot be\nstored, returned, passed or compared. `this` is a reserved keyword and is an\nerror outside a method.\n\n### `const` methods\n\nA trailing `const` makes the receiver read-only, shallowly. The method cannot\nassign a field of `this`, update a collection stored in a field of `this`, or\ncall a mutable method on `this`. It can change other structs that `this`\nrefers to, through their own fields and methods.\n\n```tea\nstruct Account\n    float cash\n    array<float> fills\n\n    void record(float price) =>\n        this.fills.push(price)\n\n    float balance() const => this.cash\n\naccount = Account.new(100.0, array.new<float>())\naccount.record(close)\nemit \"fills\" account.fills.size() // 1\nemit \"cash\" account.balance()     // 100\n```\n\n### `type Name = Target`\n\nTea has no type aliases. `type Name = Target` is reported as an error:\n`type aliases are not supported yet`.\n\n## `enum`\n\n```text\nenum Name\n    member\n    member = \"Title\"\n```\n\nDeclares a nominal type with a fixed set of members.\n\n- Enums are declared at the top level. A member is written `Name.member`, or\n  `pkg.Name.member` for an imported enum, and is a `const` value.\n- A title is a constant string; without one, the title is the member's name.\n  `str.tostring(value)` returns the title, an output column holds the member\n  name, and `input.enum()` passes the titles to the host.\n- Members compare with `==` and `!=`. Values of different enum types cannot be\n  compared.\n- Members can be used only below the declaration; the type name can appear in\n  annotations anywhere in the file. Member names are unique within one enum.\n\n```tea\nenum Side\n    long = \"Long\"\n    short = \"Short\"\n    flat\n\nside = close > open ? Side.long : Side.short\nemit \"title\" str.tostring(side) // \"Long\" or \"Short\"\nemit \"isLong\" side == Side.long\n```\n\n## `interface`\n\n```text\ninterface Name\n    ResultType method(Type param, ...)\n    ResultType method(Type param, ...) const\n```\n\nDeclares a set of method signatures. An interface has no fields, bodies or\nparameter defaults, and may be empty.\n\n- Interfaces are declared at the top level, and exported with\n  `export interface` from a library.\n- An interface is not a value type: it cannot annotate a variable or\n  parameter, be constructed or be called. Its use is to constrain\n  type parameters.\n- A struct satisfies an interface when, for every method the interface lists,\n  it has a method of that name with the same parameter types and qualifiers,\n  the same result type and the same receiver mode (`const` or not). Parameter\n  names may differ, extra methods are allowed, and nothing declares the\n  relationship. An empty interface is satisfied by every struct.\n\n## Type parameters\n\n```text\nstruct Name<T: Interface, U: Interface>\ntype Name<T: Interface>\n```\n\nA struct type can take type parameters; functions, methods and interfaces\ncannot.\n\n- Every type parameter has a constraint: an interface declared in this file,\n  or `pkg.Interface` from an import.\n- Inside the type, `T` can be used in field types, method signatures and\n  bodies. A value of type `T` can call only the methods its constraint lists.\n- A type argument is a struct that satisfies the constraint. `Name.new(...)`\n  infers the arguments from the fields it is given; an annotation writes them\n  explicitly, as `Name<Source>`. `Name.new<Source>(...)` is an error.\n- Each different list of type arguments makes a different type, named like\n  `Name<Source>`.\n\n```tea\ninterface Reader\n    float read() const\n\nstruct Constant\n    float value\n    float read() const => this.value\n\nstruct Doubler<T: Reader>\n    T source\n    float read() const => this.source.read() * 2\n\nDoubler<Constant> doubled = Doubler.new(Constant.new(1.5))\nemit \"value\" doubled.read() // 3\n```\n\n## Imports and exports\n\n### `import` and `as`\n\n```text\nimport name\nimport name as alias\nimport ./relative/path\nimport ../relative/path as alias\n```\n\n- A single bare name imports a library that ships with Tea, such as\n  [`trade`](#reference/libraries/trade). `ta` is available as `ta` without an\n  import.\n- A path that starts with `./` or `../` imports the `.tea` file at that path,\n  relative to the importing file. The file must begin with a `library(...)`\n  header.\n- A bare path with several segments, such as `owner/name/1`, is reported as\n  unsupported.\n- The library's exports are reached through a namespace: the name in its\n  `library(\"...\")` header, or `alias` when `as alias` is written.\n- Imports are written at the top level.\n\n```tea\nimport ta as indicators\n\nemit \"average\" indicators.sma(close, 3)\n```\n\nImports defines path resolution and loading.\n\n### `export`\n\n```text\nexport name(parameters) => body\nexport struct Name\nexport type Name\nexport enum Name\nexport interface Name\nexport name = input.series(\"column\")\n```\n\n`export` makes a library's declaration available to files that import it.\nEverything else in a library stays private to it, including its `const`\nvalues and `var` variables.\n\n- Exporting a struct exports its fields and methods; exporting an enum exports\n  its members.\n- `export name = input.series(\"column\")` publishes an input alias: a\n  `series float` read from the input column of that name, as `close` is. It is\n  the only exported variable form.\n- An exported function cannot call `input.*`.\n- `export` is a contextual keyword: `export = 1` declares a variable named\n  `export`.\n\n### `library` and `indicator` headers\n\n```text\nlibrary(\"name\")\nindicator(\"Title\", overlay = true)\n```\n\n- `library(\"name\")` makes the file a library. It is the first statement, written\n  once, and `name` must be a valid name that is not a reserved keyword. The top\n  level of a library may contain only imports, function, type, enum and\n  interface declarations, `const` declarations, private `var` declarations\n  with one name and a type annotation, and exported input aliases.\n- `indicator(\"Title\")` describes an entry script to its host: a title and\n  whether to draw over the price chart. It is optional; when present it is the\n  first statement, written once, with literal arguments and a non-empty title.\n  It does not change how the script runs. Libraries cannot declare it.\n\n```tea\n/** Price band helpers. */\nlibrary(\"bands\")\n\nconst float defaultWidth = 2.0\n\nexport enum Edge\n    upper\n    lower\n\nexport band(float center, float width = defaultWidth) => [center - width, center + width]\n```\n\n```tea\nindicator(\"Range\", overlay = false)\n\nemit \"range\" high - low\n```\n\nSee [core functions](#reference/builtins/core) for both headers' parameters."
+          "markdown": "A declaration introduces a name. A variable is visible from its declaration to\nthe end of the block that declares it, including nested blocks. Functions,\ntypes, enums, interfaces and imports are declared at the top level, and their\nnames are visible throughout the file.\n\n## Variables\n\n### Declaration: `=`\n\n```text\nname = expression\nType name = expression\n```\n\nDeclares a new variable in the current block and gives it the value of\n`expression`. A plain declaration runs every time execution reaches it, so a\ntop-level declaration is computed again on every step.\n\n- Without an annotation, the variable takes the initializer's type. An `na`\n  initializer needs an annotation: `float level = na`.\n- With an annotation, the initializer must convert to that type (see\n  [conversions](#reference/language/types)). Variable annotations take no\n  [qualifier](#reference/language/types).\n- The initializer must have a value: a call that returns nothing, or an `if`\n  whose branches have different types, is an error.\n- A name can be declared once in a block. A nested block, loop or function may\n  declare the same name again; the new variable hides the outer one until the\n  block ends. Use `:=` to change the outer variable instead.\n- Built-in names such as `close`, `ta`, `plot`, `color` and `true` cannot be\n  declared.\n- A `request.*` call must be the whole initializer of a plain top-level\n  declaration; see requests.\n\n```tea\nspread = high - low\nfloat lastPeak = na\narray<float> closes = array.from(close)\nemit \"spread\" spread\n```\n\nA declaration in a nested block hides the outer variable:\n\n```tea\nlevel = 1\nif close > open\n    level = 2\n    emit \"inner\" level // 2\nemit \"outer\" level     // 1\n```\n\n### `var`\n\n```text\nvar name = expression\nvar Type name = expression\n```\n\nInitializes the variable once, the first time execution reaches the\ndeclaration. On later steps the declaration is skipped and the variable keeps\nits value; change it with `:=` or a collection update.\n\n- A `var` variable is always `series`.\n- Inside a function, each call written in the source has its own variable.\n- If the initializer does not finish, because it executes a `return` or the\n  step fails, the variable stays uninitialized and the initializer runs again\n  the next time it is reached.\n- On live data a row can run several times before it is confirmed. Each run\n  starts from the variable's value confirmed on the previous row, so\n  reassignments made by an unconfirmed run are discarded. Changes to the\n  fields of a struct the variable refers to are kept.\n- The initializer cannot call a function that executes `emit`, and `var`\n  cannot destructure a tuple.\n\n```tea\nvar int count = 0\nif close > open\n    count += 1\nemit \"upCloses\" count\n```\n\nThe memory model\ndefines persistence on live rows in full.\n\n### `varip`\n\n```text\nvarip name = expression\nvarip Type name = expression\n```\n\nLike `var`, except that values assigned during an unconfirmed run of a\nrow are kept for the next run instead of being discarded. Use it to count or\naccumulate the updates within one live row.\n\n```tea\nvarip int updates = 0\nupdates += 1\nemit \"updates\" updates\n```\n\n### `const`\n\n```text\nconst name = expression\nconst Type name = expression\n```\n\nDeclares a value fixed during compilation. The initializer must be a\ncompile-time constant: literals, other constants, built-in constants such as\n`color.red`, enum members, and operators applied to them (see\n[`const`](#reference/language/types)).\n\n- A `const` variable cannot be reassigned and has no history: `length[1]` is\n  an error.\n- Its value can be used where a compile-time value is required, such as an\n  output name or an `input.*` default.\n\n```tea\nconst string prefix = \"band\"\nconst int length = 20\nemit (prefix + \".upper\") ta.sma(high, length)\n```\n\n### Tuple destructuring\n\n```text\n[name1, name2, ...] = expression\n```\n\nDeclares one variable for each element of a tuple: the value of a function or\nblock that ends in `[a, b]`, a tuple literal, or an `if`, `switch` or loop\nwhose body ends in tuples.\n\n- The number of names must equal the number of elements.\n- A tuple cannot be kept in one variable: with a tuple-valued `f`, `pair = f()`\n  is an error.\n- `var`, `varip` and `const` cannot destructure, and destructured names cannot\n  be reassigned together with `:=`.\n\n```tea\nbounds(float a, float b) => [math.min(a, b), math.max(a, b)]\n\n[bottom, top] = bounds(open, close)\nemit \"bottom\" bottom\nemit \"top\" top\n```\n\n### Reassignment: `:=`\n\n```text\ntarget := expression\n```\n\nGives an existing variable or struct field a new value.\n\n- `target` is a variable declared earlier in this block or an enclosing one,\n  or a field: `point.x`, `this.x`.\n- The value must convert to the target's type.\n- `const` variables, built-in names and undeclared names cannot be assigned.\n  `values[0] := x` is an error, because `values[0]` is a\n  [history](#reference/language/expressions) read; use `values.set(0, x)`.\n- Inside a function or method, variables declared outside it cannot be\n  reassigned, except that a library's functions may update the library's own\n  `var` variables. Fields of structs reached through outside variables can be\n  assigned.\n- A variable that is reassigned anywhere is `series`.\n- Assigning a struct value rebinds the variable to that reference; it does not\n  copy fields.\n- As the last statement of a block, an assignment gives the block its value.\n\n```tea\ndir = 0\ndir := close > open ? 1 : -1\nemit \"dir\" dir\n```\n\n### Compound assignment: `+=` `-=` `*=` `/=` `%=`\n\n`target op= value` is `target := target op value`, using the\n[arithmetic](#reference/language/expressions) rules: an `int` target needs an `int` result\n(`count += 1.5` is an error), `/=` on an `int` truncates, and `+=` on a\n`string` concatenates.\n\n```tea\nvar float total = 0.0\ntotal += close - open\nvar string trail = \"\"\ntrail += close > open ? \"+\" : \"-\"\nemit \"total\" total\nemit \"trail\" trail\n```\n\n## Functions\n\n### Function declarations: `=>`\n\n```text\nname(parameters) => expression\n\nname(parameters) =>\n    statements\n    result\n```\n\n- Functions are declared at the top level of a file and are visible\n  throughout it, including above the declaration.\n- The body is one expression, or an indented block whose value is the value of\n  its last statement. [`return`](#reference/language/control-flow) leaves earlier.\n- The result type is inferred and cannot be written. Every `return` value and\n  the final value must share a type (`int` and `float` give `float`); a\n  function cannot return a value on one path and none on another.\n- A function reads variables declared outside it but cannot reassign them or\n  update collections stored in them; in a library, functions may update the\n  library's own `var` variables. A function can change fields of structs it\n  reaches.\n- A function cannot call itself, directly or through other functions.\n- A function is not a value: it can only be called.\n- State belongs to the call as written. Each call in the source has its own\n  `var` variables and its own history of the function's parameters and locals.\n\n```tea\nspreadRatio(float a, float b) =>\n    gap = math.abs(a - b)\n    gap / math.max(a, b)\n\nemit \"ratio\" spreadRatio(high, low)\n```\n\n```tea\ncounter() =>\n    var int calls = 0\n    calls += 1\n    calls\n\nfirst = counter()\nsecond = counter()\nemit \"first\" first   // 1, 2, 3, ...\nemit \"second\" second // also 1, 2, 3, ...\n```\n\n### Parameters\n\n```text\nname\nType name\nqualifier Type name\n... = default\n```\n\n- A typed parameter converts its argument to that type and rejects arguments\n  that do not convert. An untyped parameter takes the argument's type; the\n  body is checked for each combination of argument types it is called with.\n  An `na` argument needs a typed parameter.\n- A [qualifier](#reference/language/types) caps how variable the\n  argument may be: `simple int length` rejects a `series` argument. A\n  qualifier needs a type after it.\n- `= default` makes the parameter optional. The default is evaluated for each\n  call that omits the argument, and may use earlier parameters and variables\n  declared outside the function.\n- Parameter names are unique within one declaration.\n- A parameter is a local variable: the body may reassign it without affecting\n  the caller. It keeps its argument's qualifier, so a constant string argument\n  can be forwarded to `emit`.\n\n```tea\nscaled(float value, simple float factor = 2.0) => value * factor\n\nemit \"double\" scaled(close)\nemit \"triple\" scaled(close, factor = 3.0)\n```\n\nCalls pass arguments by position, then by name; see\n[calls](#reference/language/expressions).\n\n## `struct` and `type`\n\n```text\nstruct Name\n    Type field\n    Type field = default\n    ResultType method(Type param) => body\n```\n\n`struct Name` and the block form `type Name` declare the same kind of type; the\ntwo keywords are interchangeable. A struct is a nominal reference type:\nassigning a struct value copies the reference, so every copy sees the same\nfields. See the memory model.\n\n- Types are declared at the top level. Their names are visible throughout the\n  file, so fields can refer to types declared later and to the type itself.\n- Fields and methods may be interleaved and share one namespace.\n- Structs have no `==`; test for a missing reference with `na(x)`.\n- In a library, `export struct Name` makes the type, its fields and its\n  methods available to importers.\n\n### Fields\n\n```text\nType name\nType name = default\n```\n\n- One field per line. Fields take no qualifier and no `var` or `varip`:\n  persistence belongs to the variable that holds the struct.\n- A field may hold the struct's own type, directly or through other types and\n  collections. Such a recursive type cannot be [emitted](#reference/language/outputs).\n- A default is evaluated each time a constructor omits the field. It may read\n  variables and constants declared outside the type, but not other fields or\n  `this`. It can construct a type, or name an enum member, only when that type\n  or enum is declared above this one.\n\n```tea\nstruct Node\n    int value\n    Node next = na\n\nhead = Node.new(1, Node.new(2))\nemit \"second\" head.next.value // 2\n```\n\n### Construction: `.new()`\n\n```text\nName.new(value, ..., field = value)\n```\n\n- Positional arguments fill fields in declaration order; methods do not\n  count. Named arguments set fields by name.\n- Every field without a default must be given.\n- Each call creates a new object. The result is `series`.\n- `Name(...)` without `.new` is an error. An imported type is constructed with\n  `pkg.Name.new(...)`.\n- A type can be constructed only below its declaration.\n\n```tea\nstruct Point\n    float x\n    float y = 0.0\n\norigin = Point.new(0.0)\np = Point.new(y = 2.0, x = 1.0)\np.x := 3.0\nemit \"x\" p.x            // 3\nemit \"originY\" origin.y // 0\n```\n\n### Methods\n\n```text\nResultType name(Type param, ...) => body\nResultType name(Type param, ...) const => body\n```\n\nA method is declared inside a struct body and called as\n`value.name(arguments)` on any value of that type: a variable, a field, a\ncollection element or a history read.\n\n- The result type is required; `void` declares a method without a value.\n  Every parameter needs a type, and may have a qualifier and a default.\n- `this` is the value the method was called on.\n- A `void` method's body must not end with a value. An assignment produces\n  one, so end such a body with a bare `return`.\n- Defaults are evaluated where the type is declared: they may read variables\n  declared outside the type, but not `this` or other parameters.\n- Method bodies follow the same rules as function bodies, and are checked even\n  when the method is never called.\n- Through an `na` reference, a mutable method stops the step with a runtime\n  error; a `const` method reads empty field values.\n- A method call's result is `series`.\n\n```tea\nstruct Counter\n    int value = 0\n\n    int add(int amount) =>\n        this.value += amount\n        this.value\n\n    int read() const => this.value\n\n    void reset() =>\n        this.value := 0\n        return\n\ncounter = Counter.new()\ncounter.add(2)\nemit \"value\" counter.read() // 2\n```\n\n### `this`\n\nInside a method, `this` refers to the receiver. It is used only to select a\nfield or method, as in `this.value` or `this.add(1)`; a bare `this` cannot be\nstored, returned, passed or compared. `this` is a reserved keyword and is an\nerror outside a method.\n\n### `const` methods\n\nA trailing `const` makes the receiver read-only, shallowly. The method cannot\nassign a field of `this`, update a collection stored in a field of `this`, or\ncall a mutable method on `this`. It can change other structs that `this`\nrefers to, through their own fields and methods.\n\n```tea\nstruct Account\n    float cash\n    array<float> fills\n\n    void record(float price) =>\n        this.fills.push(price)\n\n    float balance() const => this.cash\n\naccount = Account.new(100.0, array.new<float>())\naccount.record(close)\nemit \"fills\" account.fills.size() // 1\nemit \"cash\" account.balance()     // 100\n```\n\n### `type Name = Target`\n\nTea has no type aliases. `type Name = Target` is reported as an error:\n`type aliases are not supported yet`.\n\n## `enum`\n\n```text\nenum Name\n    member\n    member = \"Title\"\n```\n\nDeclares a nominal type with a fixed set of members.\n\n- Enums are declared at the top level. A member is written `Name.member`, or\n  `pkg.Name.member` for an imported enum, and is a `const` value.\n- A title is a constant string; without one, the title is the member's name.\n  `str.tostring(value)` returns the title, an output column holds the member\n  name, and `input.enum()` passes the titles to the host.\n- Members compare with `==` and `!=`. Values of different enum types cannot be\n  compared.\n- Members can be used only below the declaration; the type name can appear in\n  annotations anywhere in the file. Member names are unique within one enum.\n\n```tea\nenum Side\n    long = \"Long\"\n    short = \"Short\"\n    flat\n\nside = close > open ? Side.long : Side.short\nemit \"title\" str.tostring(side) // \"Long\" or \"Short\"\nemit \"isLong\" side == Side.long\n```\n\n## `interface`\n\n```text\ninterface Name\n    ResultType method(Type param, ...)\n    ResultType method(Type param, ...) const\n```\n\nDeclares a set of method signatures. An interface has no fields, bodies or\nparameter defaults, and may be empty.\n\n- Interfaces are declared at the top level, and exported with\n  `export interface` from a library.\n- An interface is not a value type: it cannot annotate a variable or\n  parameter, be constructed or be called. Its use is to constrain\n  type parameters.\n- A struct satisfies an interface when, for every method the interface lists,\n  it has a method of that name with the same parameter types and qualifiers,\n  the same result type and the same receiver mode (`const` or not). Parameter\n  names may differ, extra methods are allowed, and nothing declares the\n  relationship. An empty interface is satisfied by every struct.\n\n## Type parameters\n\n```text\nstruct Name<T: Interface, U: Interface>\ntype Name<T: Interface>\n```\n\nA struct type can take type parameters; functions, methods and interfaces\ncannot.\n\n- Every type parameter has a constraint: an interface declared in this file,\n  or `pkg.Interface` from an import.\n- Inside the type, `T` can be used in field types, method signatures and\n  bodies. A value of type `T` can call only the methods its constraint lists.\n- A type argument is a struct that satisfies the constraint. `Name.new(...)`\n  infers the arguments from the fields it is given; an annotation writes them\n  explicitly, as `Name<Source>`. `Name.new<Source>(...)` is an error.\n- Each different list of type arguments makes a different type, named like\n  `Name<Source>`.\n\n```tea\ninterface Reader\n    float read() const\n\nstruct Constant\n    float value\n    float read() const => this.value\n\nstruct Doubler<T: Reader>\n    T source\n    float read() const => this.source.read() * 2\n\nDoubler<Constant> doubled = Doubler.new(Constant.new(1.5))\nemit \"value\" doubled.read() // 3\n```\n\n## Imports and exports\n\n### `import` and `as`\n\n```text\nimport name\nimport name as alias\nimport ./relative/path\nimport ../relative/path as alias\n```\n\n- A single bare name imports a library that ships with Tea, such as\n  [`trade`](#reference/libraries/trade). `ta` is available as `ta` without an\n  import.\n- A path that starts with `./` or `../` imports the `.tea` file at that path,\n  relative to the importing file. The file must begin with a `library(...)`\n  header.\n- A bare path with several segments, such as `owner/name/1`, is reported as\n  unsupported.\n- The library's exports are reached through a namespace: the name in its\n  `library(\"...\")` header, or `alias` when `as alias` is written.\n- Imports are written at the top level.\n\n```tea\nimport ta as indicators\n\nemit \"average\" indicators.sma(close, 3)\n```\n\nImports defines path resolution and loading.\n\n### `export`\n\n```text\nexport name(parameters) => body\nexport struct Name\nexport type Name\nexport enum Name\nexport interface Name\nexport name = input.series(\"column\")\nexport name = expression\n```\n\n`export` makes a library's declaration available to files that import it.\nEverything else in a library stays private to it, including its `const`\nvalues and `var` variables.\n\n- Exporting a struct exports its fields and methods; exporting an enum exports\n  its members.\n- `export name = input.series(\"column\")` publishes an input alias: a\n  `series float` read from the input column of that name, as `close` is.\n- `export name = expression` publishes a value computed on every bar, as\n  `ta.obv` is. A script that reads it computes it once per bar, before its own\n  statements, so every read agrees, including a read inside an `if` and a\n  history read such as `ta.obv[1]`. The expression may read market data and\n  call functions that keep state; it cannot emit, make a request or change\n  other state, and nothing may assign the exported name.\n- An exported function cannot call `input.*`.\n- `export` is a contextual keyword: `export = 1` declares a variable named\n  `export`.\n\n### `library` and `indicator` headers\n\n```text\nlibrary(\"name\")\nindicator(\"Title\", overlay = true)\n```\n\n- `library(\"name\")` makes the file a library. It is the first statement, written\n  once, and `name` must be a valid name that is not a reserved keyword. The top\n  level of a library may contain only imports, function, type, enum and\n  interface declarations, `const` declarations, private `var` declarations\n  with one name and a type annotation, exported input aliases, and exported\n  values computed on every bar.\n- `indicator(\"Title\")` describes an entry script to its host: a title and\n  whether to draw over the price chart. It is optional; when present it is the\n  first statement, written once, with literal arguments and a non-empty title.\n  It does not change how the script runs. Libraries cannot declare it.\n\n```tea\n/** Price band helpers. */\nlibrary(\"bands\")\n\nconst float defaultWidth = 2.0\n\nexport enum Edge\n    upper\n    lower\n\nexport band(float center, float width = defaultWidth) => [center - width, center + width]\n```\n\n```tea\nindicator(\"Range\", overlay = false)\n\nemit \"range\" high - low\n```\n\nSee [core functions](#reference/builtins/core) for both headers' parameters."
         },
         {
           "kind": "article",
@@ -3394,7 +3394,7 @@
           "id": "reference/builtins/ta",
           "title": "ta",
           "description": "Technical-analysis functions written in Tea.",
-          "intro": "Technical-analysis functions: moving averages, oscillators, volatility bands, crosses and running statistics.\n\nEach written call keeps its own history and state, covering only the bars on\nwhich that call runs. Call these functions on every bar and combine their\nresults with conditions afterwards: a call inside an `if` branch, one arm of a\nternary, or after `and` or `or` does not run when that code is skipped, so its\nwindow reads the skipped bars as `na` and its running state does not change on\nthem. A call inside a loop shares one history and state across all iterations.\nSee values and control flow.\n\nMost results are `na` until enough bars have arrived; each entry states when.\nThe time-series guide covers warm-up and\ncrossing rules.\n\n```tea\n// Call on every bar, then combine the result with the condition.\nrisingThree = ta.rising(close, 3)\nemit \"signal\" close > open and risingThree\n```\n\nAvailable in every script as `ta.name` without an import.",
+          "intro": "Technical-analysis functions: moving averages, oscillators, volatility bands, crosses and running statistics.\n\nEach written call keeps its own history and state, covering only the bars on\nwhich that call runs. Call these functions on every bar and combine their\nresults with conditions afterwards: a call inside an `if` branch, one arm of a\nternary, or after `and` or `or` does not run when that code is skipped, so its\nwindow reads the skipped bars as `na` and its running state does not change on\nthem. A call inside a loop shares one history and state across all iterations.\nSee values and control flow.\n\nMost results are `na` until enough bars have arrived; each entry states when.\nAfter that, a window function leaves out the `na` values in its window and is\n`na` only when none is left. A few, such as [`ta.swma`](#ta.swma) and\n[`ta.change`](#ta.change), say instead that an `na` value makes the result `na`.\nThe time-series guide covers warm-up and\ncrossing rules.\n\n```tea\n// Call on every bar, then combine the result with the condition.\nrisingThree = ta.rising(close, 3)\nemit \"signal\" close > open and risingThree\n```\n\nAvailable in every script as `ta.name` without an import.",
           "commonParameters": [],
           "entries": [
             {
@@ -3418,9 +3418,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "The mean; `na` for the first `length - 1` bars and while any value in the window is `na`.",
+              "returns": "The mean; `na` for the first `length - 1` bars and when every value in the window is `na`.",
               "members": null,
-              "body": ""
+              "body": "Values that are `na` are left out: the mean is over the window's other\nvalues."
             },
             {
               "id": "ta.ema",
@@ -3443,9 +3443,9 @@
                   "description": "Smoothing length in bars; larger values react more slowly."
                 }
               ],
-              "returns": "The average; `na` before the first value of `source` and on bars where `source` is `na`.",
+              "returns": "The average; `na` before the first value of `source`.",
               "members": null,
-              "body": "Each bar moves the average toward `source` by `2 / (length + 1)` of the\ndifference. It starts from the first value of `source` instead of waiting for\n`length` bars. An `na` value restarts it: the result is `na` on that bar, and\nthe average starts over from the next value. Compare [`ta.rma`](#ta.rma), which\nwaits for `length` values and skips `na`."
+              "body": "Each bar moves the average toward `source` by `2 / (length + 1)` of the\ndifference. It starts from the first value of `source` instead of waiting for\n`length` bars, and a bar where `source` is `na` leaves it unchanged.\nCompare [`ta.rma`](#ta.rma), which waits for `length` values."
             },
             {
               "id": "ta.rma",
@@ -3493,9 +3493,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "The weighted mean; `na` for the first `length - 1` bars and while any value in the window is `na`.",
+              "returns": "The weighted mean; `na` for the first `length - 1` bars and when every value in the window is `na`.",
               "members": null,
-              "body": "The newest value has weight `length`, the one before it `length - 1`, and so\non down to `1` for the oldest."
+              "body": "The newest value has weight `length`, the one before it `length - 1`, and so\non down to `1` for the oldest. Values that are `na` are left out with their\nweights."
             },
             {
               "id": "ta.vwma",
@@ -3518,9 +3518,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "The weighted mean; `na` for the first `length - 1` bars, while any price or volume in the window is `na`, and when the window's total volume is `0`.",
+              "returns": "The weighted mean; `na` for the first `length - 1` bars and when the bars used have no volume.",
               "members": null,
-              "body": "It is `ta.sma(source * volume, length) / ta.sma(volume, length)`, weighting\neach bar by its [`volume`](#volume)."
+              "body": "It is the sum of `source * volume` divided by the sum of [`volume`](#volume), over\nthe window's bars where both are known."
             },
             {
               "id": "ta.hma",
@@ -3543,9 +3543,9 @@
                   "description": "Number of bars, an `int` of at least `2`."
                 }
               ],
-              "returns": "The average; `na` for the first `length + math.round(math.sqrt(length)) - 2` bars and while an `na` value of `source` is still inside its windows.",
+              "returns": "The average; `na` for the first `length + math.floor(math.sqrt(length)) - 2` bars.",
               "members": null,
-              "body": "It is the [`ta.wma`](#ta.wma) over `math.round(math.sqrt(length))` bars of\n`2 * ta.wma(source, length / 2) - ta.wma(source, length)`, with `length / 2`\nrounded down."
+              "body": "It is the [`ta.wma`](#ta.wma) over `math.floor(math.sqrt(length))` bars of\n`2 * ta.wma(source, length / 2) - ta.wma(source, length)`, with `length / 2`\nrounded down. Like [`ta.wma`](#ta.wma), it leaves out `na` values."
             },
             {
               "id": "ta.swma",
@@ -3663,9 +3663,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "The center of gravity; `na` for the first `length - 1` bars, while any value in the window is `na`, and when the values sum to `0`.",
+              "returns": "The center of gravity; `na` for the first `length - 1` bars, when every value in the window is `na`, and when the known values sum to `0`.",
               "members": null,
-              "body": "It is minus the sum of `source[i] * (i + 1)` divided by the sum of\n`source[i]`, for `i` from `0` (the current bar) to `length - 1`, so it is\nnegative when the values are positive."
+              "body": "It is minus the sum of `source[i] * (i + 1)` divided by the sum of\n`source[i]`, for `i` from `0` (the current bar) to `length - 1`, so it is\nnegative when the values are positive. Values that are `na` are left out."
             },
             {
               "id": "ta.change",
@@ -3788,9 +3788,9 @@
                   "description": "Number of changes, a positive `int`."
                 }
               ],
-              "returns": "The oscillator; `na` for the first `length` bars, while any value in the window is `na`, and when `source` did not change over the window.",
+              "returns": "The oscillator; `na` for the first `length` bars, when no change in the window is known, and when `source` did not change over the window.",
               "members": null,
-              "body": "Over the last `length` bar-to-bar changes, it is\n`100 * (gains - losses) / (gains + losses)`."
+              "body": "Over the last `length` bar-to-bar changes, it is\n`100 * (gains - losses) / (gains + losses)`. A change that involves an `na`\nvalue is left out."
             },
             {
               "id": "ta.tsi",
@@ -3858,7 +3858,7 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "The percentage; `na` for the first `length - 1` bars, while any value in the windows is `na`, and when the range is `0`.",
+              "returns": "The percentage; `na` for the first `length - 1` bars, when `source` is `na` or a window has no known value, and when the range is `0`. Values that are `na` are left out of the windows.",
               "members": null,
               "body": "It is `100 * (source - lowest) / (highest - lowest)`, from `0` to `100` when\n`source` lies within that range. The result is not smoothed; pass it to\n[`ta.sma`](#ta.sma) to smooth it.\n\n```tea\nk = ta.sma(ta.stoch(close, high, low, 14), 3)\nd = ta.sma(k, 3)\nemit \"k\" k\nemit \"d\" d\n```"
             },
@@ -3883,9 +3883,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "The index; `na` for the first `length - 1` bars, while any value in the window is `na`, and when all values in the window are equal.",
+              "returns": "The index; `na` for the first `length - 1` bars, when `source` is `na`, and when the known values in the window are all equal.",
               "members": null,
-              "body": "It is `(source - mean) / (0.015 * deviation)`, where `mean` is the\n[`ta.sma`](#ta.sma) and `deviation` the [`ta.dev`](#ta.dev) of the last `length` values."
+              "body": "It is `(source - mean) / (0.015 * deviation)`, where `mean` is the\n[`ta.sma`](#ta.sma) and `deviation` the [`ta.dev`](#ta.dev) of the last `length` values.\nValues that are `na` are left out of both."
             },
             {
               "id": "ta.wpr",
@@ -3927,9 +3927,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "The index; `0` when bars in the window fell but none rose, and `na` when none fell or the volume of a bar that rose or fell is `na`.",
+              "returns": "The index; `na` for the first `length` bars and when no bar in the window fell, and `0` when bars fell but none rose.",
               "members": null,
-              "body": "Money flow is `source * volume`, using [`volume`](#volume). Over the last `length`\nbars, the flows of bars where `source` rose and of bars where it fell are\nsummed separately, and the result is `100 - 100 / (1 + rising / falling)`.\nBars whose change cannot be computed, such as the first bar, are left out\ninstead of making the result `na`."
+              "body": "Money flow is `source * volume`, using [`volume`](#volume). Over the last `length`\nbars, the flows of bars where `source` rose and of bars where it fell are\nsummed separately, and the result is `100 - 100 / (1 + rising / falling)`. A\nbar whose change or flow involves an `na` value is left out."
             },
             {
               "id": "ta.macd",
@@ -4054,9 +4054,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "The deviation; `na` for the first `length - 1` bars and while any value in the window is `na`.",
+              "returns": "The deviation; `na` for the first `length - 1` bars and when every value in the window is `na`.",
               "members": null,
-              "body": ""
+              "body": "Values that are `na` are left out."
             },
             {
               "id": "ta.variance",
@@ -4082,12 +4082,12 @@
                   "name": "biased",
                   "type": null,
                   "defaultValue": "true",
-                  "description": "`true` divides by `length` (population variance); `false` divides by `length - 1` (sample variance)."
+                  "description": "`true` divides by `n` (population variance); `false` divides by `n - 1` (sample variance)."
                 }
               ],
-              "returns": "The variance; `na` for the first `length - 1` bars, while any value in the window is `na`, and for a sample variance of one value.",
+              "returns": "The variance; `na` for the first `length - 1` bars, when every value in the window is `na`, and for a sample variance of one value.",
               "members": null,
-              "body": ""
+              "body": "Values that are `na` are left out, so `n` below is the number of known values\nin the window."
             },
             {
               "id": "ta.stdev",
@@ -4141,9 +4141,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "The range; `na` for the first `length - 1` bars and while any value in the window is `na`.",
+              "returns": "The range; `na` for the first `length - 1` bars and when every value in the window is `na`.",
               "members": null,
-              "body": ""
+              "body": "Values that are `na` are left out."
             },
             {
               "id": "ta.bb",
@@ -4421,7 +4421,7 @@
               "symbols": ["ta.rising"],
               "kind": "function",
               "category": "Crosses and conditions",
-              "summary": "True when `source` rose on each of the last `length` bars.",
+              "summary": "True when `source` is greater than each of its previous `length` values.",
               "signatures": ["ta.rising(source, int length)"],
               "parameters": [
                 {
@@ -4434,19 +4434,19 @@
                   "name": "length",
                   "type": "int",
                   "defaultValue": null,
-                  "description": "Number of consecutive rises, a positive `int`."
+                  "description": "Number of previous bars, a positive `int`."
                 }
               ],
-              "returns": "`true` when every rise happened, otherwise `false`; `false` for the first `length` bars.",
+              "returns": "`true` when `source` exceeds every known previous value, otherwise `false`; `false` for the first `length` bars.",
               "members": null,
-              "body": "Each value must be strictly greater than the one before it, so `length`\nrises span `length + 1` values. A comparison with `na` is `false`."
+              "body": "Previous values that are `na` are left out; the result is `false` when\n`source` is `na` or none of the previous values is known."
             },
             {
               "id": "ta.falling",
               "symbols": ["ta.falling"],
               "kind": "function",
               "category": "Crosses and conditions",
-              "summary": "True when `source` fell on each of the last `length` bars.",
+              "summary": "True when `source` is less than each of its previous `length` values.",
               "signatures": ["ta.falling(source, int length)"],
               "parameters": [
                 {
@@ -4459,12 +4459,12 @@
                   "name": "length",
                   "type": "int",
                   "defaultValue": null,
-                  "description": "Number of consecutive falls, a positive `int`."
+                  "description": "Number of previous bars, a positive `int`."
                 }
               ],
-              "returns": "`true` when every fall happened, otherwise `false`; `false` for the first `length` bars.",
+              "returns": "`true` when `source` is below every known previous value, otherwise `false`; `false` for the first `length` bars.",
               "members": null,
-              "body": "Each value must be strictly less than the one before it, so `length` falls\nspan `length + 1` values. A comparison with `na` is `false`."
+              "body": "Previous values that are `na` are left out; the result is `false` when\n`source` is `na` or none of the previous values is known."
             },
             {
               "id": "ta.barssince",
@@ -4506,9 +4506,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "The highest value; `na` for the first `length - 1` bars and while any value in the window is `na`.",
+              "returns": "The highest value; `na` for the first `length - 1` bars and when every value in the window is `na`.",
               "members": null,
-              "body": "To compare against earlier bars only, read the result's history:\n\n```tea\nupper = ta.highest(high, 20)\nemit \"breakout\" close > upper[1]\n```"
+              "body": "Values that are `na` are left out. To compare against earlier bars only, read\nthe result's history:\n\n```tea\nupper = ta.highest(high, 20)\nemit \"breakout\" close > upper[1]\n```"
             },
             {
               "id": "ta.lowest",
@@ -4531,9 +4531,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "The lowest value; `na` for the first `length - 1` bars and while any value in the window is `na`.",
+              "returns": "The lowest value; `na` for the first `length - 1` bars and when every value in the window is `na`.",
               "members": null,
-              "body": ""
+              "body": "Values that are `na` are left out."
             },
             {
               "id": "ta.highestbars",
@@ -4556,9 +4556,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "An `int` from `1 - length` to `0`.",
+              "returns": "An `int` from `1 - length` to `0`; `na` for the first `length - 1` bars and when every value in the window is `na`.",
               "members": null,
-              "body": "`0` is the current bar and `-1` the previous one; ties go to the most recent\nbar. Values that are `na`, including bars before the first, are skipped, so\nthe result is never `na`; if `source` itself is `na`, it is `0`."
+              "body": "`0` is the current bar and `-1` the previous one; ties go to the most recent\nbar. Values that are `na` are left out."
             },
             {
               "id": "ta.lowestbars",
@@ -4581,9 +4581,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "An `int` from `1 - length` to `0`.",
+              "returns": "An `int` from `1 - length` to `0`; `na` for the first `length - 1` bars and when every value in the window is `na`.",
               "members": null,
-              "body": "`0` is the current bar and `-1` the previous one; ties go to the most recent\nbar. Values that are `na`, including bars before the first, are skipped, so\nthe result is never `na`; if `source` itself is `na`, it is `0`."
+              "body": "`0` is the current bar and `-1` the previous one; ties go to the most recent\nbar. Values that are `na` are left out."
             },
             {
               "id": "ta.pivothigh",
@@ -4666,9 +4666,9 @@
                   "description": "Series to add up, such as [`volume`](#volume)."
                 }
               ],
-              "returns": "The sum so far; `na` from the first `na` value of `source` onward.",
+              "returns": "The sum so far; `na` before the first value of `source`.",
               "members": null,
-              "body": "An `na` value is not skipped: once `source` is `na`, this and every later\nresult is `na`. Wrap `source` in [`nz`](#nz) to count missing values as `0`."
+              "body": "Values that are `na` are left out: the total keeps its value on those bars."
             },
             {
               "id": "ta.max",
@@ -4685,9 +4685,9 @@
                   "description": "Series to track."
                 }
               ],
-              "returns": "The running maximum; `na` before the first value and on bars where `source` is `na`.",
+              "returns": "The running maximum; `na` before the first value of `source`.",
               "members": null,
-              "body": "An `na` value resets it: the result is `na` on that bar and starts over from\nthe next value, forgetting earlier ones."
+              "body": "Values that are `na` are left out: the result keeps its value on those bars."
             },
             {
               "id": "ta.min",
@@ -4704,9 +4704,9 @@
                   "description": "Series to track."
                 }
               ],
-              "returns": "The running minimum; `na` before the first value and on bars where `source` is `na`.",
+              "returns": "The running minimum; `na` before the first value of `source`.",
               "members": null,
-              "body": "An `na` value resets it: the result is `na` on that bar and starts over from\nthe next value, forgetting earlier ones."
+              "body": "Values that are `na` are left out: the result keeps its value on those bars."
             },
             {
               "id": "ta.correlation",
@@ -4735,9 +4735,9 @@
                   "description": "Number of bars, a positive `int`."
                 }
               ],
-              "returns": "Pearson's correlation; `na` for the first `length - 1` bars, while any value in either window is `na`, and when either series is constant over the window.",
+              "returns": "Pearson's correlation; `na` for the first `length - 1` bars, when no bar in the window has both values, and when either series is constant over the bars used.",
               "members": null,
-              "body": ""
+              "body": "Bars where either value is `na` are left out."
             },
             {
               "id": "ta.percentrank",
@@ -4763,6 +4763,106 @@
               "returns": "A percentage from `0` to `100`; `na` for the first `length` bars and while `source` or any of the previous `length` values is `na`.",
               "members": null,
               "body": "The result is `100 * count / length`."
+            },
+            {
+              "id": "ta.obv",
+              "symbols": ["ta.obv"],
+              "kind": "variable",
+              "category": "Volume",
+              "summary": "On-balance volume: the running total of [`volume`](#volume), added on bars where [`close`](#close) rose and subtracted on bars where it fell.",
+              "signatures": ["obv = cum(math.sign(change(close)) * volume)"],
+              "parameters": [],
+              "returns": null,
+              "members": null,
+              "body": "It is `ta.cum(math.sign(ta.change(close)) * volume)`, computed once per bar\nfor the whole script."
+            },
+            {
+              "id": "ta.accdist",
+              "symbols": ["ta.accdist"],
+              "kind": "variable",
+              "category": "Volume",
+              "summary": "Accumulation/distribution: the running total of each bar's volume, weighted by where [`close`](#close) sits between [`low`](#low) and [`high`](#high).",
+              "signatures": [
+                "accdist = cum(\n    high == low ? 0.0 : (2 * close - low - high) / (high - low) * volume\n)"
+              ],
+              "parameters": [],
+              "returns": null,
+              "members": null,
+              "body": "Each bar adds `(2 * close - low - high) / (high - low) * volume`, or `0` when\n`high` equals `low`."
+            },
+            {
+              "id": "ta.pvt",
+              "symbols": ["ta.pvt"],
+              "kind": "variable",
+              "category": "Volume",
+              "summary": "Price-volume trend: the running total of each bar's [`volume`](#volume), weighted by the relative change of [`close`](#close).",
+              "signatures": ["pvt = cum(change(close) / close[1] * volume)"],
+              "parameters": [],
+              "returns": null,
+              "members": null,
+              "body": "It is `ta.cum(ta.change(close) / close[1] * volume)`."
+            },
+            {
+              "id": "ta.iii",
+              "symbols": ["ta.iii"],
+              "kind": "variable",
+              "category": "Volume",
+              "summary": "Intraday intensity index of the current bar: where [`close`](#close) sits between [`low`](#low) and [`high`](#high), times [`volume`](#volume).",
+              "signatures": [
+                "iii = (2 * close - high - low) / (high - low) * volume"
+              ],
+              "parameters": [],
+              "returns": null,
+              "members": null,
+              "body": "It is `(2 * close - high - low) / (high - low) * volume`; `na` when `high`\nequals `low`."
+            },
+            {
+              "id": "ta.wvad",
+              "symbols": ["ta.wvad"],
+              "kind": "variable",
+              "category": "Volume",
+              "summary": "Williams variable accumulation/distribution of the current bar.",
+              "signatures": ["wvad = (close - open) / (high - low) * volume"],
+              "parameters": [],
+              "returns": null,
+              "members": null,
+              "body": "It is `(close - open) / (high - low) * volume`; `na` when `high` equals\n`low`."
+            },
+            {
+              "id": "ta.wad",
+              "symbols": ["ta.wad"],
+              "kind": "variable",
+              "category": "Volume",
+              "summary": "Williams accumulation/distribution: the running total of each bar's move from its true low on an up bar, or from its true high on a down bar.",
+              "signatures": ["wad = cum(williamsGain())"],
+              "parameters": [],
+              "returns": null,
+              "members": null,
+              "body": "The true low is the lower of [`low`](#low) and the previous [`close`](#close); the\ntrue high is the higher of [`high`](#high) and the previous close. A bar where\n`close` did not change adds `0`."
+            },
+            {
+              "id": "ta.nvi",
+              "symbols": ["ta.nvi"],
+              "kind": "variable",
+              "category": "Volume",
+              "summary": "Negative volume index: starts at `1` and moves with [`close`](#close), by its relative change, only on bars whose [`volume`](#volume) fell from the previous bar.",
+              "signatures": ["nvi = volumeIndex(true)"],
+              "parameters": [],
+              "returns": null,
+              "members": null,
+              "body": ""
+            },
+            {
+              "id": "ta.pvi",
+              "symbols": ["ta.pvi"],
+              "kind": "variable",
+              "category": "Volume",
+              "summary": "Positive volume index: starts at `1` and moves with [`close`](#close), by its relative change, only on bars whose [`volume`](#volume) rose from the previous bar.",
+              "signatures": ["pvi = volumeIndex(false)"],
+              "parameters": [],
+              "returns": null,
+              "members": null,
+              "body": ""
             }
           ]
         }

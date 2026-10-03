@@ -60,7 +60,12 @@ import {
   type NativeVar,
 } from './catalog';
 import {isImportError, type Importer, type SourcePackage} from './importer';
-import {bindExpressionNames, bindFileNames, bindFunctionNames} from './binding';
+import {
+  bindExpressionNames,
+  bindFileNames,
+  bindFunctionNames,
+  isInputAlias,
+} from './binding';
 import {
   CallKind,
   SelectionKind,
@@ -309,7 +314,13 @@ class Checker {
         this.implicitNames.add(name);
       }
     }
-    for (const source of importer.implicit()) {
+    // Preludes are checked before implicit libraries such as `ta`, which read
+    // their names, so a prelude never sees `ta`: nor does one opened as the
+    // checked document.
+    const rootIsPrelude = importer
+      .prelude()
+      .some(source => source.path === this.rootLibrary);
+    for (const source of rootIsPrelude ? [] : importer.implicit()) {
       const before = errors.count;
       const pkg = this.libraryPackage(source);
       if (errors.count !== before) {
@@ -443,7 +454,8 @@ class Checker {
           stmt.kind === NodeKind.DeclStmt &&
           stmt.exported
         ) {
-          this.checkInputAlias(stmt);
+          if (isInputAlias(stmt)) this.checkInputAlias(stmt);
+          else this.checkComputedExport(stmt, file.stmtList.indexOf(stmt));
         } else if (stmt.kind !== NodeKind.ImportStmt) {
           this.checkStmt(stmt);
         }
@@ -618,7 +630,8 @@ class Checker {
         continue;
       }
       if (stmt.kind === NodeKind.DeclStmt && stmt.exported) {
-        this.checkInputAlias(stmt);
+        if (isInputAlias(stmt)) this.checkInputAlias(stmt);
+        else this.checkComputedExport(stmt, file.stmtList.indexOf(stmt));
         continue;
       }
       if (isLegalPackageGlobal(stmt)) {
@@ -694,6 +707,41 @@ class Checker {
     }
   }
 
+  // `export obv = ta.cum(...)`: a library value that each program reading it
+  // computes once per bar, before its own statements, and shares between all
+  // of its reads. It may read market data and keep state through the
+  // functions it calls; it cannot emit, request or change other state, and
+  // nothing may assign it.
+  private checkComputedExport(
+    stmt: syntax.DeclStmt,
+    sourceOrder: number,
+  ): void {
+    if (stmt.target.kind !== NodeKind.Name) {
+      return fatal('an exported value target must be a name');
+    }
+    const object = this.boundName(stmt.target);
+    object.packageGlobal = {
+      pkg: this.currentPackage.pkg,
+      decl: stmt,
+      sourceOrder,
+    };
+    const dependencies = new Set<SemanticDependency>();
+    this.dependencyCollectors.push(dependencies);
+    this.checkDecl(stmt, initTv => {
+      const initializer: CheckedDefaultExpression = {
+        expr: stmt.init,
+        info: this.info,
+        tv: initTv,
+        dependencies,
+      };
+      this.info.packageGlobalInitializers.set(object, initializer);
+      this.checkPackageGlobalInitializer(object, initializer);
+    });
+    this.dependencyCollectors.pop();
+    this.currentPackage.runtimeGlobals.push(object);
+    this.currentPackage.exports.set(object.name, object);
+  }
+
   private checkImports(file: syntax.File): void {
     for (const stmt of file.stmtList) {
       if (stmt.kind === NodeKind.ImportStmt) {
@@ -707,7 +755,12 @@ class Checker {
     initializer: CheckedDefaultExpression,
   ): void {
     for (const dependency of initializer.dependencies) {
-      if (dependency.kind === ObjectKind.Builtin) {
+      // A var is initialized once, before any bar; a computed export runs on
+      // every bar and may read the bar's values.
+      if (
+        dependency.kind === ObjectKind.Builtin &&
+        object.storage !== Storage.PerBar
+      ) {
         this.error(
           initializer.expr.pos,
           `package global '${object.name}' initializer cannot read runtime builtin '${dependency.name}'`,
@@ -801,6 +854,7 @@ class Checker {
       );
     }
     if (
+      global.storage !== Storage.PerBar &&
       [...instance.info.defs.values()].some(
         object =>
           object.kind === ObjectKind.Variable &&
@@ -2119,6 +2173,12 @@ class Checker {
         `cannot reassign '${target.value}' declared with const`,
       );
     }
+    if (entry.packageGlobal !== null && entry.storage === Storage.PerBar) {
+      this.error(
+        target.pos,
+        `cannot assign '${target.value}': an exported value is computed on every bar`,
+      );
+    }
     if (
       this.funcBoundary !== null &&
       !this.scope.resolvesWithin(target.value, this.funcBoundary)
@@ -3293,6 +3353,18 @@ class Checker {
           this.info.uses.set(s.x, entry);
           return this.builtinTv(member, s);
         }
+        if (
+          member?.kind === ObjectKind.Variable &&
+          member.packageGlobal !== null
+        ) {
+          // A computed export, such as ta.obv: a read of that package
+          // global, which the program then computes on every bar.
+          this.info.uses.set(s.x, entry);
+          this.info.uses.set(s.sel, member);
+          if (this.funcBoundary !== null) this.recordFunctionDependency(member);
+          else this.recordExpressionDependency(member);
+          return {type: member.type, qualifier: member.qualifier, value: null};
+        }
       }
       if (entry?.kind === ObjectKind.Enum) {
         this.info.uses.set(s.x, entry);
@@ -3640,9 +3712,13 @@ class Checker {
     }
     if (direct.kind === NodeKind.SelectorExpr) {
       const selection = this.info.selections.get(direct);
+      const exported = this.info.uses.get(direct.sel);
       return (
-        selection?.kind === SelectionKind.Builtin &&
-        selection.builtin.binding !== null
+        (selection?.kind === SelectionKind.Builtin &&
+          selection.builtin.binding !== null) ||
+        // A computed library export, such as ta.obv[1].
+        (exported?.kind === ObjectKind.Variable &&
+          exported.packageGlobal !== null)
       );
     }
     return false;

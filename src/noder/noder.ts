@@ -330,12 +330,25 @@ class Noder {
       if (!out.includes(name)) {
         this.info = initializer.info;
         out.push(name);
-        initializers.push({
-          kind: IrKind.InitName,
-          pos: initializer.expr.pos,
-          name,
-          value: this.nodeExpr(initializer.expr, object.type),
-        });
+        const value = this.nodeExpr(initializer.expr, object.type);
+        // A var global initializes once; a computed export is assigned on
+        // every bar, as a script's own top-level declaration is.
+        initializers.push(
+          object.storage === Storage.PerBar
+            ? {
+                kind: IrKind.Assign,
+                pos: initializer.expr.pos,
+                target: this.read(name, initializer.expr.pos),
+                op: null,
+                value,
+              }
+            : {
+                kind: IrKind.InitName,
+                pos: initializer.expr.pos,
+                name,
+                value,
+              },
+        );
       }
     }
     this.info = savedInfo;
@@ -1227,6 +1240,11 @@ class Noder {
         };
       }
       return this.read(this.nameOf(object), e.pos);
+    }
+    const exported = this.info.uses.get(e.sel);
+    if (exported?.kind === ObjectKind.Variable) {
+      // A computed library export: its package global's name.
+      return this.read(this.nameOf(exported), e.pos);
     }
     const selection = this.info.selections.get(e);
     if (selection?.kind !== SelectionKind.Field) {

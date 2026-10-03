@@ -42,8 +42,15 @@ describe('ta variance', () => {
       sample: NaN,
     },
     {
-      name: 'missing value in window',
-      values: [1.2, NaN, 1.2],
+      name: 'a missing value in the window is left out',
+      values: [1.2, NaN, 1.3],
+      length: 3,
+      population: 0.0025,
+      sample: 0.005,
+    },
+    {
+      name: 'a window of missing values has no variance',
+      values: [NaN, NaN, NaN],
       length: 3,
       population: NaN,
       sample: NaN,
@@ -271,5 +278,127 @@ describe('ta matches Pine v6', () => {
     expect(values(0).slice(3)).toEqual(values(1).slice(3));
     expect(values(2)[0]).toBeNaN();
     expect(values(3)[0]).toBe(0);
+  });
+});
+
+describe('ta leaves na out of a full window', () => {
+  async function run(lines: readonly string[], close: readonly number[]) {
+    const sink = new OutputCapture();
+    await executeTestProgram(mustBuild(lines.join('\n')), {
+      stream: arrayStream({close}),
+      sink,
+    });
+    return (outputId: number): unknown[] =>
+      sink.emissions
+        .filter(emission => emission.outputId === outputId)
+        .map(emission => emission.channels[0]);
+  }
+
+  test('windows skip na values but keep their warm-up', async () => {
+    const values = await run(
+      [
+        'emit "sma" ta.sma(close, 3)',
+        'emit "highest" ta.highest(close, 3)',
+        'emit "highestbars" ta.highestbars(close, 3)',
+        'emit "variance" ta.variance(close, 3)',
+        'emit "rising" ta.rising(close, 2)',
+      ],
+      [101, 102, 103, 104, 105, NaN, 107, 108],
+    );
+    expect(values(0)).toEqual([NaN, NaN, 102, 103, 104, 104.5, 106, 107.5]);
+    expect(values(1)).toEqual([NaN, NaN, 103, 104, 105, 105, 107, 108]);
+    // An offset of 0 may be -0; both read as 0.
+    expect(values(2).map(value => (value as number) + 0)).toEqual([
+      NaN,
+      NaN,
+      0,
+      0,
+      0,
+      -1,
+      0,
+      0,
+    ]);
+    expect(values(3)[5]).toBeCloseTo(0.25, 12);
+    // rising: above every known value of the previous two bars.
+    expect(values(4)).toEqual([
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+    ]);
+  });
+
+  test('a window with no value left is na', async () => {
+    const values = await run(['emit "sma" ta.sma(close, 2)'], [1, NaN, NaN, 4]);
+    expect(values(0)).toEqual([NaN, 1, NaN, 4]);
+  });
+
+  test('running values skip an na bar and keep their value', async () => {
+    const values = await run(
+      [
+        'emit "ema" ta.ema(close, 3)',
+        'emit "cum" ta.cum(close)',
+        'emit "max" ta.max(close)',
+      ],
+      [NaN, 2, NaN, 4],
+    );
+    expect(values(0)).toEqual([NaN, 2, 2, 3]);
+    expect(values(1)).toEqual([NaN, 2, 2, 6]);
+    expect(values(2)).toEqual([NaN, 2, 2, 4]);
+  });
+
+  test('hma uses the whole part of the square root and waits for it', async () => {
+    const values = (
+      await run(
+        ['emit "hma" ta.hma(close, 7)'],
+        Array.from({length: 12}, (_, i) => i),
+      )
+    )(0);
+    // floor(sqrt(7)) = 2, so the first value is on bar 7 + 2 - 2. On a line
+    // the inner averages cancel their lag and the outer one, over 2 bars,
+    // trails by 1/3 of a bar.
+    expect(values.slice(0, 7).every(value => Number.isNaN(value))).toBe(true);
+    expect(values[7]).toBeCloseTo(7 + 1 / 3, 12);
+  });
+});
+
+describe('ta computed exports', () => {
+  const VOLUME = [
+    'time,open,high,low,close,volume',
+    '1,10,10,10,10,1',
+    '2,10,11,10,11,2',
+    '3,11,11,10,10,3',
+    '4,10,10,10,10,4',
+    '5,10,12,10,12,5',
+    '',
+  ].join('\n');
+
+  test('ta.obv is computed on every bar and shared by every read', async () => {
+    const sink = new OutputCapture();
+    await executeTestProgram(
+      mustBuild(
+        [
+          'emit "obv" ta.obv',
+          'emit "previous" ta.obv[1]',
+          'x = 0.0',
+          'if bar_index == 4',
+          '    x := ta.obv',
+          'emit "late" x',
+        ].join('\n'),
+      ),
+      {stream: csvStream(VOLUME), sink},
+    );
+    const values = (outputId: number) =>
+      sink.emissions
+        .filter(emission => emission.outputId === outputId)
+        .map(emission => emission.channels[0]);
+    expect(values(0)).toEqual([NaN, 2, -1, -1, 4]);
+    expect(values(1)).toEqual([NaN, NaN, 2, -1, -1]);
+    // Read only on the last bar, it still saw every bar.
+    expect(values(2)[4]).toBe(4);
   });
 });

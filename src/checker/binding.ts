@@ -197,7 +197,7 @@ class NameBinder {
         return;
       case NodeKind.DeclStmt:
         this.bindExpr(stmt.init);
-        if (stmt.exported) {
+        if (stmt.exported && isInputAlias(stmt)) {
           // An exported input alias names a Builtin object the checker
           // declares; it never binds a variable.
           return;
@@ -293,6 +293,22 @@ class NameBinder {
     this.tables.defs.set(node, object);
     this.scope.declare(object);
   }
+}
+
+/**
+ * Whether a library's `export name = …` aliases a series input, as
+ * `export close = input.series("close")` does. Any other exported value is
+ * computed on every bar.
+ */
+export function isInputAlias(stmt: syntax.DeclStmt): boolean {
+  const init = unwrapParens(stmt.init);
+  return (
+    init.kind === NodeKind.CallExpr &&
+    init.fun.kind === NodeKind.SelectorExpr &&
+    init.fun.x.kind === NodeKind.Name &&
+    init.fun.x.value === 'input' &&
+    init.fun.sel.value === 'series'
+  );
 }
 
 function unwrapParens(expr: syntax.Expr): syntax.Expr {

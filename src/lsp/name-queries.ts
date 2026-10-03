@@ -349,6 +349,11 @@ function documentedName(analysis: Analysis, object: Object): string | null {
     case ObjectKind.Enum:
     case ObjectKind.Interface:
       return exportedName(analysis, object);
+    case ObjectKind.Variable:
+      // A computed library export, such as ta.obv.
+      return object.packageGlobal === null
+        ? null
+        : exportedName(analysis, object, object.packageGlobal.pkg);
     case ObjectKind.Field:
     case ObjectKind.EnumMember:
     case ObjectKind.InterfaceMethod:
@@ -362,17 +367,15 @@ function documentedName(analysis: Analysis, object: Object): string | null {
 // prelude, `ta.sma` from any other.
 function exportedName(
   analysis: Analysis,
-  object: Object & {readonly pkg: Package; readonly name: string},
+  object: Object & {readonly name: string},
+  pkg: Package = (object as {readonly pkg: Package}).pkg,
 ): string | null {
-  if (
-    object.pkg.exports.get(object.name) !== object ||
-    !shipped(analysis, object)
-  ) {
+  if (pkg.exports.get(object.name) !== object || !shipped(analysis, object)) {
     return null;
   }
-  return DEFAULT_PRELUDE.includes(object.pkg.path)
+  return DEFAULT_PRELUDE.includes(pkg.path)
     ? object.name
-    : `${object.pkg.name}.${object.name}`;
+    : `${pkg.name}.${object.name}`;
 }
 
 // The loader names a compiler-shipped library's file `tea-lib/ta.tea`.

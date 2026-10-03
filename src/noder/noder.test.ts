@@ -1094,7 +1094,8 @@ describe('function stencils', () => {
       'x = ta.ema(close, 9)\ny = ta.sma(close, 10)\nemit "output0" x + y',
     );
     const varLocals = namesOf(program).filter(n => n.storage === Storage.Var);
-    expect(varLocals.map(n => n.name)).toEqual(['e']);
+    // ema's average, and sma's count of its own bars for the warm-up.
+    expect(varLocals.map(n => n.name)).toEqual(['e', 'bars']);
     const sma = funcsOf(program).find(f => f.name === 'ta.sma')!;
     // The loop induction range is bind-normalized, so source[i] retains the
     // exact upper bound instead of falling back to max_bars_back.

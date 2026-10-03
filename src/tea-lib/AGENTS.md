@@ -47,5 +47,7 @@ preludes, and trade components are explicit imports.
 - `tests/fixtures/checker/ta-suite.tea` must call every export of ta; extend it in
   the same change that adds a function.
 - Known gaps tracked in ta.tea's header: median/mode/percentile\__/valuewhen
-  need collections; the ta._ namespace VARIABLES (obv, vwap, accdist, …)
-  need computed library exports with per-bar state, beyond input aliases.
+  need collections; `ta.vwap` needs a session anchor; `ta.tr` cannot also be a
+  variable while the function owns the name. ta's variables (`obv`, `accdist`,
+  …) are computed exports: `export name = expression`, read-only, computed
+  once per bar by the reading program.

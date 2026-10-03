@@ -6,10 +6,8 @@
 //
 // Coverage tracks Pine v6's ta.* functions. Not yet expressible:
 //   - median, mode, percentile_*, valuewhen: need collections (array slice).
-//   - ta.obv, ta.vwap, ta.accdist, ta.pvt, ta.iii, ta.nvi, ta.pvi, ta.wad,
-//     ta.wvad, ta.tr (variable form): need computed library exports with
-//     per-bar state; input aliases (the pine prelude) are the only exports
-//     that are variables today.
+//   - ta.vwap: needs a session anchor.
+//   - ta.tr as a variable: it would share its name with the ta.tr function.
 // Ambient reads (volume, high, low, close) are pine prelude input aliases.
 
 /**
@@ -25,6 +23,9 @@
  * See [values and control flow](/language-guide/values-and-control-flow).
  *
  * Most results are `na` until enough bars have arrived; each entry states when.
+ * After that, a window function leaves out the `na` values in its window and is
+ * `na` only when none is left. A few, such as {@link ta.swma} and
+ * {@link ta.change}, say instead that an `na` value makes the result `na`.
  * The [time-series guide](/language-guide/time-series) covers warm-up and
  * crossing rules.
  *
@@ -41,33 +42,40 @@ library("ta")
 /**
  * Simple moving average of the last `length` values of `source`.
  *
+ * Values that are `na` are left out: the mean is over the window's other
+ * values.
+ *
  * @param source Series to average, usually {@link close}.
  * @param length Number of bars, a positive `int`.
- * @returns The mean; `na` for the first `length - 1` bars and while any value
+ * @returns The mean; `na` for the first `length - 1` bars and when every value
  * in the window is `na`.
  * @category Moving averages
  */
 export sma(source, int length) =>
 	if length < 1
 		runtime.error("ta.sma: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	sum = 0.0
+	count = 0
 	for i = 0 to length - 1
-		sum += source[i]
-	sum / length
+		value = source[i]
+		if not na(value)
+			sum += value
+			count += 1
+	bars < length ? na : sum / count
 
 /**
  * Exponential moving average of `source`.
  *
  * Each bar moves the average toward `source` by `2 / (length + 1)` of the
  * difference. It starts from the first value of `source` instead of waiting for
- * `length` bars. An `na` value restarts it: the result is `na` on that bar, and
- * the average starts over from the next value. Compare {@link ta.rma}, which
- * waits for `length` values and skips `na`.
+ * `length` bars, and a bar where `source` is `na` leaves it unchanged.
+ * Compare {@link ta.rma}, which waits for `length` values.
  *
  * @param source Series to average, usually {@link close}.
  * @param length Smoothing length in bars; larger values react more slowly.
- * @returns The average; `na` before the first value of `source` and on bars
- * where `source` is `na`.
+ * @returns The average; `na` before the first value of `source`.
  * @category Moving averages
  */
 export ema(source, int length) =>
@@ -75,7 +83,8 @@ export ema(source, int length) =>
 		runtime.error("ta.ema: length must be at least 1")
 	alpha = 2.0 / (length + 1)
 	var float e = na
-	e := na(e) ? source : alpha * source + (1 - alpha) * e
+	if not na(source)
+		e := na(e) ? source : alpha * source + (1 - alpha) * e
 	e
 
 /**
@@ -114,61 +123,79 @@ export rma(source, int length) =>
  * Linearly weighted moving average of the last `length` values of `source`.
  *
  * The newest value has weight `length`, the one before it `length - 1`, and so
- * on down to `1` for the oldest.
+ * on down to `1` for the oldest. Values that are `na` are left out with their
+ * weights.
  *
  * @param source Series to average, usually {@link close}.
  * @param length Number of bars, a positive `int`.
- * @returns The weighted mean; `na` for the first `length - 1` bars and while
- * any value in the window is `na`.
+ * @returns The weighted mean; `na` for the first `length - 1` bars and when
+ * every value in the window is `na`.
  * @category Moving averages
  */
 export wma(source, int length) =>
 	if length < 1
 		runtime.error("ta.wma: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	norm = 0.0
 	sum = 0.0
 	for i = 0 to length - 1
-		weight = (length - i) * length
-		norm += weight
-		sum += source[i] * weight
-	sum / norm
+		value = source[i]
+		if not na(value)
+			weight = (length - i) * length
+			norm += weight
+			sum += value * weight
+	bars < length ? na : sum / norm
 
 /**
  * Volume-weighted moving average of the last `length` values of `source`.
  *
- * It is `ta.sma(source * volume, length) / ta.sma(volume, length)`, weighting
- * each bar by its {@link volume}.
+ * It is the sum of `source * volume` divided by the sum of {@link volume}, over
+ * the window's bars where both are known.
  *
  * @param source Series to average, usually {@link close}.
  * @param length Number of bars, a positive `int`.
- * @returns The weighted mean; `na` for the first `length - 1` bars, while any
- * price or volume in the window is `na`, and when the window's total volume is
- * `0`.
+ * @returns The weighted mean; `na` for the first `length - 1` bars and when the
+ * bars used have no volume.
  * @category Moving averages
  */
 export vwma(source, int length) =>
 	if length < 1
 		runtime.error("ta.vwma: length must be at least 1")
-	sma(source * volume, length) / sma(volume, length)
+	var int bars = 0
+	bars += 1
+	sumPV = 0.0
+	sumV = 0.0
+	for i = 0 to length - 1
+		pv = source[i] * volume[i]
+		if not na(pv)
+			sumPV += pv
+			sumV += volume[i]
+	bars < length ? na : sumPV / sumV
 
 /**
  * Hull moving average of `source`.
  *
- * It is the {@link ta.wma} over `math.round(math.sqrt(length))` bars of
+ * It is the {@link ta.wma} over `math.floor(math.sqrt(length))` bars of
  * `2 * ta.wma(source, length / 2) - ta.wma(source, length)`, with `length / 2`
- * rounded down.
+ * rounded down. Like {@link ta.wma}, it leaves out `na` values.
  *
  * @param source Series to average, usually {@link close}.
  * @param length Number of bars, an `int` of at least `2`.
  * @returns The average; `na` for the first
- * `length + math.round(math.sqrt(length)) - 2` bars and while an `na` value of
- * `source` is still inside its windows.
+ * `length + math.floor(math.sqrt(length)) - 2` bars.
  * @category Moving averages
  */
 export hma(source, int length) =>
-	if length < 1
-		runtime.error("ta.hma: length must be at least 1")
-	wma(2 * wma(source, math.floor(length / 2)) - wma(source, length), math.round(math.sqrt(length)))
+	if length < 2
+		runtime.error("ta.hma: length must be at least 2")
+	var int bars = 0
+	bars += 1
+	root = math.floor(math.sqrt(length))
+	hull = wma(2 * wma(source, math.floor(length / 2)) - wma(source, length), root)
+	// The outer average would otherwise start on its inner averages' partial
+	// windows.
+	bars < length + root - 1 ? na : hull
 
 /**
  * Symmetrically weighted moving average of the last four values of `source`.
@@ -255,24 +282,27 @@ export linreg(source, int length, int offset) =>
  *
  * It is minus the sum of `source[i] * (i + 1)` divided by the sum of
  * `source[i]`, for `i` from `0` (the current bar) to `length - 1`, so it is
- * negative when the values are positive.
+ * negative when the values are positive. Values that are `na` are left out.
  *
  * @param source Series to measure, usually {@link close}.
  * @param length Number of bars, a positive `int`.
- * @returns The center of gravity; `na` for the first `length - 1` bars, while
- * any value in the window is `na`, and when the values sum to `0`.
+ * @returns The center of gravity; `na` for the first `length - 1` bars, when
+ * every value in the window is `na`, and when the known values sum to `0`.
  * @category Moving averages
  */
 export cog(source, int length) =>
 	if length < 1
 		runtime.error("ta.cog: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	sum = 0.0
 	num = 0.0
 	for i = 0 to length - 1
 		price = source[i]
-		sum += price
-		num += price * (i + 1)
-	-num / sum
+		if not na(price)
+			sum += price
+			num += price * (i + 1)
+	bars < length ? na : -num / sum
 
 // ---- momentum ---------------------------------------------------------------
 
@@ -345,24 +375,28 @@ export rsi(source, int length) =>
  * Chande momentum oscillator of `source`, from `-100` to `100`.
  *
  * Over the last `length` bar-to-bar changes, it is
- * `100 * (gains - losses) / (gains + losses)`.
+ * `100 * (gains - losses) / (gains + losses)`. A change that involves an `na`
+ * value is left out.
  *
  * @param source Series to measure, usually {@link close}.
  * @param length Number of changes, a positive `int`.
- * @returns The oscillator; `na` for the first `length` bars, while any value in
- * the window is `na`, and when `source` did not change over the window.
+ * @returns The oscillator; `na` for the first `length` bars, when no change in
+ * the window is known, and when `source` did not change over the window.
  * @category Momentum
  */
 export cmo(source, int length) =>
 	if length < 1
 		runtime.error("ta.cmo: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	sumUp = 0.0
 	sumDown = 0.0
 	for i = 0 to length - 1
 		delta = source[i] - source[i + 1]
-		sumUp += math.max(delta, 0)
-		sumDown += math.max(-delta, 0)
-	100 * (sumUp - sumDown) / (sumUp + sumDown)
+		if not na(delta)
+			sumUp += math.max(delta, 0)
+			sumDown += math.max(-delta, 0)
+	bars <= length ? na : 100 * (sumUp - sumDown) / (sumUp + sumDown)
 
 /**
  * True strength index of `source`, from `-1` to `1`.
@@ -406,8 +440,9 @@ export tsi(source, int short_length, int long_length) =>
  * @param l Series whose lowest value is the bottom of the range, usually
  * {@link low}.
  * @param length Number of bars, a positive `int`.
- * @returns The percentage; `na` for the first `length - 1` bars, while any value
- * in the windows is `na`, and when the range is `0`.
+ * @returns The percentage; `na` for the first `length - 1` bars, when `source`
+ * is `na` or a window has no known value, and when the range is `0`. Values
+ * that are `na` are left out of the windows.
  * @category Momentum
  */
 export stoch(source, h, l, int length) =>
@@ -421,11 +456,12 @@ export stoch(source, h, l, int length) =>
  *
  * It is `(source - mean) / (0.015 * deviation)`, where `mean` is the
  * {@link ta.sma} and `deviation` the {@link ta.dev} of the last `length` values.
+ * Values that are `na` are left out of both.
  *
  * @param source Series to measure, such as {@link hlc3}.
  * @param length Number of bars, a positive `int`.
- * @returns The index; `na` for the first `length - 1` bars, while any value in
- * the window is `na`, and when all values in the window are equal.
+ * @returns The index; `na` for the first `length - 1` bars, when `source` is
+ * `na`, and when the known values in the window are all equal.
  * @category Momentum
  */
 export cci(source, int length) =>
@@ -433,9 +469,13 @@ export cci(source, int length) =>
 		runtime.error("ta.cci: length must be at least 1")
 	mean = sma(source, length)
 	md = 0.0
+	count = 0
 	for i = 0 to length - 1
-		md += math.abs(source[i] - mean)
-	md /= length
+		value = source[i]
+		if not na(value)
+			md += math.abs(value - mean)
+			count += 1
+	md /= count
 	(source - mean) / (0.015 * md)
 
 /**
@@ -462,27 +502,29 @@ export wpr(int length) =>
  *
  * Money flow is `source * volume`, using {@link volume}. Over the last `length`
  * bars, the flows of bars where `source` rose and of bars where it fell are
- * summed separately, and the result is `100 - 100 / (1 + rising / falling)`.
- * Bars whose change cannot be computed, such as the first bar, are left out
- * instead of making the result `na`.
+ * summed separately, and the result is `100 - 100 / (1 + rising / falling)`. A
+ * bar whose change or flow involves an `na` value is left out.
  *
  * @param source Price series, usually {@link hlc3}.
  * @param length Number of bars, a positive `int`.
- * @returns The index; `0` when bars in the window fell but none rose, and `na`
- * when none fell or the volume of a bar that rose or fell is `na`.
+ * @returns The index; `na` for the first `length` bars and when no bar in the
+ * window fell, and `0` when bars fell but none rose.
  * @category Momentum
  */
 export mfi(source, int length) =>
 	if length < 1
 		runtime.error("ta.mfi: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	upper = 0.0
 	lower = 0.0
 	for i = 0 to length - 1
 		delta = source[i] - source[i + 1]
 		flow = volume[i] * source[i]
-		upper += delta > 0 ? flow : 0.0
-		lower += delta < 0 ? flow : 0.0
-	100.0 - 100.0 / (1.0 + upper / lower)
+		if not na(delta) and not na(flow)
+			upper += delta > 0 ? flow : 0.0
+			lower += delta < 0 ? flow : 0.0
+	bars <= length ? na : 100.0 - 100.0 / (1.0 + upper / lower)
 
 /**
  * Moving average convergence divergence of `source`, with its signal line and
@@ -599,9 +641,11 @@ export atr(int length) =>
  * Mean absolute deviation of the last `length` values of `source` from their
  * average.
  *
+ * Values that are `na` are left out.
+ *
  * @param source Series to measure.
  * @param length Number of bars, a positive `int`.
- * @returns The deviation; `na` for the first `length - 1` bars and while any
+ * @returns The deviation; `na` for the first `length - 1` bars and when every
  * value in the window is `na`.
  * @category Volatility and channels
  */
@@ -610,36 +654,54 @@ export dev(source, int length) =>
 		runtime.error("ta.dev: length must be at least 1")
 	mean = sma(source, length)
 	sum = 0.0
+	count = 0
 	for i = 0 to length - 1
-		sum += math.abs(source[i] - mean)
-	sum / length
+		value = source[i]
+		if not na(value)
+			sum += math.abs(value - mean)
+			count += 1
+	sum / count
 
 /**
  * Variance of the last `length` values of `source`.
  *
+ * Values that are `na` are left out, so `n` below is the number of known values
+ * in the window.
+ *
  * @param source Series to measure.
  * @param length Number of bars, a positive `int`.
- * @param biased `true` divides by `length` (population variance); `false`
- * divides by `length - 1` (sample variance).
- * @returns The variance; `na` for the first `length - 1` bars, while any value
+ * @param biased `true` divides by `n` (population variance); `false` divides by
+ * `n - 1` (sample variance).
+ * @returns The variance; `na` for the first `length - 1` bars, when every value
  * in the window is `na`, and for a sample variance of one value.
  * @category Volatility and channels
  */
 export variance(source, int length, biased = true) =>
 	if length < 1
 		runtime.error("ta.variance: length must be at least 1")
-	// Center the window before averaging so a constant decimal stays exactly
-	// zero and small spreads do not lose precision against a large price level.
-	anchor = source
+	var int bars = 0
+	bars += 1
+	// Center on a value of the window before averaging, so a constant decimal
+	// stays exactly zero and small spreads keep their precision against a large
+	// price level.
+	float anchor = na
 	shiftedSum = 0.0
+	count = 0
 	for i = 0 to length - 1
-		shiftedSum += source[i] - anchor
-	mean = shiftedSum / length
+		value = source[i]
+		if not na(value)
+			if na(anchor)
+				anchor := value
+			shiftedSum += value - anchor
+			count += 1
+	mean = shiftedSum / count
 	sum = 0.0
 	for i = 0 to length - 1
-		diff = (source[i] - anchor) - mean
-		sum += diff * diff
-	sum / (biased ? length : length - 1)
+		value = source[i]
+		if not na(value)
+			diff = (value - anchor) - mean
+			sum += diff * diff
+	bars < length or count == 0 ? na : sum / (biased ? count : count - 1)
 
 /**
  * Standard deviation of the last `length` values of `source`.
@@ -661,9 +723,11 @@ export stdev(source, int length, biased = true) =>
  * Difference between the highest and lowest of the last `length` values of
  * `source`.
  *
+ * Values that are `na` are left out.
+ *
  * @param source Series to measure.
  * @param length Number of bars, a positive `int`.
- * @returns The range; `na` for the first `length - 1` bars and while any value
+ * @returns The range; `na` for the first `length - 1` bars and when every value
  * in the window is `na`.
  * @category Volatility and channels
  */
@@ -945,44 +1009,56 @@ export cross(source1, source2) =>
 	up or down
 
 /**
- * True when `source` rose on each of the last `length` bars.
+ * True when `source` is greater than each of its previous `length` values.
  *
- * Each value must be strictly greater than the one before it, so `length`
- * rises span `length + 1` values. A comparison with `na` is `false`.
+ * Previous values that are `na` are left out; the result is `false` when
+ * `source` is `na` or none of the previous values is known.
  *
  * @param source Series to test.
- * @param length Number of consecutive rises, a positive `int`.
- * @returns `true` when every rise happened, otherwise `false`; `false` for the
- * first `length` bars.
+ * @param length Number of previous bars, a positive `int`.
+ * @returns `true` when `source` exceeds every known previous value, otherwise
+ * `false`; `false` for the first `length` bars.
  * @category Crosses and conditions
  */
 export rising(source, int length) =>
 	if length < 1
 		runtime.error("ta.rising: length must be at least 1")
-	result = true
-	for i = 0 to length - 1
-		result := result and source[i] > source[i + 1]
-	result
+	var int bars = 0
+	bars += 1
+	result = bars > length and not na(source)
+	known = false
+	for i = 1 to length
+		value = source[i]
+		if not na(value)
+			known := true
+			result := result and source > value
+	result and known
 
 /**
- * True when `source` fell on each of the last `length` bars.
+ * True when `source` is less than each of its previous `length` values.
  *
- * Each value must be strictly less than the one before it, so `length` falls
- * span `length + 1` values. A comparison with `na` is `false`.
+ * Previous values that are `na` are left out; the result is `false` when
+ * `source` is `na` or none of the previous values is known.
  *
  * @param source Series to test.
- * @param length Number of consecutive falls, a positive `int`.
- * @returns `true` when every fall happened, otherwise `false`; `false` for the
- * first `length` bars.
+ * @param length Number of previous bars, a positive `int`.
+ * @returns `true` when `source` is below every known previous value, otherwise
+ * `false`; `false` for the first `length` bars.
  * @category Crosses and conditions
  */
 export falling(source, int length) =>
 	if length < 1
 		runtime.error("ta.falling: length must be at least 1")
-	result = true
-	for i = 0 to length - 1
-		result := result and source[i] < source[i + 1]
-	result
+	var int bars = 0
+	bars += 1
+	result = bars > length and not na(source)
+	known = false
+	for i = 1 to length
+		value = source[i]
+		if not na(value)
+			known := true
+			result := result and source < value
+	result and known
 
 /**
  * Number of bars since `condition` was last `true`.
@@ -1000,7 +1076,8 @@ export barssince(condition) =>
 /**
  * Highest of the last `length` values of `source`, including the current one.
  *
- * To compare against earlier bars only, read the result's history:
+ * Values that are `na` are left out. To compare against earlier bars only, read
+ * the result's history:
  *
  * ```tea
  * upper = ta.highest(high, 20)
@@ -1009,84 +1086,98 @@ export barssince(condition) =>
  *
  * @param source Series to search, usually {@link high}.
  * @param length Number of bars, a positive `int`.
- * @returns The highest value; `na` for the first `length - 1` bars and while
- * any value in the window is `na`.
+ * @returns The highest value; `na` for the first `length - 1` bars and when
+ * every value in the window is `na`.
  * @category Crosses and conditions
  */
 export highest(source, int length) =>
 	if length < 1
 		runtime.error("ta.highest: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	h = source
 	for i = 1 to length - 1
-		h := math.max(h, source[i])
-	h
+		value = source[i]
+		if na(h) or value > h
+			h := value
+	bars < length ? na : h
 
 /**
  * Lowest of the last `length` values of `source`, including the current one.
  *
+ * Values that are `na` are left out.
+ *
  * @param source Series to search, usually {@link low}.
  * @param length Number of bars, a positive `int`.
- * @returns The lowest value; `na` for the first `length - 1` bars and while any
+ * @returns The lowest value; `na` for the first `length - 1` bars and when every
  * value in the window is `na`.
  * @category Crosses and conditions
  */
 export lowest(source, int length) =>
 	if length < 1
 		runtime.error("ta.lowest: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	l = source
 	for i = 1 to length - 1
-		l := math.min(l, source[i])
-	l
+		value = source[i]
+		if na(l) or value < l
+			l := value
+	bars < length ? na : l
 
 /**
  * Bar offset of the highest of the last `length` values of `source`, as `0` or
  * a negative number.
  *
  * `0` is the current bar and `-1` the previous one; ties go to the most recent
- * bar. Values that are `na`, including bars before the first, are skipped, so
- * the result is never `na`; if `source` itself is `na`, it is `0`.
+ * bar. Values that are `na` are left out.
  *
  * @param source Series to search, usually {@link high}.
  * @param length Number of bars, a positive `int`.
- * @returns An `int` from `1 - length` to `0`.
+ * @returns An `int` from `1 - length` to `0`; `na` for the first `length - 1`
+ * bars and when every value in the window is `na`.
  * @category Crosses and conditions
  */
 export highestbars(source, int length) =>
 	if length < 1
 		runtime.error("ta.highestbars: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	best = source
 	offsetBars = 0
 	for i = 1 to length - 1
 		value = source[i]
-		if value > best
+		if not na(value) and (na(best) or value > best)
 			best := value
 			offsetBars := i
-	-offsetBars
+	bars < length or na(best) ? na : -offsetBars
 
 /**
  * Bar offset of the lowest of the last `length` values of `source`, as `0` or
  * a negative number.
  *
  * `0` is the current bar and `-1` the previous one; ties go to the most recent
- * bar. Values that are `na`, including bars before the first, are skipped, so
- * the result is never `na`; if `source` itself is `na`, it is `0`.
+ * bar. Values that are `na` are left out.
  *
  * @param source Series to search, usually {@link low}.
  * @param length Number of bars, a positive `int`.
- * @returns An `int` from `1 - length` to `0`.
+ * @returns An `int` from `1 - length` to `0`; `na` for the first `length - 1`
+ * bars and when every value in the window is `na`.
  * @category Crosses and conditions
  */
 export lowestbars(source, int length) =>
 	if length < 1
 		runtime.error("ta.lowestbars: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	worst = source
 	offsetBars = 0
 	for i = 1 to length - 1
 		value = source[i]
-		if value < worst
+		if not na(value) and (na(worst) or value < worst)
 			worst := value
 			offsetBars := i
-	-offsetBars
+	bars < length or na(worst) ? na : -offsetBars
 
 /**
  * Value of a pivot high, reported `rightbars` bars after it, otherwise `na`.
@@ -1155,87 +1246,100 @@ export pivotlow(source, int leftbars, int rightbars) =>
 /**
  * Running total of `source` since the first bar.
  *
- * An `na` value is not skipped: once `source` is `na`, this and every later
- * result is `na`. Wrap `source` in {@link nz} to count missing values as `0`.
+ * Values that are `na` are left out: the total keeps its value on those bars.
  *
  * @param source Series to add up, such as {@link volume}.
- * @returns The sum so far; `na` from the first `na` value of `source` onward.
+ * @returns The sum so far; `na` before the first value of `source`.
  * @category Accumulation and statistics
  */
 export cum(source) =>
-	var total = 0.0
-	total += source
+	var float total = na
+	if not na(source)
+		total := na(total) ? source : total + source
 	total
 
 /**
  * Highest value of `source` seen so far.
  *
- * An `na` value resets it: the result is `na` on that bar and starts over from
- * the next value, forgetting earlier ones.
+ * Values that are `na` are left out: the result keeps its value on those bars.
  *
  * @param source Series to track.
- * @returns The running maximum; `na` before the first value and on bars where
- * `source` is `na`.
+ * @returns The running maximum; `na` before the first value of `source`.
  * @category Accumulation and statistics
  */
 export max(source) =>
 	var float m = na
-	m := na(m) ? source : math.max(m, source)
+	if not na(source)
+		m := na(m) ? source : math.max(m, source)
 	m
 
 /**
  * Lowest value of `source` seen so far.
  *
- * An `na` value resets it: the result is `na` on that bar and starts over from
- * the next value, forgetting earlier ones.
+ * Values that are `na` are left out: the result keeps its value on those bars.
  *
  * @param source Series to track.
- * @returns The running minimum; `na` before the first value and on bars where
- * `source` is `na`.
+ * @returns The running minimum; `na` before the first value of `source`.
  * @category Accumulation and statistics
  */
 export min(source) =>
 	var float m = na
-	m := na(m) ? source : math.min(m, source)
+	if not na(source)
+		m := na(m) ? source : math.min(m, source)
 	m
 
 /**
  * Correlation coefficient of the last `length` values of `source1` and
  * `source2`, from `-1` to `1`.
  *
+ * Bars where either value is `na` are left out.
+ *
  * @param source1 First series.
  * @param source2 Second series.
  * @param length Number of bars, a positive `int`.
- * @returns Pearson's correlation; `na` for the first `length - 1` bars, while
- * any value in either window is `na`, and when either series is constant over
- * the window.
+ * @returns Pearson's correlation; `na` for the first `length - 1` bars, when no
+ * bar in the window has both values, and when either series is constant over
+ * the bars used.
  * @category Accumulation and statistics
  */
 export correlation(source1, source2, int length) =>
 	if length < 1
 		runtime.error("ta.correlation: length must be at least 1")
-	// Center each window on its current value, as variance does, so a constant
-	// decimal series has exactly zero spread and gives na.
-	anchor1 = source1
-	anchor2 = source2
+	var int bars = 0
+	bars += 1
+	// Center each series on a value of the window, as variance does, so a
+	// constant decimal series has exactly zero spread and gives na.
+	float anchor1 = na
+	float anchor2 = na
 	shifted1 = 0.0
 	shifted2 = 0.0
+	count = 0
 	for i = 0 to length - 1
-		shifted1 += source1[i] - anchor1
-		shifted2 += source2[i] - anchor2
-	mean1 = shifted1 / length
-	mean2 = shifted2 / length
+		a = source1[i]
+		b = source2[i]
+		if not na(a) and not na(b)
+			if na(anchor1)
+				anchor1 := a
+				anchor2 := b
+			shifted1 += a - anchor1
+			shifted2 += b - anchor2
+			count += 1
+	mean1 = shifted1 / count
+	mean2 = shifted2 / count
 	cov = 0.0
 	dev1 = 0.0
 	dev2 = 0.0
 	for i = 0 to length - 1
-		d1 = (source1[i] - anchor1) - mean1
-		d2 = (source2[i] - anchor2) - mean2
-		cov += d1 * d2
-		dev1 += d1 * d1
-		dev2 += d2 * d2
+		a = source1[i]
+		b = source2[i]
+		if not na(a) and not na(b)
+			d1 = (a - anchor1) - mean1
+			d2 = (b - anchor2) - mean2
+			cov += d1 * d2
+			dev1 += d1 * d1
+			dev2 += d2 * d2
 	// Rounding can carry a perfect correlation just past 1.
-	math.max(-1.0, math.min(1.0, cov / math.sqrt(dev1 * dev2)))
+	bars < length ? na : math.max(-1.0, math.min(1.0, cov / math.sqrt(dev1 * dev2)))
 
 /**
  * Percentage of the previous `length` values of `source` that are less than or
@@ -1259,3 +1363,103 @@ export percentrank(source, int length) =>
 		if source[i] <= source
 			count += 1
 	missing ? na : 100.0 * count / length
+
+// ---- volume and accumulation -------------------------------------------------
+
+/**
+ * On-balance volume: the running total of {@link volume}, added on bars where
+ * {@link close} rose and subtracted on bars where it fell.
+ *
+ * It is `ta.cum(math.sign(ta.change(close)) * volume)`, computed once per bar
+ * for the whole script.
+ *
+ * @category Volume
+ */
+export obv = cum(math.sign(change(close)) * volume)
+
+/**
+ * Accumulation/distribution: the running total of each bar's volume, weighted
+ * by where {@link close} sits between {@link low} and {@link high}.
+ *
+ * Each bar adds `(2 * close - low - high) / (high - low) * volume`, or `0` when
+ * `high` equals `low`.
+ *
+ * @category Volume
+ */
+export accdist = cum(high == low ? 0.0 : (2 * close - low - high) / (high - low) * volume)
+
+/**
+ * Price-volume trend: the running total of each bar's {@link volume}, weighted
+ * by the relative change of {@link close}.
+ *
+ * It is `ta.cum(ta.change(close) / close[1] * volume)`.
+ *
+ * @category Volume
+ */
+export pvt = cum(change(close) / close[1] * volume)
+
+/**
+ * Intraday intensity index of the current bar: where {@link close} sits
+ * between {@link low} and {@link high}, times {@link volume}.
+ *
+ * It is `(2 * close - high - low) / (high - low) * volume`; `na` when `high`
+ * equals `low`.
+ *
+ * @category Volume
+ */
+export iii = (2 * close - high - low) / (high - low) * volume
+
+/**
+ * Williams variable accumulation/distribution of the current bar.
+ *
+ * It is `(close - open) / (high - low) * volume`; `na` when `high` equals
+ * `low`.
+ *
+ * @category Volume
+ */
+export wvad = (close - open) / (high - low) * volume
+
+// Williams' gain on one bar, for wad: from the true low on an up bar, from the
+// true high on a down bar.
+williamsGain() =>
+	mom = change(close)
+	mom > 0 ? close - math.min(low, close[1]) : mom < 0 ? close - math.max(high, close[1]) : 0.0
+
+/**
+ * Williams accumulation/distribution: the running total of each bar's move from
+ * its true low on an up bar, or from its true high on a down bar.
+ *
+ * The true low is the lower of {@link low} and the previous {@link close}; the
+ * true high is the higher of {@link high} and the previous close. A bar where
+ * `close` did not change adds `0`.
+ *
+ * @category Volume
+ */
+export wad = cum(williamsGain())
+
+// A volume index that starts at 1 and moves with close, as a fraction of
+// itself, on bars whose volume fell (negative) or rose from the previous bar.
+volumeIndex(bool negative) =>
+	var float index = 1.0
+	previousClose = close[1]
+	if not na(close) and close != 0 and not na(previousClose) and previousClose != 0
+		previousVolume = nz(volume[1])
+		if negative ? volume < previousVolume : volume > previousVolume
+			index += (close - previousClose) / previousClose * index
+	index
+
+/**
+ * Negative volume index: starts at `1` and moves with {@link close}, by its
+ * relative change, only on bars whose {@link volume} fell from the previous bar.
+ *
+ * @category Volume
+ */
+export nvi = volumeIndex(true)
+
+/**
+ * Positive volume index: starts at `1` and moves with {@link close}, by its
+ * relative change, only on bars whose {@link volume} rose from the previous bar.
+ *
+ * @category Volume
+ */
+export pvi = volumeIndex(false)
