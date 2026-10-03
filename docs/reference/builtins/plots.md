@@ -699,8 +699,9 @@ Each row is a band of the axis, such as a price range, drawn sideways from
 `from` toward `to`; the longest row fills the box. A volume profile is one
 use: one row per price range, its parts the volume traded on rising and on
 falling bars. The host draws, for each `from`, only the description written
-on the last row that carries it, so writing the profile so far on every row
-keeps a session's profile current. This draws one fixed two-row profile:
+on the last row that carries it. Every row written is sent and kept, so
+write a finished profile once and a forming one only while its bar can still
+change. This draws one fixed two-row profile:
 
 ```tea
 start = time[10]
