@@ -146,6 +146,13 @@ const ENTRY_PACKAGE_PATH = '@entry';
 
 type PackagePhase = 'checking' | 'checked' | 'failed';
 
+// A type argument whose constraint is checked once declarations finish.
+interface PendingSatisfaction {
+  readonly object: StructObject;
+  readonly constraint: InterfaceObject;
+  readonly pos: Pos;
+}
+
 type PackageMemberResult =
   | {readonly matched: false}
   | {
@@ -220,6 +227,8 @@ class Checker {
     TypeParameterObject
   >();
   private readonly pendingGenericMethodValidation = new Set<StructObject>();
+  // Non-null while declareMembers runs: constraint checks wait for it.
+  private pendingSatisfaction: PendingSatisfaction[] | null = null;
   private substitutions: ReadonlyMap<string, TypeSubstitution> | null = null;
   // Names bound by the implicit imports — the redeclare guard's set; the
   // checker never learns where these libraries come from.
@@ -417,11 +426,7 @@ class Checker {
     const file = this.rootState.pkg.files[0];
     this.withPackage(this.rootState, () => {
       this.checkImports(file);
-      this.predeclareNominalTypes(file);
-      this.predeclareFunctions(file);
-      this.resolveInterfaceMethods(file);
-      this.resolveGenericStructs(file);
-      this.resolveStructMembers(file);
+      this.declareMembers(file);
       bindFileNames(file, this.scope, this.info);
       this.info.scopes.set(file, this.scope);
       // A library opened as the checked document, as an editor does, checks
@@ -468,6 +473,7 @@ class Checker {
       this.validateMethodDeclarations([
         ...this.currentPackage.structDecls.values(),
       ]);
+      this.validateGenericInstanceMethods();
       this.validateUnusedGenericTemplates();
     });
     if (this.errors.count === 0) this.checkEmissions(file);
@@ -550,11 +556,7 @@ class Checker {
     headers: readonly syntax.ExprStmt[],
   ): void {
     this.checkImports(file);
-    this.predeclareNominalTypes(file);
-    this.predeclareFunctions(file);
-    this.resolveInterfaceMethods(file);
-    this.resolveGenericStructs(file);
-    this.resolveStructMembers(file);
+    this.declareMembers(file);
     const owners = [...this.currentPackage.structDecls.values()];
     bindFileNames(file, this.scope, this.info);
     this.info.scopes.set(file, this.scope);
@@ -642,6 +644,7 @@ class Checker {
     }
     this.orderPackageGlobals();
     this.validateMethodDeclarations(owners);
+    this.validateGenericInstanceMethods();
     this.validateUnusedGenericTemplates();
   }
 
@@ -922,6 +925,44 @@ class Checker {
       this.stateByPackage.get(pkg) ??
       fatal(`semantic package '${pkg.path}' has no checker state`)
     );
+  }
+
+  // Declares the file's types and functions. A generic annotation met on the
+  // way, such as a parameter written `Box<Price>`, instantiates its type
+  // before every struct and interface has its methods, so whether the type
+  // arguments satisfy their constraints is checked once all of them do.
+  // Declaration order then never decides it.
+  private declareMembers(file: syntax.File): void {
+    const outer = this.pendingSatisfaction;
+    const pending: PendingSatisfaction[] = [];
+    this.pendingSatisfaction = pending;
+    try {
+      this.predeclareNominalTypes(file);
+      this.resolveGenericStructs(file);
+      this.predeclareFunctions(file);
+      this.resolveInterfaceMethods(file);
+      this.resolveStructMembers(file);
+    } finally {
+      this.pendingSatisfaction = outer;
+    }
+    for (const {object, constraint, pos} of pending) {
+      this.checkSatisfaction(object, constraint, pos);
+    }
+  }
+
+  private checkSatisfaction(
+    object: StructObject,
+    constraint: InterfaceObject,
+    pos: Pos,
+  ): void {
+    if (this.pendingSatisfaction !== null) {
+      this.pendingSatisfaction.push({object, constraint, pos});
+      return;
+    }
+    const mismatch = satisfactionError(object, constraint);
+    if (mismatch !== null) {
+      this.error(pos, mismatch);
+    }
   }
 
   private predeclareNominalTypes(file: syntax.File): void {
@@ -3775,6 +3816,18 @@ class Checker {
 
   private switchTv(e: syntax.SwitchExpr): TypeAndValue {
     const subjectTv = e.subject !== null ? this.checkExpr(e.subject) : null;
+    // Arms match the subject by `==`, which aggregates and tuples do not have.
+    if (
+      e.subject !== null &&
+      subjectTv !== null &&
+      (isAggregateType(subjectTv.type) ||
+        subjectTv.type.kind === TypeKind.Tuple)
+    ) {
+      this.error(
+        e.subject.pos,
+        `cannot switch on ${formatType(subjectTv.type)}: aggregate equality is not defined`,
+      );
+    }
     const savedFlowQualifier = this.flowQualifier;
     if (subjectTv !== null) {
       this.flowQualifier = joinQualifiers(
@@ -4596,7 +4649,6 @@ class Checker {
     this.blockDepth = saved.blockDepth;
     this.funcBoundary = saved.boundary;
     this.substitutions = saved.substitutions;
-    this.drainGenericMethodValidation();
     return instance;
   }
 
@@ -5764,10 +5816,7 @@ class Checker {
       if (object === undefined) {
         continue;
       }
-      const mismatch = satisfactionError(object, parameter.constraint);
-      if (mismatch !== null) {
-        this.error(pos, mismatch);
-      }
+      this.checkSatisfaction(object, parameter.constraint, pos);
     }
 
     const fields: FieldObject[] = [];
@@ -5935,20 +5984,19 @@ class Checker {
       this.dependencyCollectors.push(...saved.dependencyCollectors);
     }
     this.pendingGenericMethodValidation.add(object);
-    this.drainGenericMethodValidation();
     return object;
   }
 
-  private drainGenericMethodValidation(): void {
-    if (
-      this.instantiating.size !== 0 ||
-      this.pendingGenericMethodValidation.size === 0
-    ) {
-      return;
+  // Validates the methods of generic instances made so far, as the package's
+  // own structs are validated: once its statements are checked, so a method
+  // body may use any struct the package declares. Validating can instantiate
+  // further types, which join the queue.
+  private validateGenericInstanceMethods(): void {
+    while (this.pendingGenericMethodValidation.size !== 0) {
+      const owners = [...this.pendingGenericMethodValidation];
+      this.pendingGenericMethodValidation.clear();
+      this.validateMethodDeclarations(owners);
     }
-    const owners = [...this.pendingGenericMethodValidation];
-    this.pendingGenericMethodValidation.clear();
-    this.validateMethodDeclarations(owners);
   }
 
   private typeNameMentionsParameter(

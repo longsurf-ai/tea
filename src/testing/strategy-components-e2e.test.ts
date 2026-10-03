@@ -1759,6 +1759,35 @@ describe('Tea strategy components end to end', () => {
     ).toHaveLength(2);
   });
 
+  test('a rebalance capped at the buying power fills at any price', async () => {
+    // With a rate commission, the capped quantity's recomputed cost used to
+    // round just past the cash at some opens and reject the whole order.
+    const opens = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 120];
+    for (const price of opens) {
+      const {sink} = await execute(
+        [
+          '',
+          'import broker',
+          'import portfolio',
+          'import trade',
+          'var strat = trade.nextOpen(broker.new(commission = broker.commissionRate(0.001)), portfolio.new(initialCash = 10000.0))',
+          'strat.begin_bar(open, bar_index)',
+          'if bar_index == 0',
+          '    strat.rebalance("All in", trade.targetPercentOfEquity(100.0))',
+          'strat.mark(close)',
+          'emit "output0" strat.position_quantity()',
+        ].join('\n'),
+        [
+          'open,high,low,close',
+          `${price},${price},${price},${price}`,
+          `${price},${price},${price},${price}`,
+          '',
+        ].join('\n'),
+      );
+      expectNumbersClose(valuesFor(sink, 1), [0, 10000 / (price * 1.001)]);
+    }
+  });
+
   test('resolves target-percent rebalances at the open and preserves one pyramiding slot across adds', async () => {
     const source = [
       '',

@@ -963,6 +963,23 @@ describe('diagnostics', () => {
     );
   });
 
+  test('switch matches by ==, so it rejects what == rejects', () => {
+    const errorsOf = (src: string) =>
+      checkText(src).errors.map(error => error.msg);
+    const subjects = {
+      'P': 'struct P\n    float x\np = P.new(1)\nx = switch p\n    p => 1\n    => 0',
+      'array<int>':
+        'a = array.from(1, 2)\nx = switch a\n    a => 1\n    => 0',
+      '[int, int]': 'x = switch [1, 2]\n    [1, 2] => 1\n    => 0',
+    };
+    for (const [type, source] of Object.entries(subjects)) {
+      expect(errorsOf(source)).toContain(
+        `cannot switch on ${type}: aggregate equality is not defined`,
+      );
+    }
+    expect(errorsOf('x = switch "a"\n    "a" => 1\n    => 0')).toEqual([]);
+  });
+
   test('invalid for-in targets remain user-facing errors', () => {
     const r = checkText(
       [

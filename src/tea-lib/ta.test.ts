@@ -175,3 +175,31 @@ describe('ta crosses and integer inputs', () => {
     expect(values(3)[9]).toBeCloseTo(values(4)[9] as number, 12);
   });
 });
+
+describe('ta correlation', () => {
+  async function correlations(
+    source2: string,
+    close: readonly number[],
+    length = 3,
+  ) {
+    const sink = new OutputCapture();
+    await executeTestProgram(
+      mustBuild(`emit "r" ta.correlation(close, ${source2}, ${length})`),
+      {stream: arrayStream({close}), sink},
+    );
+    return sink.emissions.map(emission => emission.channels[0] as number);
+  }
+
+  test('a constant window has no correlation, even a decimal one', async () => {
+    const closes = [10, 12, 15, 11, 14, 12, 13];
+    expect((await correlations('0.1', closes)).every(Number.isNaN)).toBe(true);
+    const constants = await correlations('0.7', Array(5).fill(0.1));
+    expect(constants.every(Number.isNaN)).toBe(true);
+  });
+
+  test('a perfect correlation is exactly 1, not just past it', async () => {
+    // Without the clamp, rounding gives 1.0000000000000002 here.
+    const values = await correlations('close * 1.1', [1.07, 3.32], 2);
+    expect(values).toEqual([NaN, 1]);
+  });
+});

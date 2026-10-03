@@ -246,6 +246,28 @@ describe('comments', () => {
     ]);
   });
 
+  test('multi-line block comment inside a group is trivia, like a line break there', () => {
+    for (const source of [
+      'x = f(1, /* a\nb */ 2)\n',
+      'x = f(1,\n    /* a\n    b */\n    2)\n',
+    ]) {
+      const result = scanText(source);
+      expect(result.errors).toEqual([]);
+      expect(kinds(result)).toEqual([
+        'name',
+        'assign',
+        'name',
+        'lparen',
+        'literal',
+        'comma',
+        'literal',
+        'rparen',
+        'newline',
+        'eof',
+      ]);
+    }
+  });
+
   test('unterminated block comment', () => {
     const result = scanText('x = 1 /* never\n');
     expect(result.errors.map(e => e.msg)).toEqual([

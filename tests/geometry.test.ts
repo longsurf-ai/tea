@@ -109,6 +109,35 @@ emit "invalid" geometry.rectangleContacts(0.0, 0.0, 0.0, 0.0, 1.0, 1.0, false, 2
   expect(degenerate[0].invalid).toEqual([]);
 });
 
+test('an exact tangent is one tangent contact, wherever it touches', () => {
+  // The curve (0,0),(1,2),(2,0) is x = 2u, y = 4u(1 - u). Its tangent at
+  // u = k/8 runs from (0, 4u²) to (2, 4u² + 4 - 8u); every value is exact.
+  const tangents = Array.from({length: 8}, (_, i) => (i + 1) / 8);
+  const rows = execute(
+    `import geometry
+${tangents
+  .map(
+    (u, i) =>
+      `emit "k${i + 1}" geometry.quadraticContacts(0.0, 0.0, 1.0, 2.0, 2.0, 0.0, 0.0, ${4 * u * u}, 2.0, ${4 * u * u + 4 - 8 * u})`,
+  )
+  .join('\n')}
+emit "edge" geometry.rectangleContacts(0.0, 0.0, 1.0, 5.0, 2.0, 2.0, true, 1.0, 3.125, 2.0, 4.0)`,
+    [{close: 1}],
+  );
+  tangents.forEach((u, i) =>
+    expect(rows[0][`k${i + 1}`]).toEqual([
+      {
+        boundaryParameter: u,
+        observationParameter: u,
+        transverse: false,
+        overlap: false,
+      },
+    ]),
+  );
+  // The curve (0,0),(1,5),(2,2) peaks at (1.25, 3.125), on the bottom edge.
+  expect(rows[0].edge).toEqual([{x: 1.25, y: 3.125}]);
+});
+
 // Pinned development dependencies are independent upstream oracles; runtime
 // geometry imports none of them.
 const require = createRequire(import.meta.url);

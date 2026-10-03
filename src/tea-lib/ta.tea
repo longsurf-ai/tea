@@ -1121,18 +1121,28 @@ export min(source) =>
  * @category Accumulation and statistics
  */
 export correlation(source1, source2, length) =>
-	mean1 = sma(source1, length)
-	mean2 = sma(source2, length)
+	// Center each window on its current value, as variance does, so a constant
+	// decimal series has exactly zero spread and gives na.
+	anchor1 = source1
+	anchor2 = source2
+	shifted1 = 0.0
+	shifted2 = 0.0
+	for i = 0 to length - 1
+		shifted1 += source1[i] - anchor1
+		shifted2 += source2[i] - anchor2
+	mean1 = shifted1 / length
+	mean2 = shifted2 / length
 	cov = 0.0
 	dev1 = 0.0
 	dev2 = 0.0
 	for i = 0 to length - 1
-		d1 = source1[i] - mean1
-		d2 = source2[i] - mean2
+		d1 = (source1[i] - anchor1) - mean1
+		d2 = (source2[i] - anchor2) - mean2
 		cov += d1 * d2
 		dev1 += d1 * d1
 		dev2 += d2 * d2
-	cov / math.sqrt(dev1 * dev2)
+	// Rounding can carry a perfect correlation just past 1.
+	math.max(-1.0, math.min(1.0, cov / math.sqrt(dev1 * dev2)))
 
 /**
  * Percentage of the previous `length` values of `source` that are less than or

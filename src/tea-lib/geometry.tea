@@ -311,9 +311,13 @@ roots(float a, float b, float c) =>
 	result = array.new<float>()
 	magnitude = math.max(math.abs(a), math.max(math.abs(b), math.abs(c)))
 	if magnitude > 0.0
-		aa = a / magnitude
-		bb = b / magnitude
-		cc = c / magnitude
+		// Scaling by a power of two is exact, so the expansion below decides the
+		// discriminant's sign for these very coefficients: an exact tangency
+		// stays a double root.
+		scale = math.pow(2.0, math.floor(math.log(magnitude) / math.log(2.0)))
+		aa = a / scale
+		bb = b / scale
+		cc = c / scale
 		if aa == 0.0
 			if bb != 0.0
 				result.push(-cc / bb)

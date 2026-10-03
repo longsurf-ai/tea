@@ -35,8 +35,13 @@ export const math = {
   ceil: (x: Value<number, Numeric>) => int(Math.ceil(x.value)),
   round,
   sqrt: (x: Value<number, Numeric>) => float(Math.sqrt(x.value)),
+  // Math.pow(NaN, 0) is 1, but an na argument gives na.
   pow: (x: Value<number, Numeric>, y: Value<number, Numeric>) =>
-    float(Math.pow(x.value, y.value)),
+    float(
+      Number.isNaN(x.value) || Number.isNaN(y.value)
+        ? NaN
+        : Math.pow(x.value, y.value),
+    ),
   log: (x: Value<number, Numeric>) => float(Math.log(x.value)),
   log10: (x: Value<number, Numeric>) => float(Math.log10(x.value)),
   exp: (x: Value<number, Numeric>) => float(Math.exp(x.value)),

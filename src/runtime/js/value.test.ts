@@ -127,6 +127,10 @@ test('native methods share numeric, color, missing-value, and progress rules', (
   expect(math.floor(float(-1.1)).value).toBe(-2);
   expect(math.round(float(1.235), int(2)).value).toBe(1.24);
   expect(math.sqrt(float(-1)).value).toBeNaN();
+  // Math.pow(NaN, 0) is 1; an na base still gives na.
+  expect(math.pow(float(NaN), int(0)).value).toBeNaN();
+  expect(math.pow(int(NaN), int(0)).value).toBeNaN();
+  expect(math.pow(float(2), int(0)).value).toBe(1);
   expect(math.avg(int(2), float(4)).value).toBe(3);
   expect(math.max(int(2), float(4)).kind).toBe('float');
   expect(colors.rgb(int(255), int(0), int(0)).value?.toString()).toBe(

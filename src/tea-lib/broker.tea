@@ -1333,7 +1333,10 @@ export type BrokerEmulator
 						openingQuantity = crossesPosition ? math.abs(projectedQuantity) : math.max(math.abs(projectedQuantity) - math.abs(account.positionQuantity), 0.0)
 						closingSlippageCost = crossesPosition ? math.min(math.abs(account.positionQuantity), quantity) * math.abs(price - referencePrice) : 0.0
 						capitalRequired = openingQuantity * price * marginRate / 100.0 + fee + closingSlippageCost
-						capitalValid = not increasesExposure or marginRate == 0.0 or capitalAvailable >= capitalRequired
+						// A capped buy spends the buying power by construction; recomputing
+						// its cost could only add rounding and reject it.
+						capped = quantity < requestedQuantity
+						capitalValid = capped or not increasesExposure or marginRate == 0.0 or capitalAvailable >= capitalRequired
 						if capitalValid and quantity > 0.0 and price > 0.0 and fee >= 0.0
 							execution := Fill.new(this.nextFillId, order.id, order.commandId, fillSide, barIndex, referencePrice, price, quantity, notional, fee, order.orderType, CommandKind.rebalance)
 							this.nextFillId := this.nextFillId + 1
