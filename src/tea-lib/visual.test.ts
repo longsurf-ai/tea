@@ -61,6 +61,32 @@ describe('visual prelude', () => {
     });
   });
 
+  test('verticalProfile writes its time box with nested rows, parts and levels', async () => {
+    const program = mustBuild(
+      [
+        'part = ProfileSegment.new(volume, color.green)',
+        'rows = array.from(ProfileRow.new(low, high, array.from(part)))',
+        'levels = array.from(ProfileLevel.new(close, color.orange))',
+        'verticalProfile("vp", time, time + 60000, rows, levels, "VP")',
+      ].join('\n'),
+    );
+    const sink = new OutputCapture();
+    await executeTestProgram(program, {
+      stream: csvStream('time,high,low,close,volume\n0,11,9,10,500\n'),
+      sink,
+    });
+    expect(sink.publications[0]).toMatchObject({
+      vp: {
+        id: 'vp',
+        from: 0,
+        to: 60000,
+        title: 'VP',
+        rows: [{low: 9, high: 11, segments: [{value: 500, color: {a: 255}}]}],
+        levels: [{y: 10, color: {a: 255}}],
+      },
+    });
+  });
+
   test('rejects duplicate plot IDs even when values have the same type', () => {
     expect(
       checkText('plot("price", close)\nplot("price", open)').errors.some(

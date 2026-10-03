@@ -8,7 +8,7 @@
           "id": "reference/overview",
           "title": "Reading the reference",
           "description": "How to read signatures, formulas and examples, and how a script reaches each name.",
-          "markdown": "The reference documents every name a Tea script can use, the language itself, the `tea` command and the JavaScript API. Each entry gives its syntax, parameters and result, and where they help, a formula, an example with its real output, and how it differs from Pine Script. To learn Tea, start with the Documentation tab.\n\n## Reading signatures\n\nA built-in reads `result name(qualifier type parameter, …)`. The result’s qualifier is shown only when it is fixed, as in `input int input.int(…)`; otherwise the result is as variable as the most variable argument. `= …` marks an optional parameter, whose description says what leaving it out means, and `...` marks one that takes any number of arguments. `int | float` accepts either type. Qualifiers go from least to most variable: `const`, `input`, `simple`, `series` (see [Types and qualifiers](#reference/language/types)).\n\nA function written in Tea, such as `ta.sma` or `trade.nextOpen`, shows its declaration as written: a parameter without a qualifier accepts any qualifier, a parameter without a type accepts any argument the function body can use, and **Returns** names the result type. Methods show their declarations, including the result type.\n\n## Reading formulas\n\nA formula names each value after the parameter it comes from, and a subscript names the bar. The current bar is t, so a value on the current bar and one i bars back read\n\n$$\nx_t = \\texttt{x} \\qquad x_{t-i} = \\texttt{x[i]}\n$$\n\nA value before the first bar is `na`. Each entry’s **Warm-up and na** says when its result is `na`.\n\n## How examples run\n\nEvery example on these pages is a complete program, and the output under it is what the program writes when the reference is built. The program runs as\n\n```bash\ntea run example.tea --input example.csv\n```\n\non the CSV shown with it, or on a single bar whose `time` is 0 when it shows none. The CSV holds only the columns the program reads, and an empty cell is `na`. Each output column is a value the program writes with `emit`, and `index` counts bars from 0. A strategy’s run also writes the broker’s event outputs, such as `broker.FillExecuted`; the examples show only the columns they write themselves.\n\nExamples are illustrations: they show what this version of Tea computes, not values checked against Pine Script.\n\n## Names and imports\n\n| Names | How a script reaches them |\n| --- | --- |\n| `ta.*` | In every script, as `ta.name`. |\n| `geometry.*` | After `import geometry`, as `geometry.name`. |\n| `plotsegment`, `plotzone`, `plotcandle`, `plot`, `hline`, `fill`, `plotshape`, `plotchar`, `bgcolor`, `barcolor`, `alertcondition`, `alert` | In every script, without an import or a namespace. |\n| `broker.*` | After `import broker`, as `broker.name`. |\n| `portfolio.*` | After `import portfolio`, as `portfolio.name`. |\n| `trade.*` | After `import trade`, as `trade.name`. |\n| `open`, `high`, `low`, `close`, `volume`, `hl2`, `hlc3`, `ohlc4`, `hlcc4` | In every script, without an import or a namespace. |\n| `array.*`, `barstate.*`, `color.*`, `display.*`, `format.*`, `hline.*`, `input.*`, `location.*`, `map.*`, `math.*`, `matrix.*`, `plot.*`, `position.*`, `request.*`, `runtime.*`, `shape.*`, `size.*`, `str.*`, `syminfo.*`, `timeframe.*` | In every script, as `namespace.name`. |"
+          "markdown": "The reference documents every name a Tea script can use, the language itself, the `tea` command and the JavaScript API. Each entry gives its syntax, parameters and result, and where they help, a formula, an example with its real output, and how it differs from Pine Script. To learn Tea, start with the Documentation tab.\n\n## Reading signatures\n\nA built-in reads `result name(qualifier type parameter, …)`. The result’s qualifier is shown only when it is fixed, as in `input int input.int(…)`; otherwise the result is as variable as the most variable argument. `= …` marks an optional parameter, whose description says what leaving it out means, and `...` marks one that takes any number of arguments. `int | float` accepts either type. Qualifiers go from least to most variable: `const`, `input`, `simple`, `series` (see [Types and qualifiers](#reference/language/types)).\n\nA function written in Tea, such as `ta.sma` or `trade.nextOpen`, shows its declaration as written: a parameter without a qualifier accepts any qualifier, a parameter without a type accepts any argument the function body can use, and **Returns** names the result type. Methods show their declarations, including the result type.\n\n## Reading formulas\n\nA formula names each value after the parameter it comes from, and a subscript names the bar. The current bar is t, so a value on the current bar and one i bars back read\n\n$$\nx_t = \\texttt{x} \\qquad x_{t-i} = \\texttt{x[i]}\n$$\n\nA value before the first bar is `na`. Each entry’s **Warm-up and na** says when its result is `na`.\n\n## How examples run\n\nEvery example on these pages is a complete program, and the output under it is what the program writes when the reference is built. The program runs as\n\n```bash\ntea run example.tea --input example.csv\n```\n\non the CSV shown with it, or on a single bar whose `time` is 0 when it shows none. The CSV holds only the columns the program reads, and an empty cell is `na`. Each output column is a value the program writes with `emit`, and `index` counts bars from 0. A strategy’s run also writes the broker’s event outputs, such as `broker.FillExecuted`; the examples show only the columns they write themselves.\n\nExamples are illustrations: they show what this version of Tea computes, not values checked against Pine Script.\n\n## Names and imports\n\n| Names | How a script reaches them |\n| --- | --- |\n| `ta.*` | In every script, as `ta.name`. |\n| `geometry.*` | After `import geometry`, as `geometry.name`. |\n| `plotsegment`, `plotzone`, `plotcandle`, `plot`, `hline`, `fill`, `plotshape`, `plotchar`, `bgcolor`, `barcolor`, `alertcondition`, `alert`, `verticalProfile` | In every script, without an import or a namespace. |\n| `broker.*` | After `import broker`, as `broker.name`. |\n| `portfolio.*` | After `import portfolio`, as `portfolio.name`. |\n| `trade.*` | After `import trade`, as `trade.name`. |\n| `open`, `high`, `low`, `close`, `volume`, `hl2`, `hlc3`, `ohlc4`, `hlcc4` | In every script, without an import or a namespace. |\n| `array.*`, `barstate.*`, `color.*`, `display.*`, `format.*`, `hline.*`, `input.*`, `location.*`, `map.*`, `math.*`, `matrix.*`, `plot.*`, `position.*`, `request.*`, `runtime.*`, `shape.*`, `size.*`, `str.*`, `syminfo.*`, `timeframe.*` | In every script, as `namespace.name`. |"
         },
         {
           "kind": "article",
@@ -1811,6 +1811,133 @@
               "returns": "`visual.BarColor`: the description written to `id`, with fields named after the parameters.",
               "members": null,
               "body": "**Example:** Bars that close at or above their open are colored green, others red.\n\n```tea\nemit \"open\" open\nemit \"close\" close\nbarcolor(\"direction\", close >= open ? color.green : color.red)\n```\n\n```csv\ntime,open,close\n0,10,12\n1,12,11\n```\n\n**Output:**\n\n```text\nindex  open  close  direction\n0      10    12     {\"id\":\"direction\",\"color\":{\"r\":76,\"g\":175,\"b\":80,\"a\":255},\"title\":\"\",\"offset\":0,\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n1      12    11     {\"id\":\"direction\",\"color\":{\"r\":255,\"g\":82,\"b\":82,\"a\":255},\"title\":\"\",\"offset\":0,\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n```\n\n**See also:** [`bgcolor`](#bgcolor)"
+            },
+            {
+              "id": "verticalProfile",
+              "symbols": ["verticalProfile"],
+              "kind": "function",
+              "category": "Vertical profiles",
+              "summary": "Writes a vertical profile, bands of the vertical axis drawn sideways inside a time box, to a named output.",
+              "signatures": [
+                "verticalProfile(\n    const string id,\n    series int from,\n    series int to,\n    array<ProfileRow> rows,\n    array<ProfileLevel> levels,\n    const string title = \"\",\n    const string display = \"all\"\n)"
+              ],
+              "parameters": [
+                {
+                  "name": "id",
+                  "type": "const string",
+                  "defaultValue": null,
+                  "description": "Name of the output this call writes."
+                },
+                {
+                  "name": "from",
+                  "type": "series int",
+                  "defaultValue": null,
+                  "description": "Start of the box, as a time such as [`time`](#time)."
+                },
+                {
+                  "name": "to",
+                  "type": "series int",
+                  "defaultValue": null,
+                  "description": "End of the box, after `from`."
+                },
+                {
+                  "name": "rows",
+                  "type": "array<ProfileRow>",
+                  "defaultValue": null,
+                  "description": "Bands of the profile, in any order; they must not overlap."
+                },
+                {
+                  "name": "levels",
+                  "type": "array<ProfileLevel>",
+                  "defaultValue": null,
+                  "description": "Lines across the box, such as a point of control."
+                },
+                {
+                  "name": "title",
+                  "type": "const string",
+                  "defaultValue": "\"\"",
+                  "description": "Display name, separate from `id`."
+                },
+                {
+                  "name": "display",
+                  "type": "const string",
+                  "defaultValue": "\"all\"",
+                  "description": "Where the output appears: a `display.*` constant such as [`display.all`](#display.*) or [`display.none`](#display.*)."
+                }
+              ],
+              "returns": "The description written to `id`, with fields named after the parameters.",
+              "members": null,
+              "body": "Each row is a band of the axis, such as a price range, drawn sideways from\n`from` toward `to`; the longest row fills the box. A volume profile is one\nuse: one row per price range, its parts the volume traded on rising and on\nfalling bars. The host draws, for each `from`, only the description written\non the last row that carries it, so writing the profile so far on every row\nkeeps a session's profile current. This draws one fixed two-row profile:\n\n```tea\nstart = time[10]\nrows = array.from(ProfileRow.new(100.0, 101.0, array.from(ProfileSegment.new(3.0, color.green))), ProfileRow.new(101.0, 102.0, array.from(ProfileSegment.new(1.0, color.red))))\nlevels = array.from(ProfileLevel.new(100.5, color.orange))\nverticalProfile(\"profile\", start, time, rows, levels, \"Profile\")\n```"
+            },
+            {
+              "id": "ProfileSegment",
+              "symbols": ["ProfileSegment"],
+              "kind": "type",
+              "category": "Vertical profiles",
+              "summary": "One part of a [`ProfileRow`](#ProfileRow): a length and the color to draw it in.",
+              "signatures": ["type ProfileSegment"],
+              "parameters": [],
+              "returns": null,
+              "members": {
+                "columns": ["Field", "Description"],
+                "rows": [
+                  [
+                    "`float value`",
+                    "Length of the part, `0` or more, relative to the profile's longest row."
+                  ],
+                  ["`color color`", "Color of the part."]
+                ]
+              },
+              "body": ""
+            },
+            {
+              "id": "ProfileRow",
+              "symbols": ["ProfileRow"],
+              "kind": "type",
+              "category": "Vertical profiles",
+              "summary": "One band of a vertical profile, such as a price range, with the parts drawn in it.",
+              "signatures": ["type ProfileRow"],
+              "parameters": [],
+              "returns": null,
+              "members": {
+                "columns": ["Field", "Description"],
+                "rows": [
+                  [
+                    "`float low`",
+                    "Bottom of the band, on the axis the profile shares with the chart."
+                  ],
+                  [
+                    "`float high`",
+                    "Top of the band, above `low`. The rows of one profile do not overlap."
+                  ],
+                  [
+                    "`array<ProfileSegment> segments`",
+                    "Parts drawn side by side from the start of the box, in this order."
+                  ]
+                ]
+              },
+              "body": ""
+            },
+            {
+              "id": "ProfileLevel",
+              "symbols": ["ProfileLevel"],
+              "kind": "type",
+              "category": "Vertical profiles",
+              "summary": "A line across the whole box of a vertical profile, such as a point of control.",
+              "signatures": ["type ProfileLevel"],
+              "parameters": [],
+              "returns": null,
+              "members": {
+                "columns": ["Field", "Description"],
+                "rows": [
+                  [
+                    "`float y`",
+                    "Position of the line, on the axis the profile shares with the chart."
+                  ],
+                  ["`color color`", "Color of the line."]
+                ]
+              },
+              "body": ""
             },
             {
               "id": "plot.style_*",
@@ -3727,6 +3854,98 @@
               "returns": null,
               "members": null,
               "body": "On such a bar it changes by the same percentage as the close; on any other\nbar it keeps its value. It is a ratio without a unit. [`ta.nvi`](#ta.nvi) moves on\nthe bars where volume fell, and a bar whose volume did not change moves\nneither. Like [`ta.obv`](#ta.obv), it is computed once per bar for the whole\nscript, wherever the script reads it.\n\n**Formula**\n\n$$\n\\begin{aligned}\n\\mathrm{pvi}_t &= \\begin{cases}\n\\mathrm{pvi}_{t-1} + \\dfrac{\\mathit{close}_t - \\mathit{close}_{t-1}}\n{\\mathit{close}_{t-1}} \\cdot \\mathrm{pvi}_{t-1} & \\text{if } c_t \\\\\n\\mathrm{pvi}_{t-1} & \\text{otherwise}\n\\end{cases} \\\\\n\\text{where}\\quad c_t &= \\big(\\mathit{volume}_t > \\operatorname{nz}(\\mathit{volume}_{t-1})\\big)\n\\land \\big(\\mathit{close}_t, \\mathit{close}_{t-1} \\notin \\{0, \\text{na}\\}\\big) \\\\\n\\mathrm{pvi} &= 1 \\text{ before the first bar}\n\\end{aligned}\n$$\n\n**Warm-up and na:** Never `na`: it is `1` on the first bar. A bar leaves it unchanged\nwhen `close` or the previous close is `na` or `0`, or when `volume` is `na`.\nA previous `volume` that is `na` counts as `0`.\n\n**Example:** PVI moves only where volume rose: up 50% with the close at index 1 and up\n100% at index 4. Volume is missing at index 5, so PVI holds there; at index 6\nthe missing volume counts as `0`, so PVI rises 50% with the close.\n\n```tea\nemit \"close\" close\nemit \"volume\" volume\nemit \"pvi\" ta.pvi\n```\n\n```csv\ntime,close,volume\n0,8,100\n1,12,200\n2,9,100\n3,9,100\n4,18,150\n5,12,\n6,18,50\n7,9,25\n```\n\n**Output:**\n\n```text\nindex  close  volume  pvi\n0      8      100     1\n1      12     200     1.5\n2      9      100     1.5\n3      9      100     1.5\n4      18     150     3\n5      12     na      3\n6      18     50      4.5\n7      9      25      4.5\n```\n\n**See also:** [`ta.nvi`](#ta.nvi), [`ta.obv`](#ta.obv)"
+            },
+            {
+              "id": "ta.volumeProfile",
+              "symbols": ["ta.volumeProfile"],
+              "kind": "function",
+              "category": "Volume profile",
+              "summary": "Spreads the volume of every bar added since the last reset across price rows.",
+              "signatures": [
+                "ta.volumeProfile(\n    array<float> highs,\n    array<float> lows,\n    array<float> volumes,\n    array<bool> rising,\n    bool reset,\n    int rows = 24,\n    float valueArea = 70.0\n)"
+              ],
+              "parameters": [
+                {
+                  "name": "highs",
+                  "type": "array<float>",
+                  "defaultValue": null,
+                  "description": "High of each bar added on this call."
+                },
+                {
+                  "name": "lows",
+                  "type": "array<float>",
+                  "defaultValue": null,
+                  "description": "Low of each bar added on this call."
+                },
+                {
+                  "name": "volumes",
+                  "type": "array<float>",
+                  "defaultValue": null,
+                  "description": "Volume of each bar added on this call."
+                },
+                {
+                  "name": "rising",
+                  "type": "array<bool>",
+                  "defaultValue": null,
+                  "description": "Whether each bar added on this call closed at or above its open."
+                },
+                {
+                  "name": "reset",
+                  "type": "bool",
+                  "defaultValue": null,
+                  "description": "Whether to drop the bars added before this call and start a new profile."
+                },
+                {
+                  "name": "rows",
+                  "type": "int",
+                  "defaultValue": "24",
+                  "description": "Number of price rows, a positive `int`."
+                },
+                {
+                  "name": "valueArea",
+                  "type": "float",
+                  "defaultValue": "70.0",
+                  "description": "Share of the volume, in percent, that the value area holds."
+                }
+              ],
+              "returns": "The profile of the bars added since the last reset.",
+              "members": null,
+              "body": "Each call adds a group of bars, such as the lower-timeframe bars inside the\ncurrent chart bar from [`request.security_lower_tf`](#request.security_lower_tf), and returns the\nprofile of every bar added since the last `reset`. The range from the lowest\nlow to the highest high is cut into `rows` equal rows. Each bar's volume is\nspread over the rows its low-to-high range covers, in proportion to the\noverlap; a bar whose high equals its low puts all its volume in one row.\nThe value area grows from the point of control one row at a time, taking the\nneighbor with more volume (the upper one on a tie), until it holds\n`valueArea` percent of the volume.\n\nThe four arrays describe the same bars in the same order; bars with an `na`\nhigh or low are skipped and an `na` volume counts as `0`. To profile the\nchart's own bars, pass one-element arrays:\n\n```tea\nprofile = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), barstate.isfirst)\nemit \"poc\" profile.low + (profile.poc + 0.5) * profile.step\n```"
+            },
+            {
+              "id": "ta.VolumeByPrice",
+              "symbols": ["ta.VolumeByPrice"],
+              "kind": "type",
+              "category": "Volume profile",
+              "summary": "Volume traded at each price over a range of bars, as returned by [`ta.volumeProfile`](#ta.volumeProfile).",
+              "signatures": ["type VolumeByPrice"],
+              "parameters": [],
+              "returns": null,
+              "members": {
+                "columns": ["Field", "Description"],
+                "rows": [
+                  [
+                    "`float low`",
+                    "Bottom of the first row: the lowest low counted."
+                  ],
+                  ["`float step`", "Height of every row."],
+                  [
+                    "`array<float> up`",
+                    "Volume of rising bars, those closing at or above their open, in each row."
+                  ],
+                  [
+                    "`array<float> down`",
+                    "Volume of falling bars in each row."
+                  ],
+                  [
+                    "`int poc`",
+                    "Row with the most volume, the point of control; the lowest such row on a tie."
+                  ],
+                  ["`int valueLow`", "Lowest row of the value area."],
+                  ["`int valueHigh`", "Highest row of the value area."]
+                ]
+              },
+              "body": "Row `i` covers the prices from `low + i * step` to `low + (i + 1) * step`.\nThe arrays hold one value per row, the bottom row first. An empty profile,\nbefore any bar with a price range has been added, has no rows and is `na`\neverywhere else."
             }
           ]
         }

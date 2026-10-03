@@ -44,26 +44,30 @@ drawing objects: there is no `label.new`, `line.new`, `box.new`,
 
 Available in every script without an import or namespace.
 
-| Name                            | Description                                                                                                         |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| [`plotsegment`](#plotsegment)   | Writes a complete line segment description at this bar, without creating a drawing handle.                          |
-| [`plotzone`](#plotzone)         | Writes a bounded time/value region at this bar, without creating a persistent box.                                  |
-| [`plotcandle`](#plotcandle)     | Writes one OHLC candle description on each bar for a host to render.                                                |
-| [`plot`](#plot)                 | Writes one value per bar, with options for drawing it, to a named output.                                           |
-| [`hline`](#hline)               | Writes a horizontal line at a fixed level to a named output.                                                        |
-| [`fill`](#fill)                 | Writes a shaded area between two plots or horizontal lines to a named output.                                       |
-| [`plotshape`](#plotshape)       | Writes on each bar whether to show a shape marker there, with options for drawing it, to a named output.            |
-| [`plotchar`](#plotchar)         | Writes on each bar whether to show a character marker there, with options for drawing it, to a named output.        |
-| [`bgcolor`](#bgcolor)           | Writes a background color for the current bar to a named output.                                                    |
-| [`barcolor`](#barcolor)         | Writes a color for drawing the current bar to a named output.                                                       |
-| [`plot.style_*`](#plot-style)   | Drawing styles for the `style` argument of [`plot`](./plots.md#plot).                                               |
-| [`hline.style_*`](#hline-style) | Line styles for the `linestyle` argument of [`hline`](./plots.md#hline).                                            |
-| [`location.*`](#location)       | Positions for the `location` argument of [`plotshape`](./plots.md#plotshape) and [`plotchar`](./plots.md#plotchar). |
-| [`shape.*`](#shape)             | Marker shapes for the `style` argument of [`plotshape`](./plots.md#plotshape).                                      |
-| [`size.*`](#size)               | Marker sizes for the `size` argument of [`plotshape`](./plots.md#plotshape) and [`plotchar`](./plots.md#plotchar).  |
-| [`display.*`](#display)         | Where a host shows a plot’s or an input’s value.                                                                    |
-| [`format.*`](#format)           | Number formats for the `format` argument of [`plot`](./plots.md#plot).                                              |
-| [`position.*`](#position)       | Anchor positions for tables on a chart.                                                                             |
+| Name                                  | Description                                                                                                         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| [`plotsegment`](#plotsegment)         | Writes a complete line segment description at this bar, without creating a drawing handle.                          |
+| [`plotzone`](#plotzone)               | Writes a bounded time/value region at this bar, without creating a persistent box.                                  |
+| [`plotcandle`](#plotcandle)           | Writes one OHLC candle description on each bar for a host to render.                                                |
+| [`plot`](#plot)                       | Writes one value per bar, with options for drawing it, to a named output.                                           |
+| [`hline`](#hline)                     | Writes a horizontal line at a fixed level to a named output.                                                        |
+| [`fill`](#fill)                       | Writes a shaded area between two plots or horizontal lines to a named output.                                       |
+| [`plotshape`](#plotshape)             | Writes on each bar whether to show a shape marker there, with options for drawing it, to a named output.            |
+| [`plotchar`](#plotchar)               | Writes on each bar whether to show a character marker there, with options for drawing it, to a named output.        |
+| [`bgcolor`](#bgcolor)                 | Writes a background color for the current bar to a named output.                                                    |
+| [`barcolor`](#barcolor)               | Writes a color for drawing the current bar to a named output.                                                       |
+| [`verticalProfile`](#verticalprofile) | Writes a vertical profile, bands of the vertical axis drawn sideways inside a time box, to a named output.          |
+| [`ProfileSegment`](#profilesegment)   | One part of a [`ProfileRow`](./plots.md#profilerow): a length and the color to draw it in.                          |
+| [`ProfileRow`](#profilerow)           | One band of a vertical profile, such as a price range, with the parts drawn in it.                                  |
+| [`ProfileLevel`](#profilelevel)       | A line across the whole box of a vertical profile, such as a point of control.                                      |
+| [`plot.style_*`](#plot-style)         | Drawing styles for the `style` argument of [`plot`](./plots.md#plot).                                               |
+| [`hline.style_*`](#hline-style)       | Line styles for the `linestyle` argument of [`hline`](./plots.md#hline).                                            |
+| [`location.*`](#location)             | Positions for the `location` argument of [`plotshape`](./plots.md#plotshape) and [`plotchar`](./plots.md#plotchar). |
+| [`shape.*`](#shape)                   | Marker shapes for the `style` argument of [`plotshape`](./plots.md#plotshape).                                      |
+| [`size.*`](#size)                     | Marker sizes for the `size` argument of [`plotshape`](./plots.md#plotshape) and [`plotchar`](./plots.md#plotchar).  |
+| [`display.*`](#display)               | Where a host shows a plot’s or an input’s value.                                                                    |
+| [`format.*`](#format)                 | Number formats for the `format` argument of [`plot`](./plots.md#plot).                                              |
+| [`position.*`](#position)             | Anchor positions for tables on a chart.                                                                             |
 
 ## Geometry descriptions
 
@@ -660,6 +664,90 @@ index  open  close  direction
 ```
 
 **See also:** [`bgcolor`](./plots.md#bgcolor)
+
+## Vertical profiles
+
+### verticalProfile
+
+Writes a vertical profile, bands of the vertical axis drawn sideways inside a time box, to a named output.
+
+```tea
+verticalProfile(
+    const string id,
+    series int from,
+    series int to,
+    array<ProfileRow> rows,
+    array<ProfileLevel> levels,
+    const string title = "",
+    const string display = "all"
+)
+```
+
+| Parameter | Type                  | Default | Description                                                                                                                           |
+| --------- | --------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`      | `const string`        |         | Name of the output this call writes.                                                                                                  |
+| `from`    | `series int`          |         | Start of the box, as a time such as [`time`](./bar-and-time.md#time).                                                                 |
+| `to`      | `series int`          |         | End of the box, after `from`.                                                                                                         |
+| `rows`    | `array<ProfileRow>`   |         | Bands of the profile, in any order; they must not overlap.                                                                            |
+| `levels`  | `array<ProfileLevel>` |         | Lines across the box, such as a point of control.                                                                                     |
+| `title`   | `const string`        | `""`    | Display name, separate from `id`.                                                                                                     |
+| `display` | `const string`        | `"all"` | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display). |
+
+**Returns:** The description written to `id`, with fields named after the parameters.
+
+Each row is a band of the axis, such as a price range, drawn sideways from
+`from` toward `to`; the longest row fills the box. A volume profile is one
+use: one row per price range, its parts the volume traded on rising and on
+falling bars. The host draws, for each `from`, only the description written
+on the last row that carries it, so writing the profile so far on every row
+keeps a session's profile current. This draws one fixed two-row profile:
+
+```tea
+start = time[10]
+rows = array.from(ProfileRow.new(100.0, 101.0, array.from(ProfileSegment.new(3.0, color.green))), ProfileRow.new(101.0, 102.0, array.from(ProfileSegment.new(1.0, color.red))))
+levels = array.from(ProfileLevel.new(100.5, color.orange))
+verticalProfile("profile", start, time, rows, levels, "Profile")
+```
+
+### ProfileSegment
+
+One part of a [`ProfileRow`](./plots.md#profilerow): a length and the color to draw it in.
+
+```tea
+type ProfileSegment
+```
+
+| Field         | Description                                                             |
+| ------------- | ----------------------------------------------------------------------- |
+| `float value` | Length of the part, `0` or more, relative to the profile's longest row. |
+| `color color` | Color of the part.                                                      |
+
+### ProfileRow
+
+One band of a vertical profile, such as a price range, with the parts drawn in it.
+
+```tea
+type ProfileRow
+```
+
+| Field                            | Description                                                           |
+| -------------------------------- | --------------------------------------------------------------------- |
+| `float low`                      | Bottom of the band, on the axis the profile shares with the chart.    |
+| `float high`                     | Top of the band, above `low`. The rows of one profile do not overlap. |
+| `array<ProfileSegment> segments` | Parts drawn side by side from the start of the box, in this order.    |
+
+### ProfileLevel
+
+A line across the whole box of a vertical profile, such as a point of control.
+
+```tea
+type ProfileLevel
+```
+
+| Field         | Description                                                          |
+| ------------- | -------------------------------------------------------------------- |
+| `float y`     | Position of the line, on the axis the profile shares with the chart. |
+| `color color` | Color of the line.                                                   |
 
 ## Style constants
 
