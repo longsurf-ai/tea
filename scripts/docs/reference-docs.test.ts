@@ -14,6 +14,7 @@ import {Qualifier} from '../../src/ir/type';
 import {buildText} from '../../src/noder/testing';
 import {AssignOp, SOURCE_DECLARATION_KINDS} from '../../src/syntax/nodes';
 import {KEYWORDS, Op} from '../../src/syntax/tokens';
+import {referenceManual} from '../../src/reference/index';
 import {referenceOutputs} from './generate-reference';
 import {javascriptApi} from './javascript-api-docs';
 import {type DocComment} from '../../src/syntax/doc-comments';
@@ -358,5 +359,41 @@ describe('reference generation', () => {
   test('renders every page the Reference navigation lists', async () => {
     const outputs = await referenceOutputs();
     expect(outputs.size).toBeGreaterThan(0);
+  });
+});
+
+describe('in-app reference manual', () => {
+  test('holds the script-facing pages with unique entries and links that resolve', () => {
+    expect(referenceManual.groups.map(group => group.title)).toEqual([
+      'Language',
+      'Built-ins',
+      'Libraries',
+    ]);
+    const pages = referenceManual.groups.flatMap(group => group.pages);
+    const entries = pages.flatMap(page =>
+      page.kind === 'entries' ? page.entries.map(entry => entry.id) : [],
+    );
+    expect(new Set(entries).size).toBe(entries.length);
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        'ta.sma',
+        'plot',
+        'close',
+        'color.*',
+        'trade.nextOpen',
+      ]),
+    );
+    // `#ta.sma` names an entry, `#reference/builtins/ta` a page.
+    const targets = new Set([...entries, ...pages.map(page => page.id)]);
+    const links = [
+      ...JSON.stringify(referenceManual).matchAll(/\]\(#([^)]+)\)/g),
+    ].map(match => match[1]!);
+    expect(links.length).toBeGreaterThan(0);
+    expect(links.filter(link => !targets.has(link))).toEqual([]);
+    // `tea/referenceName` answers `color.red`, a symbol of `color.*`.
+    const color = pages
+      .flatMap(page => (page.kind === 'entries' ? page.entries : []))
+      .find(entry => entry.id === 'color.*');
+    expect(color?.symbols).toContain('color.red');
   });
 });

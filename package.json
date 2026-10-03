@@ -61,6 +61,10 @@
     "./lsp": {
       "types": "./dist/types/lsp/index.d.ts",
       "default": "./dist/lsp/index.js"
+    },
+    "./reference": {
+      "types": "./dist/types/reference/index.d.ts",
+      "default": "./dist/reference/index.js"
     }
   },
   "scripts": {

@@ -19,6 +19,13 @@ import {
   type NativeValueDoc,
 } from '../../src/checker/catalog-docs';
 import {cliProgram} from '../../src/cli/cli';
+import {wrapSignature} from '../../src/lsp/documentation';
+import type {
+  ReferenceEntry,
+  ReferenceManual,
+  ReferencePage,
+  ReferenceParameter,
+} from '../../src/reference/index';
 import type {DocComment} from '../../src/syntax/doc-comments';
 import {formatType, Qualifier, TypeKind} from '../../src/ir/type';
 import {
@@ -55,9 +62,21 @@ interface Subsection {
   readonly text: string;
 }
 
+/** What an entry documents, for readers that label or format it by kind. */
+type EntryKind =
+  | 'function'
+  | 'variable'
+  | 'constant'
+  | 'type'
+  | 'enum'
+  | 'interface'
+  | 'class'
+  | 'command';
+
 interface Entry {
   /** As code writes it: `ta.sma`, `trade.NextOpenTrade`, `tea run`. */
   readonly name: string;
+  readonly kind: EntryKind;
   /**
    * The page heading. Mintlify and Docusaurus slug punctuation differently
    * (`ta.sma` becomes `ta-sma` in one and `tasma` in the other) and neither
@@ -69,7 +88,8 @@ interface Entry {
   /** Names a `{@link …}` resolves to this entry. */
   readonly symbols: readonly string[];
   readonly summary: string;
-  readonly signature: string | null;
+  /** One per overload; a long one may span lines. */
+  readonly signatures: readonly string[];
   readonly params: readonly ParamRow[];
   readonly returns: string | null;
   /** One table row per member: its declaration, value or name, then notes. */
@@ -97,12 +117,13 @@ interface Page {
 }
 
 function entry(
-  fields: Partial<Entry> & Pick<Entry, 'name' | 'summary' | 'category'>,
+  fields: Partial<Entry> &
+    Pick<Entry, 'name' | 'kind' | 'summary' | 'category'>,
 ): Entry {
   return {
     heading: fields.name.slice(fields.name.lastIndexOf('.') + 1),
     symbols: [fields.name],
-    signature: null,
+    signatures: [],
     params: [],
     returns: null,
     table: null,
@@ -337,8 +358,9 @@ function nativeFunctionEntry(
     throw new Error(`native function ${name} has no documentation`);
   return entry({
     name,
+    kind: 'function',
     summary: doc.summary,
-    signature: overloads.map(formatNativeSignature).join('\n'),
+    signatures: overloads.map(formatNativeSignature),
     params: nativeParams(name, overloads),
     returns: doc.returns ?? null,
     body: joinBlocks(doc.details, fence(doc.example)),
@@ -376,8 +398,9 @@ function valueEntries(values: readonly NativeVar[]): Entry[] {
       entries.push(
         entry({
           name: value.name,
+          kind: value.qualifier === Qualifier.Const ? 'constant' : 'variable',
           summary: doc.summary,
-          signature: valueSignature(value),
+          signatures: [valueSignature(value)],
           body: joinBlocks(doc.details, fence(doc.example)),
           category: doc.category,
         }),
@@ -395,6 +418,7 @@ function valueEntries(values: readonly NativeVar[]): Entry[] {
     entries.push(
       entry({
         name: key,
+        kind: 'constant',
         // `plot.style_*` reads "plot style"; `color.*` reads "color".
         heading: key.replace(/[*._]+$/, '').replaceAll('.', ' '),
         symbols: members.map(member => member.name),
@@ -583,9 +607,10 @@ function libraryEntries(library: TeaLibrary): Entry[] {
     if (doc === null) throw new Error(`${where} has no doc comment`);
     return entry({
       name: qualifiedName(library, item.name),
+      kind: item.kind === 'value' ? 'variable' : item.kind,
       heading: item.name,
       summary: doc.summary,
-      signature: librarySignature(library, item),
+      signatures: [librarySignature(library, item)],
       params: item.params.map(param => {
         const description = doc.params.get(param.name);
         if (description === undefined) {
@@ -669,9 +694,10 @@ function apiEntry(item: ApiExport, heading: string): Entry {
   const {summary, rest} = splitSummary(item.doc.text);
   return entry({
     name: item.name,
+    kind: item.kind,
     heading,
     summary,
-    signature: item.signature,
+    signatures: [item.signature],
     params: [...item.doc.params].map(([name, text]) => ({
       name,
       type: null,
@@ -761,6 +787,7 @@ function constantTable(exports: readonly ApiExport[]): Entry[] {
   return [
     entry({
       name: 'Constants',
+      kind: 'constant',
       heading: '',
       symbols: constants.map(item => item.name),
       summary: '',
@@ -803,10 +830,11 @@ function cliPage(): Page {
     const description = punctuate(command.description());
     return entry({
       name: `tea ${command.name()}`,
+      kind: 'command',
       heading: `tea ${command.name()}`,
       summary,
       body: description === summary ? '' : description,
-      signature: usage,
+      signatures: [usage],
       params: args,
       table:
         options.length === 0
@@ -1032,7 +1060,7 @@ function renderPage(page: Page, index: SymbolIndex): string {
         joinBlocks(
           item.heading === '' ? undefined : `### ${item.heading}`,
           prose(item.summary, index, page),
-          fence(item.signature ?? undefined, page.language),
+          fence(item.signatures.join('\n') || undefined, page.language),
           item.params.length === 0
             ? undefined
             : paramTable(item.params, index, page),
@@ -1153,6 +1181,156 @@ async function overviewPage(
   );
 }
 
+// ---- in-app manual ----------------------------------------------------------
+
+// What a script author looks up; the CLI and JavaScript API stay on the site.
+const MANUAL_SECTIONS = [
+  'reference/language/',
+  'reference/builtins/',
+  'reference/libraries/',
+];
+
+/**
+ * The Language, Built-ins and Libraries pages as data for `tea/reference`, in
+ * the order and grouping of docs.json's Reference tab. Links stay inside the
+ * manual or keep only their text (see {@link manualLinks}).
+ */
+async function manual(
+  root: string,
+  pages: readonly Page[],
+): Promise<ReferenceManual> {
+  const docs = JSON.parse(
+    await readFile(path.join(root, 'docs/docs.json'), 'utf8'),
+  ) as DocsJson;
+  const tab = docs.navigation.tabs.find(
+    candidate => candidate.tab === 'Reference',
+  );
+  if (tab === undefined) throw new Error('docs.json has no Reference tab');
+  const generated = new Map(pages.map(page => [page.route, page]));
+  const routes = new Set(
+    tab.groups
+      .flatMap(group => group.pages)
+      .filter(
+        (route): route is string =>
+          typeof route === 'string' &&
+          MANUAL_SECTIONS.some(section => route.startsWith(section)),
+      ),
+  );
+  // A link may name any symbol of an entry, such as `color.red` of `color.*`.
+  const entryOf = new Map<string, string>();
+  for (const route of routes) {
+    for (const item of generated.get(route)?.entries ?? []) {
+      for (const symbol of item.symbols) entryOf.set(symbol, item.name);
+    }
+  }
+  const groups: {title: string; pages: ReferencePage[]}[] = [];
+  for (const group of tab.groups) {
+    const groupPages: ReferencePage[] = [];
+    for (const route of group.pages) {
+      if (typeof route !== 'string' || !routes.has(route)) continue;
+      const text = (markdown: string) =>
+        manualLinks(markdown, route, routes, entryOf);
+      const parameter = (param: ParamRow): ReferenceParameter => ({
+        ...param,
+        description: text(param.description),
+      });
+      const page = generated.get(route);
+      if (page === undefined) {
+        const source = await readFile(
+          path.join(root, 'docs', `${route}.md`),
+          'utf8',
+        );
+        groupPages.push({
+          kind: 'article',
+          id: route,
+          title: frontMatter(source, 'title'),
+          description: frontMatter(source, 'description'),
+          markdown: text(source.replace(/^---\n[\s\S]*?\n---\n/, '').trim()),
+        });
+        continue;
+      }
+      groupPages.push({
+        kind: 'entries',
+        id: route,
+        title: page.title,
+        description: text(page.description),
+        intro: text(page.intro),
+        commonParameters: page.shared.map(parameter),
+        entries: page.entries.map(item => {
+          if (item.kind === 'class' || item.kind === 'command') {
+            throw new Error(`${route}: ${item.name} cannot be in the manual`);
+          }
+          const entry: ReferenceEntry = {
+            id: item.name,
+            symbols: item.symbols,
+            kind: item.kind,
+            category: item.category,
+            summary: text(item.summary),
+            signatures: item.signatures.map(signature =>
+              wrapSignature(signature),
+            ),
+            parameters: item.params.map(parameter),
+            returns: item.returns === null ? null : text(item.returns),
+            members:
+              item.table === null
+                ? null
+                : {
+                    columns: item.table.columns,
+                    rows: item.table.rows.map(row => row.map(text)),
+                  },
+            body: text(item.body),
+          };
+          return entry;
+        }),
+      });
+    }
+    if (groupPages.length > 0) {
+      groups.push({title: group.group, pages: groupPages});
+    }
+  }
+  return {groups};
+}
+
+/**
+ * Links for the in-app manual: `{@link ta.sma}` and a link to a manual page
+ * become `#ta.sma` and `#reference/builtins/ta`, which the host resolves
+ * inside the manual. A link to a page outside the manual, such as a guide, or
+ * to a heading on the same page keeps only its text; a link with a scheme
+ * stays.
+ */
+function manualLinks(
+  markdown: string,
+  from: string,
+  routes: ReadonlySet<string>,
+  entryOf: ReadonlyMap<string, string>,
+): string {
+  return markdown
+    .replace(LINK, (_, target: string, label: string | undefined) => {
+      const id = entryOf.get(target);
+      return id === undefined
+        ? code(label ?? target)
+        : `[${code(label ?? target)}](#${id})`;
+    })
+    .replace(
+      /\[([^\]]+)\]\(([^)\s]+)\)/g,
+      (whole, label: string, href: string) => {
+        if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return whole;
+        // An entry link from above stays; an anchor to a heading on the same
+        // page has nothing to point at in the manual.
+        if (href.startsWith('#')) {
+          return [...entryOf.values()].includes(href.slice(1)) ? whole : label;
+        }
+        const target = href.split('#')[0]!;
+        const route = target.startsWith('/')
+          ? target.slice(1).replace(/\/$/, '')
+          : path.posix
+              .normalize(path.posix.join(path.posix.dirname(from), target))
+              .replace(/\.md$/, '');
+        return routes.has(route) ? `[${label}](#${route})` : label;
+      },
+    );
+}
+
 // ---- outputs ----------------------------------------------------------------
 
 function symbolIndex(
@@ -1199,6 +1377,10 @@ export async function referenceOutputs(
     [
       path.join(root, 'docs/reference/overview.md'),
       await overviewPage(root, pages),
+    ],
+    [
+      path.join(root, 'src/reference/manual.json'),
+      JSON.stringify(await manual(root, pages)),
     ],
     ...pages.map(
       page =>

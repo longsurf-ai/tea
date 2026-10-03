@@ -61,9 +61,12 @@ function startLanguageServer(
   the names they show: doc comments, and the catalog's for natives.
 - A `file:` URI is analyzed under its file-system path, so relative imports
   resolve against the real file; any other URI is its own filename. A
-  definition in a compiler-shipped library is a `tea-lib:/ta.tea` location,
-  and `tea/libraryText`, the one non-standard request, takes `{uri}` and
-  returns that library's source text, or null.
+  definition in a compiler-shipped library is a `tea-lib:/ta.tea` location.
+- Two requests are Tea's own. `tea/libraryText` takes `{uri}` and returns
+  that library's source text, or null. `tea/referenceName` takes
+  `{textDocument, position}` and returns the name the Tea reference
+  documents the name there under, such as `ta.sma` for the `sma` of
+  `ta.sma(close, 9)`, or null for a name the reference does not document.
 - A throw while analyzing or answering is a compiler defect. It is logged
   to the client, the request answers null, the diagnostics published
   before stay, and the session goes on.

@@ -29,6 +29,7 @@ await build({
     'codegen/wgsl/index': 'src/codegen/wgsl/index.ts',
     'runtime/gpu/index': 'src/runtime/gpu/index.ts',
     'lsp/index': 'src/lsp/index.ts',
+    'reference/index': 'src/reference/index.ts',
   },
   outdir: 'dist',
   splitting: true,

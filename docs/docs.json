@@ -119,6 +119,7 @@
               "reference/javascript/tea",
               "reference/javascript/compiler",
               "reference/javascript/lsp",
+              "reference/javascript/reference",
               "reference/javascript/base-print",
               "reference/javascript/runtime",
               "reference/javascript/runtime-load",

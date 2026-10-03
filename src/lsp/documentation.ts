@@ -141,6 +141,44 @@ export function editorText(text: string): string {
     .replace(/\[([^\]]+)\]\((?![a-z][a-z0-9+.-]*:)[^)]*\)/gi, '$1');
 }
 
+/**
+ * A signature with one parameter per line once it is longer than `width`, so
+ * `plot(const string id, series float series, ...)` reads as a list instead of
+ * wrapping mid-type. A short or already multi-line signature is unchanged;
+ * commas inside `<>`, `()` or `[]` stay with their parameter.
+ *
+ * @example
+ * ```ts
+ * wrapSignature('f(int a, int b) → int', 10);
+ * // 'f(\n    int a,\n    int b\n) → int'
+ * ```
+ */
+export function wrapSignature(signature: string, width = 64): string {
+  const open = signature.indexOf('(');
+  if (signature.length <= width || signature.includes('\n') || open < 0) {
+    return signature;
+  }
+  const params: string[] = [];
+  let depth = 0;
+  let start = open + 1;
+  for (let index = start; index < signature.length; index++) {
+    const character = signature[index]!;
+    if (character === ')' && depth === 0) {
+      params.push(signature.slice(start, index).trim());
+      return params[0] === ''
+        ? signature
+        : `${signature.slice(0, open)}(\n${params.map(param => `    ${param}`).join(',\n')}\n${signature.slice(index)}`;
+    }
+    if ('(<['.includes(character)) depth += 1;
+    else if (')>]'.includes(character)) depth -= 1;
+    else if (character === ',' && depth === 0) {
+      params.push(signature.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  return signature;
+}
+
 function definedAt(analysis: Analysis, object: Object): Name | undefined {
   return analysis.definitions.get(object)?.[0];
 }

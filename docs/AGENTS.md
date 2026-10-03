@@ -24,7 +24,9 @@ configuration in `../website/` exists only for the packaged offline renderer.
   `reference/language/` is hand-written, because syntax has no declaration to
   carry it; tests keep it complete against the compiler's keywords,
   operators, types and declaration forms. Missing docs and examples that do
-  not compile fail `npm test`. Generated files are never edited by hand.
+  not compile fail `npm test`. The same model also emits
+  `src/reference/manual.json`, the script-facing pages as data for hosts
+  (`tea/reference`). Generated files are never edited by hand.
 - `docs.json` owns navigation for both renderers: `../website/sidebars.ts`
   derives the offline sidebars from it, and generation fails when its
   Reference tab and the generated pages disagree. Directory nesting does not

@@ -1,4 +1,4 @@
-// Purpose: One LSP session — startLanguageServer() registers every handler on a host-supplied connection: open documents, debounced analysis, versioned diagnostics, the position queries and tea/libraryText.
+// Purpose: One LSP session — startLanguageServer() registers every handler on a host-supplied connection: open documents, debounced analysis, versioned diagnostics, the position queries, tea/libraryText and tea/referenceName.
 
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {
@@ -6,12 +6,13 @@ import {
   TextDocuments,
   TextDocumentSyncKind,
   type Connection,
+  type TextDocumentPositionParams,
   type PublishDiagnosticsParams,
 } from 'vscode-languageserver';
 import {TextDocument} from 'vscode-languageserver-textdocument';
 import {defaultRegistry} from '../loader/loader';
 import {analyze, type Analysis} from './analysis';
-import {definition, hover, references} from './name-queries';
+import {definition, hover, referenceName, references} from './name-queries';
 import {completion, signatureHelp} from './text-queries';
 
 // Coalesces keystrokes; an analysis itself takes 4 to 40 ms.
@@ -44,9 +45,12 @@ const LIBRARY_SCHEME = 'tea-lib:/';
  *   the names they show: doc comments, and the catalog's for natives.
  * - A `file:` URI is analyzed under its file-system path, so relative imports
  *   resolve against the real file; any other URI is its own filename. A
- *   definition in a compiler-shipped library is a `tea-lib:/ta.tea` location,
- *   and `tea/libraryText`, the one non-standard request, takes `{uri}` and
- *   returns that library's source text, or null.
+ *   definition in a compiler-shipped library is a `tea-lib:/ta.tea` location.
+ * - Two requests are Tea's own. `tea/libraryText` takes `{uri}` and returns
+ *   that library's source text, or null. `tea/referenceName` takes
+ *   `{textDocument, position}` and returns the name the Tea reference
+ *   documents the name there under, such as `ta.sma` for the `sma` of
+ *   `ta.sma(close, 9)`, or null for a name the reference does not document.
  * - A throw while analyzing or answering is a compiler defect. It is logged
  *   to the client, the request answers null, the diagnostics published
  *   before stay, and the session goes on.
@@ -239,6 +243,11 @@ export function startLanguageServer(
   );
   connection.onRequest('tea/libraryText', ({uri}: {uri: string}) =>
     libraryText(uri),
+  );
+  connection.onRequest(
+    'tea/referenceName',
+    ({textDocument, position}: TextDocumentPositionParams) =>
+      ask(textDocument.uri, analysis => referenceName(analysis, position)),
   );
 
   documents.listen(connection);

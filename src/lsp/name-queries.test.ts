@@ -6,7 +6,8 @@ import {fileURLToPath} from 'node:url';
 import {describe, expect, test} from 'vitest';
 import type {Position, Range} from 'vscode-languageserver';
 import {analyze} from './analysis';
-import {definition, hover, references} from './name-queries';
+import {wrapSignature} from './documentation';
+import {definition, hover, referenceName, references} from './name-queries';
 
 const FILE = '/charts/fixture.tea';
 const LINES = [
@@ -89,7 +90,11 @@ describe('hover documentation', () => {
     if (result === null) return null;
     const {value} = result.contents as {value: string};
     const end = value.indexOf('\n```') + '\n```'.length;
-    return value.slice(end).trim() || null;
+    const docs = value.slice(end).trim();
+    if (docs === '') return null;
+    // A rule separates the signature from the docs.
+    expect(docs.startsWith('---\n\n')).toBe(true);
+    return docs.slice('---\n\n'.length);
   }
 
   test('a library function shows its doc comment, parameters and result', () => {
@@ -116,6 +121,17 @@ describe('hover documentation', () => {
     expect(docsAt(source, 'trade', 1)).toMatch(/^Coordinators/);
     expect(docsAt(source, 'Direction', 1)).toMatch(/^Side of a new position/);
     expect(docsAt(source, 'long', 1)).toMatch(/^A long position/);
+  });
+
+  test('a long signature lists a parameter per line', () => {
+    const result = hover(
+      analyze({filename: 'plot.tea', source: 'plot("c", close)'}),
+      {line: 0, character: 1},
+    );
+    const {value} = result!.contents as {value: string};
+    expect(value).toMatch(
+      /^```tea\nseries Plot plot\(\n {4}const string id,\n {4}series float series,\n/,
+    );
   });
 
   test('a declaration in this document documents itself with a doc comment', () => {
@@ -269,6 +285,37 @@ describe('definition', () => {
 
   test.each(SILENT)('%s has none', (_, position) => {
     expect(definition(analysis, position)).toEqual([]);
+  });
+});
+
+describe('reference name', () => {
+  test('a shipped or native name is the one the reference documents', () => {
+    expect(referenceName(analysis, on(14, 'ema'))).toBe('ta.ema');
+    expect(referenceName(analysis, on(17, 'plot'))).toBe('plot');
+    expect(referenceName(analysis, on(10, 'close'))).toBe('close');
+    expect(referenceName(analysis, on(15, 'max'))).toBe('math.max');
+  });
+
+  test('a catalog constant, and a library type for its member', () => {
+    const source = 'import trade\nx = color.red\nd = trade.Direction.long';
+    const lines = source.split('\n');
+    const at = (line: number, word: string) =>
+      referenceName(analyze({filename: 'reference.tea', source}), {
+        line,
+        character: lines[line]!.indexOf(word),
+      });
+    expect(at(1, 'red')).toBe('color.red');
+    expect(at(2, 'Direction')).toBe('trade.Direction');
+    expect(at(2, 'long')).toBe('trade.Direction');
+  });
+
+  test('a name this document declares is not in the reference', () => {
+    expect(referenceName(analysis, on(11, 'g'))).toBeNull();
+    expect(referenceName(analysis, on(9, 'Bar'))).toBeNull();
+    expect(referenceName(analysis, on(12, 'top'))).toBeNull();
+    expect(referenceName(analysis, on(13, 'scaled'))).toBeNull();
+    const literal = analyze({filename: 'literal.tea', source: 'x = true'});
+    expect(referenceName(literal, {line: 0, character: 5})).toBeNull();
   });
 });
 
@@ -432,5 +479,22 @@ describe('shipped libraries opened as documents', () => {
     const filename = join(TEA_LIB, `${name}.tea`);
     const result = analyze({filename, source: readFileSync(filename, 'utf8')});
     expect(result.diagnostics).toEqual([]);
+  });
+});
+
+describe('wrapSignature', () => {
+  test('lists parameters once a signature is long, keeping bracketed commas', () => {
+    expect(wrapSignature('f(int a, int b) → int', 10)).toBe(
+      'f(\n    int a,\n    int b\n) → int',
+    );
+    expect(wrapSignature('g<T: storable>(map<string, T> m, int n)', 10)).toBe(
+      'g<T: storable>(\n    map<string, T> m,\n    int n\n)',
+    );
+  });
+
+  test('leaves short, empty and already wrapped signatures alone', () => {
+    expect(wrapSignature('f(int a) → int')).toBe('f(int a) → int');
+    expect(wrapSignature('f() → int', 3)).toBe('f() → int');
+    expect(wrapSignature('f(\n    a\n)', 3)).toBe('f(\n    a\n)');
   });
 });

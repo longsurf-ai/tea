@@ -1,8 +1,8 @@
 # lsp
 
 Language-server projection of compiler facts. `analysis.ts` owns `analyze()`:
-text in, `Analysis` out. `name-queries.ts` owns hover, definition and
-references; `text-queries.ts` owns completion and signature help;
+text in, `Analysis` out. `name-queries.ts` owns hover, definition,
+references and reference names; `text-queries.ts` owns completion and signature help;
 `documentation.ts` owns the docs those show. `server.ts` owns
 `startLanguageServer()`, one session on a host-supplied `Connection`.
 `index.ts` is the `tea/lsp` export.
@@ -21,8 +21,9 @@ references; `text-queries.ts` owns completion and signature help;
   empty; only errors positioned in the document are reported.
 - Queries return compiler filenames; the server owns URIs. A `file:` URI is
   its path, any other URI its own filename, and `tea-lib/ta.tea` is
-  `tea-lib:/ta.tea`, read through `tea/libraryText`, the only non-standard
-  request.
+  `tea-lib:/ta.tea`, read through `tea/libraryText`. The only other
+  non-standard request, `tea/referenceName`, names a position's Tea
+  reference entry.
 - The server holds the only state: open documents, one `Analysis` per document
   version, one 150 ms debounce each. Requests analyze the current text first.
   Hosts may consume derived file dependencies and invalidate analysis; watcher
