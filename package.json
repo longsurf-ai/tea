@@ -34,30 +34,6 @@
       "types": "./dist/types/compiler.d.ts",
       "default": "./dist/compiler.js"
     },
-    "./base/print": {
-      "types": "./dist/types/base/print.d.ts",
-      "default": "./dist/base/print.js"
-    },
-    "./codegen/codegen": {
-      "types": "./dist/types/codegen/codegen.d.ts",
-      "default": "./dist/codegen/codegen.js"
-    },
-    "./runtime/load": {
-      "types": "./dist/types/runtime/load.d.ts",
-      "default": "./dist/runtime/load.js"
-    },
-    "./extension/pine": {
-      "types": "./dist/types/extension/pine.d.ts",
-      "default": "./dist/extension/pine.js"
-    },
-    "./codegen/wgsl": {
-      "types": "./dist/types/codegen/wgsl/index.d.ts",
-      "default": "./dist/codegen/wgsl/index.js"
-    },
-    "./runtime/gpu": {
-      "types": "./dist/types/runtime/gpu/index.d.ts",
-      "default": "./dist/runtime/gpu/index.js"
-    },
     "./lsp": {
       "types": "./dist/types/lsp/index.d.ts",
       "default": "./dist/lsp/index.js"

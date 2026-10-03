@@ -34,10 +34,10 @@ ternaries evaluate only their selected branch.
 ## Embedding
 
 Run `npm run build:package` to emit JavaScript and declarations. `tea` exports
-Node/DataStream APIs; `tea/runtime` exports the typed execution library.
-Compiler hosts can use `tea/compiler`, `tea/base/print`, `tea/codegen/codegen`,
-`tea/runtime/load` and `tea/extension/pine`. GPU entries remain
-`tea/codegen/wgsl` and `tea/runtime/gpu`.
+Node/DataStream APIs and the Pine builtin supplier; `tea/runtime` exports the
+typed execution library. Compiler hosts use `tea/compiler`, which takes source
+through `compileToProgram`, `generate` and `loadModule` to a `Module`. Editors
+use `tea/lsp` and `tea/reference`. The GPU backend is not exported yet.
 
 All entries share one split build, preserving runtime class identity. Consumers
 typecheck against declarations using their own compiler settings.

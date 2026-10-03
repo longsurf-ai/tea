@@ -120,13 +120,7 @@
               "reference/javascript/compiler",
               "reference/javascript/lsp",
               "reference/javascript/reference",
-              "reference/javascript/base-print",
-              "reference/javascript/runtime",
-              "reference/javascript/runtime-load",
-              "reference/javascript/codegen-codegen",
-              "reference/javascript/extension-pine",
-              "reference/javascript/codegen-wgsl",
-              "reference/javascript/runtime-gpu"
+              "reference/javascript/runtime"
             ]
           }
         ]

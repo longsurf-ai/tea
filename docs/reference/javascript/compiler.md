@@ -9,15 +9,20 @@ description: "The Tea compiler, for hosts that compile without the tea template.
 import {…} from 'tea/compiler';
 ```
 
-The Tea compiler, for hosts that compile without the [`tea`](./tea.md#tea) template. Start with [`compileToProgram`](./compiler.md#compiletoprogram), which turns source files or in-memory text into the `Program` that [`generate`](./codegen-codegen.md#generate) lowers; [`compile`](./compiler.md#compile) runs the whole `tea build` path for files on disk, and [`compileForTooling`](./compiler.md#compilefortooling) keeps every stage's result for editors. Source diagnostics are never thrown: they collect in the [`Errors`](./base-print.md#errors) instance the caller passes, or in the result of [`compile`](./compiler.md#compile).
+The Tea compiler, for hosts that compile without the [`tea`](./tea.md#tea) template. Start with [`compileToProgram`](./compiler.md#compiletoprogram), which turns source files or in-memory text into the `Program` that [`generate`](./compiler.md#generate) lowers to a module's source and [`loadModule`](./compiler.md#loadmodule) turns into a `Module` for `createNode`. [`compile`](./compiler.md#compile) runs the whole `tea build` path for files on disk, and [`compileForTooling`](./compiler.md#compilefortooling) keeps every stage's result for editors. Source diagnostics are never thrown: they collect in the [`Errors`](./compiler.md#errors) instance the caller passes, or in the result of [`compile`](./compiler.md#compile). A thrown [`InternalError`](./compiler.md#internalerror) is a defect in Tea.
 
 | Name                                      | Description                                                                                                                                                                                                                                                                                                                                                                                     |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`compile`](#compile)                     | Compile Tea files on disk to the TypeScript module source that `tea build` writes.                                                                                                                                                                                                                                                                                                              |
 | [`compileForTooling`](#compilefortooling) | The tooling entry: the same stages as [`compileToProgram`](./compiler.md#compiletoprogram) without the barrier after parsing, so a file that is broken on one line still yields types, scopes and check errors for its other lines. The checker tolerates the `BadExpr` and `BadStmt` nodes of a recovered parse. Noding keeps its barrier and runs only when parse and check reported nothing. |
 | [`compileToProgram`](#compiletoprogram)   | Compile inputs through the existing parse/check/node pipeline. Errors are recorded in `errors`; a failed stage returns null without running later stages. `includeSources` additionally returns the exact entry/import texts used by this compilation, excluding shipped libraries. Ordinary calls return Program.                                                                              |
+| [`generate`](#generate)                   | Lower one checked Program to a deterministic TypeScript module. The artifact contains Arrow constructors and state requirements, but no stream, parameter assignment, or mutable execution state. Load it before binding.                                                                                                                                                                       |
+| [`loadModule`](#loadmodule)               | Transpile and load a TypeScript module synchronously, without executing steps. Generated imports use the same runtime library as standalone compiled files. Type checking belongs to builds; loading preserves the fast template path.                                                                                                                                                          |
+| [`Errors`](#errors)                       | The queue of one compilation's user-facing errors.                                                                                                                                                                                                                                                                                                                                              |
+| [`InternalError`](#internalerror)         | A compiler defect: an internal invariant failed.                                                                                                                                                                                                                                                                                                                                                |
 | [`Compilation`](#compilation)             | One run of the frontend with every stage's result kept: what tooling reads instead of the `Program` alone. The run's errors are in the `Errors` the caller passed.                                                                                                                                                                                                                              |
 | [`CompileOptions`](#compileoptions)       | Source capture does not change compilation or import resolution.                                                                                                                                                                                                                                                                                                                                |
+| [`ErrorMsg`](#errormsg)                   | One user-facing compile error: `msg` at `pos`.                                                                                                                                                                                                                                                                                                                                                  |
 | [`CompileResult`](#compileresult)         | The outcome of [`compile`](./compiler.md#compile): the generated TypeScript module source, or the flushed, position-ordered error batch. Never both, and never a partial module.                                                                                                                                                                                                                |
 
 ## Functions
@@ -30,14 +35,14 @@ Compile Tea files on disk to the TypeScript module source that `tea build` write
 function compile(filenames: readonly string[]): CompileResult;
 ```
 
-It runs [`compileToProgram`](./compiler.md#compiletoprogram) with its own [`Errors`](./base-print.md#errors), lowers the
-Program with [`generate`](./codegen-codegen.md#generate), and type-checks the result against the
+It runs [`compileToProgram`](./compiler.md#compiletoprogram) with its own [`Errors`](./compiler.md#errors), lowers the
+Program with [`generate`](./compiler.md#generate), and type-checks the result against the
 installed `tea/runtime` declarations.
 
 Source diagnostics come back as `{ok: false, errors}`, sorted by position
 and deduplicated, and stop compilation at the first failed stage. An
 unreadable entry file throws its file-system error. A generated module that
-fails the type check throws [`InternalError`](./base-print.md#internalerror): the frontend accepted
+fails the type check throws [`InternalError`](./compiler.md#internalerror): the frontend accepted
 the program, so the failure is a compiler defect.
 
 ```ts
@@ -115,6 +120,114 @@ compileToProgram([{ filename: "main.tea", source, imports }], errors);
 compileToProgram(["main.tea"], errors, { includeSources: true });
 ```
 
+### generate
+
+Lower one checked Program to a deterministic TypeScript module. The artifact contains Arrow constructors and state requirements, but no stream, parameter assignment, or mutable execution state. Load it before binding.
+
+```ts
+function generate(program: Program): string;
+```
+
+```ts
+import { compileToProgram, Errors, generate, loadModule } from "tea/compiler";
+
+const program = compileToProgram(
+  [{ filename: "demo.tea", source: 'plot("price", close)' }],
+  new Errors(),
+);
+if (program !== null) {
+  const module = loadModule(generate(program));
+  module.inputs.schema.fields[0].name; // "close"
+}
+```
+
+### loadModule
+
+Transpile and load a TypeScript module synchronously, without executing steps. Generated imports use the same runtime library as standalone compiled files. Type checking belongs to builds; loading preserves the fast template path.
+
+```ts
+function loadModule(source: string): Module;
+```
+
+**Example:** `loadModule(generate(program)).bind({length: 20})` constructs and
+configures the module without subscribing to inputs or running the program.
+
+## Classes
+
+### Errors
+
+The queue of one compilation's user-facing errors.
+
+```ts
+class Errors {
+  errorAt(pos: Pos, msg: string): void;
+  get count(): number;
+  flushErrors(): ErrorMsg[];
+}
+```
+
+Create one per compilation and pass it to every stage: stages report into
+it and keep going, the driver reads `count` to stop later stages after a
+failed one, and the caller collects the batch with `flushErrors()`.
+Nothing is printed or thrown when an error is reported.
+
+```ts
+const errors = new Errors();
+const program = compileToProgram(["rsi.tea"], errors);
+if (program === null) console.error(errors.flushErrors());
+```
+
+**`Errors.errorAt`**
+
+```ts
+errorAt(pos: Pos, msg: string): void;
+```
+
+Queue `msg` at `pos`. A report on the same file and line as the
+previously queued one is dropped, so a parser that recovers poorly on one
+line adds a single error for it.
+
+**Example:** `errors.errorAt(pos, "expected expression, found 'newline'")`
+
+**`Errors.count`**
+
+```ts
+get count(): number;
+```
+
+The number of errors queued since the last flush.
+
+**Example:** `errors.count > 0` after a failed stage.
+
+**`Errors.flushErrors`**
+
+```ts
+flushErrors(): ErrorMsg[];
+```
+
+Return the queued errors sorted by filename, line and column, with exact
+duplicates removed, and empty the queue.
+
+**Example:** After `compileForTooling` on `x = 1 +\ny = close + "a"\n`,
+`errors.flushErrors()` returns the line 1 parse error, then the line 2
+type error; a second call returns `[]`.
+
+### InternalError
+
+A compiler defect: an internal invariant failed.
+
+```ts
+class InternalError extends Error {
+  constructor(msg: string);
+}
+```
+
+`fatal` throws it, it never enters [`Errors`](./compiler.md#errors), and its message
+starts with `internal compiler error: `. A host should report it as a bug
+in Tea rather than in the user's source.
+
+**Example:** `error instanceof InternalError` separates a Tea bug from bad input.
+
 ## Interfaces
 
 ### Compilation
@@ -181,6 +294,23 @@ interface CompileOptions {
   readonly includeSources?: boolean;
 }
 ```
+
+### ErrorMsg
+
+One user-facing compile error: `msg` at `pos`.
+
+```ts
+interface ErrorMsg {
+  readonly pos: Pos;
+  readonly msg: string;
+}
+```
+
+`pos.base.filename` names the file; `pos.line` and `pos.col` are 1-based,
+with columns counted in UTF-16 code units.
+
+**Example:** `{pos: {base: {filename: 'rsi.tea'}, line: 1, col: 8}, msg: "expected expression, found 'newline'"}`
+is the error for `x = 1 +` on the first line of `rsi.tea`.
 
 ## Types
 

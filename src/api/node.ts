@@ -1251,8 +1251,8 @@ class TeaNode implements Node {
  * @param builtinSupplier - Supplies each step's contextual builtin values,
  * such as `bar_index` and `timenow`, to this Node and every request child.
  * The default supplies none, so a run whose module reads a contextual builtin
- * fails at its first step; pass the result of {@link pineBuiltinSupplier}
- * from `tea/extension/pine`, as the {@link tea} template does.
+ * fails at its first step; pass the result of {@link pineBuiltinSupplier},
+ * as the {@link tea} template does.
  *
  * @example A compiled program with no requests creates one Node. A program with
  * `daily = request.security(...)` creates the main Node plus one private child.

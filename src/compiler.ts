@@ -3,11 +3,13 @@
 /**
  * The Tea compiler, for hosts that compile without the {@link tea} template.
  * Start with {@link compileToProgram}, which turns source files or in-memory
- * text into the `Program` that {@link generate} lowers; {@link compile} runs
- * the whole `tea build` path for files on disk, and {@link compileForTooling}
- * keeps every stage's result for editors. Source diagnostics are never
- * thrown: they collect in the {@link Errors} instance the caller passes, or in
- * the result of {@link compile}.
+ * text into the `Program` that {@link generate} lowers to a module's source
+ * and {@link loadModule} turns into a `Module` for `createNode`.
+ * {@link compile} runs the whole `tea build` path for files on disk, and
+ * {@link compileForTooling} keeps every stage's result for editors. Source
+ * diagnostics are never thrown: they collect in the {@link Errors} instance
+ * the caller passes, or in the result of {@link compile}. A thrown
+ * {@link InternalError} is a defect in Tea.
  *
  * @packageDocumentation
  */
@@ -16,6 +18,10 @@ import {log} from './base/log';
 import {formatPos} from './base/pos';
 import {Errors, type ErrorMsg} from './base/print';
 import {generate} from './codegen/codegen';
+
+export {Errors, InternalError, type ErrorMsg} from './base/print';
+export {generate} from './codegen/codegen';
+export {loadModule} from './runtime/load';
 import {checkGenerated} from './codegen/check';
 import type {Program} from './ir/program';
 import {checkPackage, type CheckedPackage} from './checker/check';

@@ -78,10 +78,7 @@ import {
  *
  * @example
  * ```ts
- * import {Errors} from 'tea/base/print';
- * import {generate} from 'tea/codegen/codegen';
- * import {compileToProgram} from 'tea/compiler';
- * import {loadModule} from 'tea/runtime/load';
+ * import {compileToProgram, Errors, generate, loadModule} from 'tea/compiler';
  *
  * const program = compileToProgram(
  *   [{filename: 'demo.tea', source: 'plot("price", close)'}], new Errors(),

@@ -10,5 +10,6 @@
  */
 
 export * from './api/index';
+export {pineBuiltinSupplier} from './extension/pine';
 export {batchRecipe, type BatchResult} from './recipe/batch';
 export type {Recipe} from './recipe/recipe';

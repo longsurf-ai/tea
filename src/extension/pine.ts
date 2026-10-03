@@ -1,22 +1,16 @@
-import type {Module} from '../runtime/module-binding';
 // Purpose: Concrete Pine contextual values derived from public Node inputs.
-
-/**
- * Pine's contextual builtin values, such as `bar_index`, `time`, `timenow` and
- * the `barstate.*` flags, for each step of a {@link Node}. The {@link tea}
- * template already installs {@link pineBuiltinSupplier} with default
- * callbacks; import it when calling {@link createNode} directly, or to supply
- * a host clock or realtime flag.
- *
- * @packageDocumentation
- */
 
 import {BindError} from '../runtime/errors';
 import type {Builtin} from '../runtime/module-abi';
+import type {Module} from '../runtime/module-binding';
 import type {Stored} from '../runtime/value';
 
 /**
- * Supply per-step Pine values from the Node's position and source time.
+ * Supply per-step Pine values, such as `bar_index`, `time`, `timenow` and the
+ * `barstate.*` flags, from the Node's position and source time. The
+ * {@link tea} template installs one with default callbacks; pass one to
+ * {@link createNode} when calling it directly, or to supply a host clock or
+ * realtime flag.
  * Each attempt samples the supplied clock and live flag once; callers wanting
  * a fixed evaluation instant supply a constant function. Derived Nodes share
  * no clock memoization. Node gives one supplier to every request child, and

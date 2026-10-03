@@ -13,7 +13,7 @@ The typed execution library that compiler-generated TypeScript imports, also usa
 
 Most hosts run programs through [`Node`](./tea.md#node) from `tea` instead. A host that
 already owns synchronized rows starts from a generated [`Module`](./runtime.md#module) (the
-default export of a `tea build` file, or the result of [`loadModule`](./runtime-load.md#loadmodule)):
+default export of a `tea build` file, or the result of [`loadModule`](./compiler.md#loadmodule)):
 bind it with [`Module.bind`](./runtime.md#module), create a [`Context`](./runtime.md#context), and call
 [`Context.step`](./runtime.md#context) once per row.
 
