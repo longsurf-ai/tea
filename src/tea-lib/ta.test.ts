@@ -415,20 +415,30 @@ describe('ta volume profile', () => {
   // falling) covers rows 1-3 by 0.5/0.75/0.75; flat bar 3 (10, 30, rising)
   // lands whole in row 1. Totals 37.5/80/43.75/18.75; the value area takes
   // row 2 (43.75 > 37.5), then row 0 (37.5 > 18.75), reaching 161.25 >= 126.
-  // Bar 4 resets: one bar from 18 to 20 spread evenly over four 0.5 rows.
+  // Bar 4 resets, returning that profile; bars 4 (18-20, 10, rising) and 5
+  // (19-21, 10, falling) then fill rows of 0.75 from 18 to 21.
   const PROFILE_DATA = [
     'time,open,high,low,close,volume,reset',
     '1,9,11,9,10,100,1',
     '2,12,12,10,11,50,0',
     '3,10,10,10,10,30,0',
     '4,18,20,18,19,10,1',
+    '5,21,21,19,19.5,10,0',
     '',
   ].join('\n');
-
-  test('spreads volume by overlap and grows the value area from the point of control', async () => {
-    const program = mustBuild(
+  const HAND_PROFILE = {
+    low: 9,
+    step: 0.75,
+    up: [37.5, 67.5, 25, 0],
+    down: [0, 12.5, 18.75, 18.75],
+    poc: 1,
+    valueLow: 0,
+    valueHigh: 2,
+  };
+  const profileOf = (compute: string) =>
+    mustBuild(
       [
-        'p = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), input.series("reset") == 1, 4)',
+        `p = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), input.series("reset") == 1, 4, 70.0, ${compute})`,
         'emit "low" p.low',
         'emit "step" p.step',
         'emit "up" p.up',
@@ -438,26 +448,95 @@ describe('ta volume profile', () => {
         'emit "valueHigh" p.valueHigh',
       ].join('\n'),
     );
+
+  test('spreads volume by overlap and returns the finished profile on reset', async () => {
     const sink = new OutputCapture();
-    await executeTestProgram(program, {stream: csvStream(PROFILE_DATA), sink});
-    expect(sink.publications[2]).toMatchObject({
-      low: 9,
-      step: 0.75,
-      up: [37.5, 67.5, 25, 0],
-      down: [0, 12.5, 18.75, 18.75],
-      poc: 1,
-      valueLow: 0,
-      valueHigh: 2,
+    await executeTestProgram(profileOf('true'), {
+      stream: csvStream(PROFILE_DATA),
+      sink,
     });
-    expect(sink.publications[3]).toMatchObject({
+    expect(sink.publications[2]).toMatchObject(HAND_PROFILE);
+    // The reset on bar 4 returns bars 1-3; bar 4 starts the next profile.
+    expect(sink.publications[3]).toMatchObject(HAND_PROFILE);
+    // Rows of 0.75 from 18: bar 4 covers 0.75/0.75/0.5 of rows 0-2, bar 5
+    // 0.5/0.75/0.75 of rows 1-3. Rows 1 and 2 tie at 6.25; the lower is the
+    // point of control, and the value area takes row 2, then row 3 on a tie.
+    expect(sink.publications[4]).toMatchObject({
       low: 18,
-      step: 0.5,
-      up: [2.5, 2.5, 2.5, 2.5],
-      down: [0, 0, 0, 0],
-      poc: 0,
-      valueLow: 0,
-      valueHigh: 2,
+      step: 0.75,
+      up: [3.75, 3.75, 2.5, 0],
+      down: [0, 2.5, 3.75, 3.75],
+      poc: 1,
+      valueLow: 1,
+      valueHigh: 3,
     });
+  });
+
+  test('still counts bars whose call does not build the profile', async () => {
+    const sink = new OutputCapture();
+    await executeTestProgram(profileOf('time == 3'), {
+      stream: csvStream(PROFILE_DATA),
+      sink,
+    });
+    expect(sink.publications.map(row => (row.up as number[]).length)).toEqual([
+      0, 0, 4, 0, 0,
+    ]);
+    expect(sink.publications[2]).toMatchObject(HAND_PROFILE);
+  });
+
+  test('keeps every bar when its range outgrows the cells, within part of a cell per row', async () => {
+    // The second bar lies wholly above the first's cells, so they double.
+    const bars = [
+      {high: 11, low: 9, volume: 100, rising: true},
+      {high: 14.4, low: 12.3, volume: 70, rising: false},
+      {high: 13, low: 9.6, volume: 40, rising: true},
+    ];
+    const rows = 5;
+    const bottom = 9;
+    const top = 14.4;
+    const step = (top - bottom) / rows;
+    const exact = Array.from({length: rows}, (_, i) =>
+      bars.reduce((sum, bar) => {
+        const overlap =
+          Math.min(bar.high, bottom + (i + 1) * step) -
+          Math.max(bar.low, bottom + i * step);
+        return (
+          sum +
+          (overlap > 0 ? (bar.volume * overlap) / (bar.high - bar.low) : 0)
+        );
+      }, 0),
+    );
+    const program = mustBuild(
+      [
+        'p = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), barstate.isfirst, 5)',
+        'emit "up" p.up',
+        'emit "down" p.down',
+        'emit "poc" p.poc',
+      ].join('\n'),
+    );
+    const sink = new OutputCapture();
+    await executeTestProgram(program, {
+      stream: csvStream(
+        [
+          'time,open,high,low,close,volume',
+          ...bars.map(
+            (bar, i) =>
+              `${i + 1},${bar.rising ? bar.low : bar.high},${bar.high},${bar.low},${bar.rising ? bar.high : bar.low},${bar.volume}`,
+          ),
+          '',
+        ].join('\n'),
+      ),
+      sink,
+    });
+    const last = sink.publications.at(-1)!;
+    const total = (last.up as number[]).map(
+      (up, i) => up + (last.down as number[])[i]!,
+    );
+    expect(total.reduce((a, b) => a + b, 0)).toBeCloseTo(210, 9);
+    total.forEach((volume, i) =>
+      expect(Math.abs(volume - exact[i]!)).toBeLessThan(10),
+    );
+    expect(last.poc).toBe(exact.indexOf(Math.max(...exact)));
   });
 
   test('is empty until the bars span a price range', async () => {
@@ -492,7 +571,7 @@ test('ta.volumeProfile counts each live bar once across its provisional attempts
   ]);
   const source = new Subject<Record<string, number | boolean>>();
   const node = tea`
-    p = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), barstate.isfirst, 4)
+    p = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), false, 4)
     emit "up" p.up
   `.bind(new DataStream(schema, source));
   const totals: number[] = [];

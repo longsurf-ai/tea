@@ -3860,9 +3860,9 @@
               "symbols": ["ta.volumeProfile"],
               "kind": "function",
               "category": "Volume profile",
-              "summary": "Spreads the volume of every bar added since the last reset across price rows.",
+              "summary": "Spreads the volume of every bar since the last reset across price rows.",
               "signatures": [
-                "ta.volumeProfile(\n    array<float> highs,\n    array<float> lows,\n    array<float> volumes,\n    array<bool> rising,\n    bool reset,\n    int rows = 24,\n    float valueArea = 70.0\n)"
+                "ta.volumeProfile(\n    array<float> highs,\n    array<float> lows,\n    array<float> volumes,\n    array<bool> rising,\n    bool reset,\n    int rows = 24,\n    float valueArea = 70.0,\n    bool compute = true\n)"
               ],
               "parameters": [
                 {
@@ -3893,7 +3893,7 @@
                   "name": "reset",
                   "type": "bool",
                   "defaultValue": null,
-                  "description": "Whether to drop the bars added before this call and start a new profile."
+                  "description": "Whether to finish the current profile, returning it, and start a new one with this call's bars."
                 },
                 {
                   "name": "rows",
@@ -3906,11 +3906,17 @@
                   "type": "float",
                   "defaultValue": "70.0",
                   "description": "Share of the volume, in percent, that the value area holds."
+                },
+                {
+                  "name": "compute",
+                  "type": "bool",
+                  "defaultValue": "true",
+                  "description": "Whether to build the profile this call returns; `false` returns an empty profile."
                 }
               ],
-              "returns": "The profile of the bars added since the last reset.",
+              "returns": "The finished profile on a reset, else the profile so far.",
               "members": null,
-              "body": "Each call adds a group of bars, such as the lower-timeframe bars inside the\ncurrent chart bar from [`request.security_lower_tf`](#request.security_lower_tf), and returns the\nprofile of every bar added since the last `reset`. The range from the lowest\nlow to the highest high is cut into `rows` equal rows. Each bar's volume is\nspread over the rows its low-to-high range covers, in proportion to the\noverlap; a bar whose high equals its low puts all its volume in one row.\nThe value area grows from the point of control one row at a time, taking the\nneighbor with more volume (the upper one on a tie), until it holds\n`valueArea` percent of the volume.\n\nThe four arrays describe the same bars in the same order; bars with an `na`\nhigh or low are skipped and an `na` volume counts as `0`. To profile the\nchart's own bars, pass one-element arrays:\n\n```tea\nprofile = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), barstate.isfirst)\nemit \"poc\" profile.low + (profile.poc + 0.5) * profile.step\n```"
+              "body": "Each call adds a group of bars, such as the lower-timeframe bars inside the\ncurrent chart bar from [`request.security_lower_tf`](#request.security_lower_tf). The range from the\nlowest low to the highest high is cut into `rows` equal rows. Each bar's\nvolume is spread over the rows its low-to-high range covers, in proportion to\nthe overlap; a bar whose high equals its low puts all its volume in one row.\nThe value area grows from the point of control one row at a time, taking the\nneighbor with more volume (the upper one on a tie), until it holds\n`valueArea` percent of the volume.\n\nVolume is kept in four fine cells per row, so a call costs only the cells\nits bars touch. Rows are built from the cells, which splits a cell lying\nacross a row boundary in proportion: a row can differ from an exact split\nby part of one cell's volume, and the total never changes. Building the rows\nis the costly part, so pass `compute = false` on bars that do not need the\nprofile; their bars still count.\n\nWith `reset`, the call returns the profile that just finished, of every bar\nbefore this call, and this call's bars start the next one. A period's profile\nis therefore ready on the first bar of the next period. The four arrays\ndescribe the same bars in the same order; bars with an `na` high or low are\nskipped and an `na` volume counts as `0`. To profile every bar of the chart,\npass one-element arrays and never reset:\n\n```tea\nprofile = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), false)\nemit \"poc\" profile.low + (profile.poc + 0.5) * profile.step\n```"
             },
             {
               "id": "ta.VolumeByPrice",
@@ -3945,7 +3951,7 @@
                   ["`int valueHigh`", "Highest row of the value area."]
                 ]
               },
-              "body": "Row `i` covers the prices from `low + i * step` to `low + (i + 1) * step`.\nThe arrays hold one value per row, the bottom row first. An empty profile,\nbefore any bar with a price range has been added, has no rows and is `na`\neverywhere else."
+              "body": "Row `i` covers the prices from `low + i * step` to `low + (i + 1) * step`.\nThe arrays hold one value per row, the bottom row first. An empty profile,\nwhen the window holds no bar with a price range, has no rows and is `na`\neverywhere else."
             }
           ]
         }

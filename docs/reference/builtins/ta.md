@@ -173,5 +173,5 @@ Available in every script as `ta.name` without an import.
 
 | Name                                        | Description                                                                                                   |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| [`ta.volumeProfile`](./ta/volumeProfile.md) | Spreads the volume of every bar added since the last reset across price rows.                                 |
+| [`ta.volumeProfile`](./ta/volumeProfile.md) | Spreads the volume of every bar since the last reset across price rows.                                       |
 | [`ta.VolumeByPrice`](./ta/VolumeByPrice.md) | Volume traded at each price over a range of bars, as returned by [`ta.volumeProfile`](./ta/volumeProfile.md). |

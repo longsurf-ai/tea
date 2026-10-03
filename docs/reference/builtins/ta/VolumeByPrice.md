@@ -22,5 +22,5 @@ type VolumeByPrice
 
 Row `i` covers the prices from `low + i * step` to `low + (i + 1) * step`.
 The arrays hold one value per row, the bottom row first. An empty profile,
-before any bar with a price range has been added, has no rows and is `na`
+when the window holds no bar with a price range, has no rows and is `na`
 everywhere else.

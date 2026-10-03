@@ -3746,7 +3746,7 @@ export pvi = volumeIndex(false)
  *
  * Row `i` covers the prices from `low + i * step` to `low + (i + 1) * step`.
  * The arrays hold one value per row, the bottom row first. An empty profile,
- * before any bar with a price range has been added, has no rows and is `na`
+ * when the window holds no bar with a price range, has no rows and is `na`
  * everywhere else.
  *
  * @category Volume profile
@@ -3767,87 +3767,42 @@ export type VolumeByPrice
 	/** Highest row of the value area. */
 	int valueHigh
 
-/**
- * Spreads the volume of every bar added since the last reset across price rows.
- *
- * Each call adds a group of bars, such as the lower-timeframe bars inside the
- * current chart bar from {@link request.security_lower_tf}, and returns the
- * profile of every bar added since the last `reset`. The range from the lowest
- * low to the highest high is cut into `rows` equal rows. Each bar's volume is
- * spread over the rows its low-to-high range covers, in proportion to the
- * overlap; a bar whose high equals its low puts all its volume in one row.
- * The value area grows from the point of control one row at a time, taking the
- * neighbor with more volume (the upper one on a tie), until it holds
- * `valueArea` percent of the volume.
- *
- * The four arrays describe the same bars in the same order; bars with an `na`
- * high or low are skipped and an `na` volume counts as `0`. To profile the
- * chart's own bars, pass one-element arrays:
- *
- * ```tea
- * profile = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), barstate.isfirst)
- * emit "poc" profile.low + (profile.poc + 0.5) * profile.step
- * ```
- *
- * @param highs High of each bar added on this call.
- * @param lows Low of each bar added on this call.
- * @param volumes Volume of each bar added on this call.
- * @param rising Whether each bar added on this call closed at or above its open.
- * @param reset Whether to drop the bars added before this call and start a new profile.
- * @param rows Number of price rows, a positive `int`.
- * @param valueArea Share of the volume, in percent, that the value area holds.
- * @returns The profile of the bars added since the last reset.
- * @category Volume profile
- */
-export volumeProfile(array<float> highs, array<float> lows, array<float> volumes, array<bool> rising, bool reset, int rows = 24, float valueArea = 70.0) =>
-	// ponytail: every call re-spreads all kept bars, O(bars x rows); keep a finer fixed grid if long ranges get slow.
-	var array<float> keptHighs = array.new<float>()
-	var array<float> keptLows = array.new<float>()
-	var array<float> keptVolumes = array.new<float>()
-	var array<bool> keptRising = array.new<bool>()
-	if reset
-		keptHighs.clear()
-		keptLows.clear()
-		keptVolumes.clear()
-		keptRising.clear()
-	added = highs.size()
-	if added > 0
-		for i = 0 to added - 1
-			if not na(highs.get(i)) and not na(lows.get(i))
-				keptHighs.push(highs.get(i))
-				keptLows.push(lows.get(i))
-				keptVolumes.push(nz(volumes.get(i)))
-				keptRising.push(rising.get(i))
-	count = keptHighs.size()
-	float bottom = na
-	float top = na
-	if count > 0
-		for i = 0 to count - 1
-			bottom := na(bottom) ? keptLows.get(i) : math.min(bottom, keptLows.get(i))
-			top := na(top) ? keptHighs.get(i) : math.max(top, keptHighs.get(i))
+// Rows of `rows` equal parts of [bottom, top], built from cells that each hold
+// the volume of one equal slice of [gridLow, gridLow + cellHeight * size]. A
+// cell straddling a row boundary is split in proportion to the part of it
+// that lies inside the profile; a zero-width part counts whole in its row.
+profileFromCells(array<float> upCells, array<float> downCells, float gridLow, float cellHeight, float bottom, float top, int rows, float valueArea) =>
 	if na(bottom) or top <= bottom or rows < 1
 		return VolumeByPrice.new(na, na, array.new<float>(), array.new<float>(), na, na, na)
+	last = upCells.size() - 1
 	step = (top - bottom) / rows
 	up = array.new<float>(rows, 0.0)
 	down = array.new<float>(rows, 0.0)
-	for i = 0 to count - 1
-		h = keptHighs.get(i)
-		l = keptLows.get(i)
-		v = keptVolumes.get(i)
-		first = math.max(0, math.min(rows - 1, math.floor((l - bottom) / step)))
-		last = math.max(0, math.min(rows - 1, math.floor((h - bottom) / step)))
-		for k = first to last
-			share = h > l ? v * (math.min(h, bottom + (k + 1) * step) - math.max(l, bottom + k * step)) / (h - l) : v
-			if keptRising.get(i)
-				up.set(k, up.get(k) + share)
-			else
-				down.set(k, down.get(k) + share)
 	total = 0.0
 	poc = 0
-	for k = 0 to rows - 1
-		total += up.get(k) + down.get(k)
-		if up.get(k) + down.get(k) > up.get(poc) + down.get(poc)
-			poc := k
+	for i = 0 to rows - 1
+		rowLow = bottom + i * step
+		rowHigh = i == rows - 1 ? top : rowLow + step
+		upSum = 0.0
+		downSum = 0.0
+		first = math.max(0, math.min(last, math.floor((rowLow - gridLow) / cellHeight)))
+		final = math.max(0, math.min(last, math.floor((rowHigh - gridLow) / cellHeight)))
+		for c = first to final
+			occupiedLow = math.max(gridLow + c * cellHeight, bottom)
+			occupiedHigh = math.min(gridLow + (c + 1) * cellHeight, top)
+			share = 0.0
+			if occupiedHigh > occupiedLow
+				share := math.max(0, math.min(occupiedHigh, rowHigh) - math.max(occupiedLow, rowLow)) / (occupiedHigh - occupiedLow)
+			else if occupiedLow >= rowLow and (occupiedLow < rowHigh or i == rows - 1)
+				share := 1.0
+			if share > 0
+				upSum += upCells.get(c) * share
+				downSum += downCells.get(c) * share
+		up.set(i, upSum)
+		down.set(i, downSum)
+		total += upSum + downSum
+		if upSum + downSum > up.get(poc) + down.get(poc)
+			poc := i
 	valueLow = poc
 	valueHigh = poc
 	inside = up.get(poc) + down.get(poc)
@@ -3861,3 +3816,124 @@ export volumeProfile(array<float> highs, array<float> lows, array<float> volumes
 			valueLow -= 1
 			inside += below
 	VolumeByPrice.new(bottom, step, up, down, poc, valueLow, valueHigh)
+
+/**
+ * Spreads the volume of every bar since the last reset across price rows.
+ *
+ * Each call adds a group of bars, such as the lower-timeframe bars inside the
+ * current chart bar from {@link request.security_lower_tf}. The range from the
+ * lowest low to the highest high is cut into `rows` equal rows. Each bar's
+ * volume is spread over the rows its low-to-high range covers, in proportion to
+ * the overlap; a bar whose high equals its low puts all its volume in one row.
+ * The value area grows from the point of control one row at a time, taking the
+ * neighbor with more volume (the upper one on a tie), until it holds
+ * `valueArea` percent of the volume.
+ *
+ * Volume is kept in four fine cells per row, so a call costs only the cells
+ * its bars touch. Rows are built from the cells, which splits a cell lying
+ * across a row boundary in proportion: a row can differ from an exact split
+ * by part of one cell's volume, and the total never changes. Building the rows
+ * is the costly part, so pass `compute = false` on bars that do not need the
+ * profile; their bars still count.
+ *
+ * With `reset`, the call returns the profile that just finished, of every bar
+ * before this call, and this call's bars start the next one. A period's profile
+ * is therefore ready on the first bar of the next period. The four arrays
+ * describe the same bars in the same order; bars with an `na` high or low are
+ * skipped and an `na` volume counts as `0`. To profile every bar of the chart,
+ * pass one-element arrays and never reset:
+ *
+ * ```tea
+ * profile = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), false)
+ * emit "poc" profile.low + (profile.poc + 0.5) * profile.step
+ * ```
+ *
+ * @param highs High of each bar added on this call.
+ * @param lows Low of each bar added on this call.
+ * @param volumes Volume of each bar added on this call.
+ * @param rising Whether each bar added on this call closed at or above its open.
+ * @param reset Whether to finish the current profile, returning it, and start
+ * a new one with this call's bars.
+ * @param rows Number of price rows, a positive `int`.
+ * @param valueArea Share of the volume, in percent, that the value area holds.
+ * @param compute Whether to build the profile this call returns; `false`
+ * returns an empty profile.
+ * @returns The finished profile on a reset, else the profile so far.
+ * @category Volume profile
+ */
+export volumeProfile(array<float> highs, array<float> lows, array<float> volumes, array<bool> rising, bool reset, int rows = 24, float valueArea = 70.0, bool compute = true) =>
+	cells = math.max(1, rows) * 4
+	var array<float> upCells = array.new<float>()
+	var array<float> downCells = array.new<float>()
+	var float gridLow = na
+	var float cellHeight = na
+	var float bottom = na
+	var float top = na
+	var empty = VolumeByPrice.new(na, na, array.new<float>(), array.new<float>(), na, na, na)
+	result = empty
+	if reset
+		if compute
+			result := profileFromCells(upCells, downCells, gridLow, cellHeight, bottom, top, rows, valueArea)
+		upCells := array.new<float>()
+		downCells := array.new<float>()
+		gridLow := na
+		cellHeight := na
+		bottom := na
+		top := na
+	float groupLow = na
+	float groupHigh = na
+	count = highs.size()
+	if count > 0
+		for j = 0 to count - 1
+			if not na(highs.get(j)) and not na(lows.get(j))
+				groupLow := na(groupLow) ? lows.get(j) : math.min(groupLow, lows.get(j))
+				groupHigh := na(groupHigh) ? highs.get(j) : math.max(groupHigh, highs.get(j))
+	if not na(groupLow)
+		if na(gridLow)
+			// Start with room for the range to double either way.
+			span = math.max((groupHigh - groupLow) * 2, math.abs(groupHigh) * 0.002, 0.000001)
+			gridLow := (groupLow + groupHigh) / 2 - span / 2
+			cellHeight := span / cells
+			upCells := array.new<float>(cells, 0.0)
+			downCells := array.new<float>(cells, 0.0)
+		// Double the cells until they cover the group: each new cell holds two
+		// whole old ones, so no volume moves between prices.
+		while groupLow < gridLow or groupHigh > gridLow + cellHeight * cells
+			shift = groupLow < gridLow ? (groupHigh > gridLow + cellHeight * cells ? cells / 2 : cells) : 0
+			grownUp = array.new<float>(cells, 0.0)
+			grownDown = array.new<float>(cells, 0.0)
+			for c = 0 to cells - 1
+				first = 2 * c - shift
+				upSum = 0.0
+				downSum = 0.0
+				for old = first to first + 1
+					if old >= 0 and old < cells
+						upSum += upCells.get(old)
+						downSum += downCells.get(old)
+				if upSum > 0
+					grownUp.set(c, upSum)
+				if downSum > 0
+					grownDown.set(c, downSum)
+			upCells := grownUp
+			downCells := grownDown
+			gridLow := gridLow - shift * cellHeight
+			cellHeight := cellHeight * 2
+		bottom := na(bottom) ? groupLow : math.min(bottom, groupLow)
+		top := na(top) ? groupHigh : math.max(top, groupHigh)
+		for j = 0 to count - 1
+			h = highs.get(j)
+			l = lows.get(j)
+			v = nz(volumes.get(j))
+			if not na(h) and not na(l) and v != 0
+				first = math.max(0, math.min(cells - 1, math.floor((l - gridLow) / cellHeight)))
+				final = math.max(0, math.min(cells - 1, math.floor((h - gridLow) / cellHeight)))
+				for c = first to final
+					share = h > l ? v * math.max(0, math.min(h, gridLow + (c + 1) * cellHeight) - math.max(l, gridLow + c * cellHeight)) / (h - l) : v
+					if share > 0
+						if rising.get(j)
+							upCells.set(c, upCells.get(c) + share)
+						else
+							downCells.set(c, downCells.get(c) + share)
+	if compute and not reset
+		result := profileFromCells(upCells, downCells, gridLow, cellHeight, bottom, top, rows, valueArea)
+	result
