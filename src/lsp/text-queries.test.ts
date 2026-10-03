@@ -263,7 +263,7 @@ describe('completion: after a dot', () => {
     expect(item('x = ta.|', 'ema')).toEqual({
       label: 'ema',
       kind: CompletionItemKind.Function,
-      detail: 'ema(source, length)',
+      detail: 'ema(source, int length)',
       documentation: {
         kind: 'markdown',
         value: 'Exponential moving average of `source`.',
@@ -514,8 +514,8 @@ describe('signature help', () => {
     expect(help('x = ta.ema(close, |')).toMatchObject({
       signatures: [
         {
-          label: 'ema(source, length)',
-          parameters: [{label: 'source'}, {label: 'length'}],
+          label: 'ema(source, int length)',
+          parameters: [{label: 'source'}, {label: 'int length'}],
         },
       ],
       activeParameter: 1,

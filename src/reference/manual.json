@@ -3384,7 +3384,7 @@
               "kind": "function",
               "category": "Moving averages",
               "summary": "Simple moving average of the last `length` values of `source`.",
-              "signatures": ["ta.sma(source, length)"],
+              "signatures": ["ta.sma(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3394,7 +3394,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -3409,7 +3409,7 @@
               "kind": "function",
               "category": "Moving averages",
               "summary": "Exponential moving average of `source`.",
-              "signatures": ["ta.ema(source, length)"],
+              "signatures": ["ta.ema(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3419,7 +3419,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Smoothing length in bars; larger values react more slowly."
                 }
@@ -3434,7 +3434,7 @@
               "kind": "function",
               "category": "Moving averages",
               "summary": "Wilder's moving average of `source`, the smoothing behind [`ta.rsi`](#ta.rsi), [`ta.atr`](#ta.atr) and [`ta.dmi`](#ta.dmi).",
-              "signatures": ["ta.rma(source, length)"],
+              "signatures": ["ta.rma(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3444,7 +3444,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Smoothing length in bars, a positive `int`."
                 }
@@ -3459,7 +3459,7 @@
               "kind": "function",
               "category": "Moving averages",
               "summary": "Linearly weighted moving average of the last `length` values of `source`.",
-              "signatures": ["ta.wma(source, length)"],
+              "signatures": ["ta.wma(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3469,7 +3469,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -3484,7 +3484,7 @@
               "kind": "function",
               "category": "Moving averages",
               "summary": "Volume-weighted moving average of the last `length` values of `source`.",
-              "signatures": ["ta.vwma(source, length)"],
+              "signatures": ["ta.vwma(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3494,7 +3494,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -3509,7 +3509,7 @@
               "kind": "function",
               "category": "Moving averages",
               "summary": "Hull moving average of `source`.",
-              "signatures": ["ta.hma(source, length)"],
+              "signatures": ["ta.hma(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3519,7 +3519,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, an `int` of at least `2`."
                 }
@@ -3553,7 +3553,7 @@
               "kind": "function",
               "category": "Moving averages",
               "summary": "Arnaud Legoux moving average: a bell-curve-weighted average of the last `length` values of `source`.",
-              "signatures": ["ta.alma(source, length, offset, sigma)"],
+              "signatures": ["ta.alma(source, int length, offset, sigma)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3563,7 +3563,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 },
@@ -3590,7 +3590,7 @@
               "kind": "function",
               "category": "Moving averages",
               "summary": "Value of the least-squares line through the last `length` values of `source`, `offset` bars before the current bar.",
-              "signatures": ["ta.linreg(source, length, offset)"],
+              "signatures": ["ta.linreg(source, int length, int offset)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3600,13 +3600,13 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, an `int` of at least `2`."
                 },
                 {
                   "name": "offset",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Bars back from the current bar at which to read the line; `0` reads it at the current bar."
                 }
@@ -3621,7 +3621,7 @@
               "kind": "function",
               "category": "Moving averages",
               "summary": "Center of gravity of the last `length` values of `source`.",
-              "signatures": ["ta.cog(source, length)"],
+              "signatures": ["ta.cog(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3631,7 +3631,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -3646,7 +3646,7 @@
               "kind": "function",
               "category": "Momentum",
               "summary": "Difference between `source` now and `length` bars ago.",
-              "signatures": ["ta.change(source, length = 1)"],
+              "signatures": ["ta.change(source, int length = 1)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3656,7 +3656,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": "1",
                   "description": "Number of bars back, a positive `int`."
                 }
@@ -3671,7 +3671,7 @@
               "kind": "function",
               "category": "Momentum",
               "summary": "Momentum: `source` minus its value `length` bars ago.",
-              "signatures": ["ta.mom(source, length)"],
+              "signatures": ["ta.mom(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3681,7 +3681,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars back, a positive `int`."
                 }
@@ -3696,7 +3696,7 @@
               "kind": "function",
               "category": "Momentum",
               "summary": "Rate of change: the percentage change of `source` from `length` bars ago.",
-              "signatures": ["ta.roc(source, length)"],
+              "signatures": ["ta.roc(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3706,7 +3706,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars back, a positive `int`."
                 }
@@ -3721,7 +3721,7 @@
               "kind": "function",
               "category": "Momentum",
               "summary": "Relative strength index of `source`, from `0` to `100`.",
-              "signatures": ["ta.rsi(source, length)"],
+              "signatures": ["ta.rsi(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3731,7 +3731,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Smoothing length in bars, a positive `int`."
                 }
@@ -3746,7 +3746,7 @@
               "kind": "function",
               "category": "Momentum",
               "summary": "Chande momentum oscillator of `source`, from `-100` to `100`.",
-              "signatures": ["ta.cmo(source, length)"],
+              "signatures": ["ta.cmo(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3756,7 +3756,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of changes, a positive `int`."
                 }
@@ -3771,7 +3771,7 @@
               "kind": "function",
               "category": "Momentum",
               "summary": "True strength index of `source`, from `-100` to `100`.",
-              "signatures": ["ta.tsi(source, shortLength, longLength)"],
+              "signatures": ["ta.tsi(source, int shortLength, int longLength)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3781,13 +3781,13 @@
                 },
                 {
                   "name": "shortLength",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Length of the second smoothing, in bars."
                 },
                 {
                   "name": "longLength",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Length of the first smoothing, in bars."
                 }
@@ -3802,7 +3802,7 @@
               "kind": "function",
               "category": "Momentum",
               "summary": "Stochastic oscillator: where `source` sits between the lowest `l` and highest `h` of the last `length` bars.",
-              "signatures": ["ta.stoch(source, h, l, length)"],
+              "signatures": ["ta.stoch(source, h, l, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3824,7 +3824,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -3839,7 +3839,7 @@
               "kind": "function",
               "category": "Momentum",
               "summary": "Commodity channel index of `source`.",
-              "signatures": ["ta.cci(source, length)"],
+              "signatures": ["ta.cci(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3849,7 +3849,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -3864,11 +3864,11 @@
               "kind": "function",
               "category": "Momentum",
               "summary": "Williams %R: where [`close`](#close) sits within the range of the last `length` bars, from `-100` to `0`.",
-              "signatures": ["ta.wpr(length)"],
+              "signatures": ["ta.wpr(int length)"],
               "parameters": [
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -3883,7 +3883,7 @@
               "kind": "function",
               "category": "Momentum",
               "summary": "Money flow index of `source`, from `0` to `100`.",
-              "signatures": ["ta.mfi(source, length)"],
+              "signatures": ["ta.mfi(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -3893,7 +3893,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -3909,7 +3909,7 @@
               "category": "Momentum",
               "summary": "Moving average convergence divergence of `source`, with its signal line and histogram.",
               "signatures": [
-                "ta.macd(source, fastLength, slowLength, signalLength)"
+                "ta.macd(\n    source,\n    int fastLength,\n    int slowLength,\n    int signalLength\n)"
               ],
               "parameters": [
                 {
@@ -3920,19 +3920,19 @@
                 },
                 {
                   "name": "fastLength",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Length of the fast average, in bars."
                 },
                 {
                   "name": "slowLength",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Length of the slow average, in bars."
                 },
                 {
                   "name": "signalLength",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Length of the signal line's average, in bars."
                 }
@@ -3947,17 +3947,17 @@
               "kind": "function",
               "category": "Momentum",
               "summary": "Directional movement index: the +DI and -DI lines and the ADX trend strength, each from `0` to `100`.",
-              "signatures": ["ta.dmi(diLength, adxSmoothing)"],
+              "signatures": ["ta.dmi(int diLength, int adxSmoothing)"],
               "parameters": [
                 {
                   "name": "diLength",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Smoothing length for +DI and -DI, a positive `int`."
                 },
                 {
                   "name": "adxSmoothing",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Smoothing length for ADX, a positive `int`."
                 }
@@ -3991,11 +3991,11 @@
               "kind": "function",
               "category": "Volatility and channels",
               "summary": "Average true range: [`ta.tr`](#ta.tr) smoothed with [`ta.rma`](#ta.rma) over `length` bars.",
-              "signatures": ["ta.atr(length)"],
+              "signatures": ["ta.atr(int length)"],
               "parameters": [
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Smoothing length in bars, a positive `int`."
                 }
@@ -4010,7 +4010,7 @@
               "kind": "function",
               "category": "Volatility and channels",
               "summary": "Mean absolute deviation of the last `length` values of `source` from their average.",
-              "signatures": ["ta.dev(source, length)"],
+              "signatures": ["ta.dev(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4020,7 +4020,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -4035,7 +4035,7 @@
               "kind": "function",
               "category": "Volatility and channels",
               "summary": "Variance of the last `length` values of `source`.",
-              "signatures": ["ta.variance(source, length, biased = true)"],
+              "signatures": ["ta.variance(source, int length, biased = true)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4045,7 +4045,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 },
@@ -4066,7 +4066,7 @@
               "kind": "function",
               "category": "Volatility and channels",
               "summary": "Standard deviation of the last `length` values of `source`.",
-              "signatures": ["ta.stdev(source, length, biased = true)"],
+              "signatures": ["ta.stdev(source, int length, biased = true)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4076,7 +4076,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 },
@@ -4097,7 +4097,7 @@
               "kind": "function",
               "category": "Volatility and channels",
               "summary": "Difference between the highest and lowest of the last `length` values of `source`.",
-              "signatures": ["ta.range(source, length)"],
+              "signatures": ["ta.range(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4107,7 +4107,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -4122,7 +4122,7 @@
               "kind": "function",
               "category": "Volatility and channels",
               "summary": "Bollinger Bands: the average of `source` with bands `mult` standard deviations above and below it.",
-              "signatures": ["ta.bb(source, length, mult)"],
+              "signatures": ["ta.bb(source, int length, mult)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4132,7 +4132,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 },
@@ -4153,7 +4153,7 @@
               "kind": "function",
               "category": "Volatility and channels",
               "summary": "Bollinger Band width as a percentage of the middle band.",
-              "signatures": ["ta.bbw(source, length, mult)"],
+              "signatures": ["ta.bbw(source, int length, mult)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4163,7 +4163,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 },
@@ -4185,7 +4185,7 @@
               "category": "Volatility and channels",
               "summary": "Keltner Channels: an exponential average of `source` with bands `mult` average ranges above and below it.",
               "signatures": [
-                "ta.kc(source, length, mult, useTrueRange = true)"
+                "ta.kc(source, int length, mult, useTrueRange = true)"
               ],
               "parameters": [
                 {
@@ -4196,7 +4196,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Smoothing length in bars."
                 },
@@ -4224,7 +4224,7 @@
               "category": "Volatility and channels",
               "summary": "Keltner Channel width as a fraction of the middle line.",
               "signatures": [
-                "ta.kcw(source, length, mult, useTrueRange = true)"
+                "ta.kcw(source, int length, mult, useTrueRange = true)"
               ],
               "parameters": [
                 {
@@ -4235,7 +4235,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Smoothing length in bars."
                 },
@@ -4262,7 +4262,7 @@
               "kind": "function",
               "category": "Volatility and channels",
               "summary": "Supertrend: a trailing line on one side of price, and the trend direction.",
-              "signatures": ["ta.supertrend(factor, atrPeriod)"],
+              "signatures": ["ta.supertrend(factor, int atrPeriod)"],
               "parameters": [
                 {
                   "name": "factor",
@@ -4272,7 +4272,7 @@
                 },
                 {
                   "name": "atrPeriod",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Length of the [`ta.atr`](#ta.atr), a positive `int`."
                 }
@@ -4393,7 +4393,7 @@
               "kind": "function",
               "category": "Crosses and conditions",
               "summary": "True when `source` rose on each of the last `length` bars.",
-              "signatures": ["ta.rising(source, length)"],
+              "signatures": ["ta.rising(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4403,7 +4403,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of consecutive rises, a positive `int`."
                 }
@@ -4418,7 +4418,7 @@
               "kind": "function",
               "category": "Crosses and conditions",
               "summary": "True when `source` fell on each of the last `length` bars.",
-              "signatures": ["ta.falling(source, length)"],
+              "signatures": ["ta.falling(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4428,7 +4428,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of consecutive falls, a positive `int`."
                 }
@@ -4462,7 +4462,7 @@
               "kind": "function",
               "category": "Crosses and conditions",
               "summary": "Highest of the last `length` values of `source`, including the current one.",
-              "signatures": ["ta.highest(source, length)"],
+              "signatures": ["ta.highest(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4472,7 +4472,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -4487,7 +4487,7 @@
               "kind": "function",
               "category": "Crosses and conditions",
               "summary": "Lowest of the last `length` values of `source`, including the current one.",
-              "signatures": ["ta.lowest(source, length)"],
+              "signatures": ["ta.lowest(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4497,7 +4497,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -4512,7 +4512,7 @@
               "kind": "function",
               "category": "Crosses and conditions",
               "summary": "Bar offset of the highest of the last `length` values of `source`, as `0` or a negative number.",
-              "signatures": ["ta.highestbars(source, length)"],
+              "signatures": ["ta.highestbars(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4522,7 +4522,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -4537,7 +4537,7 @@
               "kind": "function",
               "category": "Crosses and conditions",
               "summary": "Bar offset of the lowest of the last `length` values of `source`, as `0` or a negative number.",
-              "signatures": ["ta.lowestbars(source, length)"],
+              "signatures": ["ta.lowestbars(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4547,7 +4547,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -4562,7 +4562,9 @@
               "kind": "function",
               "category": "Crosses and conditions",
               "summary": "Value of a pivot high, reported `rightbars` bars after it, otherwise `na`.",
-              "signatures": ["ta.pivothigh(source, leftbars, rightbars)"],
+              "signatures": [
+                "ta.pivothigh(source, int leftbars, int rightbars)"
+              ],
               "parameters": [
                 {
                   "name": "source",
@@ -4572,13 +4574,13 @@
                 },
                 {
                   "name": "leftbars",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars before the pivot that must be lower."
                 },
                 {
                   "name": "rightbars",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars after the pivot that must be lower; the pivot is reported this many bars late."
                 }
@@ -4593,7 +4595,9 @@
               "kind": "function",
               "category": "Crosses and conditions",
               "summary": "Value of a pivot low, reported `rightbars` bars after it, otherwise `na`.",
-              "signatures": ["ta.pivotlow(source, leftbars, rightbars)"],
+              "signatures": [
+                "ta.pivotlow(source, int leftbars, int rightbars)"
+              ],
               "parameters": [
                 {
                   "name": "source",
@@ -4603,13 +4607,13 @@
                 },
                 {
                   "name": "leftbars",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars before the pivot that must be higher."
                 },
                 {
                   "name": "rightbars",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars after the pivot that must be higher; the pivot is reported this many bars late."
                 }
@@ -4681,7 +4685,7 @@
               "kind": "function",
               "category": "Accumulation and statistics",
               "summary": "Correlation coefficient of the last `length` values of `source1` and `source2`, from `-1` to `1`.",
-              "signatures": ["ta.correlation(source1, source2, length)"],
+              "signatures": ["ta.correlation(source1, source2, int length)"],
               "parameters": [
                 {
                   "name": "source1",
@@ -4697,7 +4701,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of bars, a positive `int`."
                 }
@@ -4712,7 +4716,7 @@
               "kind": "function",
               "category": "Accumulation and statistics",
               "summary": "Percentage of the previous `length` values of `source` that are less than or equal to its current value.",
-              "signatures": ["ta.percentrank(source, length)"],
+              "signatures": ["ta.percentrank(source, int length)"],
               "parameters": [
                 {
                   "name": "source",
@@ -4722,7 +4726,7 @@
                 },
                 {
                   "name": "length",
-                  "type": null,
+                  "type": "int",
                   "defaultValue": null,
                   "description": "Number of previous bars, a positive `int`."
                 }

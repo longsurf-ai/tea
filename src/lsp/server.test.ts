@@ -230,7 +230,7 @@ test('completion after "ta." answers against text not yet analyzed', async () =>
     at(2, 10),
   );
   expect(items.find(item => item.label === 'sma')).toMatchObject({
-    detail: 'sma(source, length)',
+    detail: 'sma(source, int length)',
   });
   expect(items.map(item => item.label)).not.toContain('fast');
 });
@@ -242,7 +242,7 @@ test('signatureHelp marks the active parameter', async () => {
     at(2, 21),
   );
   expect(help).toMatchObject({
-    signatures: [{label: 'sma(source, length)'}],
+    signatures: [{label: 'sma(source, int length)'}],
     activeSignature: 0,
     activeParameter: 1,
   });
