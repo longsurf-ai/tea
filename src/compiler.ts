@@ -9,7 +9,8 @@
  * {@link compileForTooling} keeps every stage's result for editors. Source
  * diagnostics are never thrown: they collect in the {@link Errors} instance
  * the caller passes, or in the result of {@link compile}. A thrown
- * {@link InternalError} is a defect in Tea.
+ * {@link InternalError} is a defect in Tea or a feature it does not implement
+ * yet.
  *
  * @packageDocumentation
  */
@@ -156,12 +157,55 @@ type ProgramWithSources = {
 };
 
 /**
- * Compile inputs through the existing parse/check/node pipeline. Errors are
- * recorded in `errors`; a failed stage returns null without running later stages.
- * `includeSources` additionally returns the exact entry/import texts used by
- * this compilation, excluding shipped libraries. Ordinary calls return Program.
- * @example compileToProgram([{filename: 'main.tea', source, imports}], errors);
- * @example compileToProgram(['main.tea'], errors, {includeSources: true});
+ * Compiles one Tea script into the `Program` that {@link generate} turns into
+ * module source.
+ *
+ * `inputs` holds one entry: a file path, read from disk, or an object
+ * `{filename, source, imports?}` with the script's text in memory.
+ *
+ * - `filename` names the script in errors and is the base for its relative
+ *   imports.
+ * - `source` is the script's text.
+ * - `imports` maps each file a relative import reaches to its text. A key is
+ *   the importing file's directory joined with the import path plus `.tea`,
+ *   normalized: `import ./lib/bands` in `scripts/main.tea` reads the key
+ *   `scripts/lib/bands.tea`. With `imports`, a file missing from it is
+ *   reported as not found and nothing is read from disk; without it, relative
+ *   imports are read from disk. Shipped libraries such as `ta` are always
+ *   available.
+ *
+ * Errors in the script and its imports are queued in `errors`, and the result
+ * is `null` when there are any; compilation stops after the first stage that
+ * reports one. An error that a script's call causes inside a library function
+ * is reported at that call, with the library position in its message.
+ * `errors` must be empty when the call starts: errors left from an earlier
+ * compilation make this function return `null` even for valid source, so
+ * flush them first.
+ *
+ * A host passes the `Program` to {@link generate} and may read
+ * `program.declaration`: the script's `indicator()` header as
+ * `{kind: 'indicator', title, overlay}`, or `null` without one. With
+ * `includeSources: true` the result is `{program, sources}`, where `sources`
+ * maps the script and each file it imports to the exact text compiled,
+ * leaving out shipped libraries.
+ *
+ * Throws an `Error` that names the file when the entry path cannot be read,
+ * such as `cannot read 'main.tea': no such file`. Throws an
+ * {@link InternalError} for a defect in Tea, or when `inputs` does not hold
+ * exactly one entry, which Tea does not support yet.
+ *
+ * @example
+ * ```ts
+ * const errors = new Errors();
+ * const program = compileToProgram(
+ *   [{filename: 'main.tea', source: 'emit "price" close', imports: {}}],
+ *   errors,
+ * );
+ * if (program === null) console.error(errors.flushErrors());
+ * ```
+ * @example `compileToProgram(['main.tea'], errors, {includeSources: true})`
+ * reads `main.tea` and its relative imports from disk and returns
+ * `{program, sources}`.
  */
 export function compileToProgram(
   inputs: readonly SourceInput[],
@@ -251,11 +295,11 @@ function calleeName(fun: Expr): string {
  * barrier and runs only when parse and check reported nothing.
  *
  * It is for editors and analysis only. Nothing that executes Tea may call it:
- * every backend consumes the `Program` of `compileToProgram`. `SourceInput.imports`
- * has the same contract as there.
+ * every backend consumes the `Program` of `compileToProgram`. `inputs`,
+ * including `imports`, takes the same forms as there.
  *
  * User errors queue in `errors`; an `InternalError` thrown from here is a
- * compiler defect.
+ * defect in Tea or a feature it does not implement yet.
  *
  * @example
  * ```ts
@@ -284,9 +328,9 @@ export function compileForTooling(
  *
  * Source diagnostics come back as `{ok: false, errors}`, sorted by position
  * and deduplicated, and stop compilation at the first failed stage. An
- * unreadable entry file throws its file-system error. A generated module that
- * fails the type check throws {@link InternalError}: the frontend accepted
- * the program, so the failure is a compiler defect.
+ * unreadable entry file throws an `Error` that names it. A generated module
+ * that fails the type check throws {@link InternalError}: the frontend
+ * accepted the program, so the failure is a compiler defect.
  *
  * @example
  * ```ts

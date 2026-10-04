@@ -36,7 +36,9 @@ else
 - Only the selected branch runs.
 - When the branches end with values of one type, the `if` produces that value.
   `int` and `float` branches give `float`, and an `na` branch takes the other
-  branch's type. A branch that ends in `return` does not contribute.
+  branch's type unless that type is `bool`: with `true` in one branch and `na`
+  in the other, the `if` has no value. A branch that ends in `return` does not
+  contribute.
 - Without an `else`, the value is the `then` branch's when the condition holds,
   and the type's [empty value](./types.md#empty-values) otherwise.
 - When branch values have different types, or a branch has no value, the `if`
@@ -114,6 +116,18 @@ emit "bucket" bucket
 ```
 
 ## Loops
+
+All iterations of a loop run within one step. A
+[history](./expressions.md) read in the body reads earlier steps, never
+earlier iterations: `x[1]` is the value `x` had at the end of the previous
+step, on every iteration.
+
+```tea
+total = 0
+for i = 1 to 3
+    total += i
+    emit.append "previous" total[1] // first step: na, na, na; later: 6, 6, 6
+```
 
 ### `for` … `to` … `by`
 

@@ -3,8 +3,14 @@ title: 'Geometry predicates'
 ---
 
 `import geometry` loads ordinary Tea functions. Geometry is not implicit, and
-there is no native geometry evaluator. The CPU target executes ordered Float64
-operations; the exact predicates are not a Float32/GPU promise.
+there is no native geometry evaluator. The functions run on the CPU in Float64;
+the GPU compiler rejects every geometry call, so a script that uses one cannot
+be compiled for the GPU. Only the sign of `orient2d` and the contact decisions
+built from signs and comparisons are exact, and they are exact for the stored
+binary values, not for decimal literals: on the line from `(0, 100)` to
+`(100, 110)`, `(5, 100.5)` lies on the line while `(3, 100.3)` and
+`(4, 100.4)` do not. Positions and every quadratic result are ordinary
+floating point.
 
 ```tea
 import geometry
@@ -19,9 +25,10 @@ emit "hit" hit
   products normal and avoids splitter/product overflow. Hosts must reject
   unsupported geometry; missing price data should skip evaluation. Inputs are
   Cartesian coordinates: the library assigns no market/time/pixel meaning.
-- `orient2d(ax,ay,bx,by,cx,cy)` returns a clockwise-positive determinant. Use its
-  sign, not its magnitude: the adaptive exact branch returns the leading
-  nonzero expansion term. Unsupported coordinates return `na`.
+- `orient2d(ax,ay,bx,by,cx,cy)` returns a clockwise-positive determinant, the
+  opposite sign of Shewchuk's `orient2d`. Use its sign, not its magnitude: the
+  adaptive exact branch returns the leading nonzero expansion term.
+  Unsupported coordinates return `na`.
 - `segmentContact(ax,ay,bx,by,px,py,qx,qy)` includes endpoints, zero-length
   segments and bounded collinear overlap. Unsupported coordinates return false.
 - `segmentContacts(...)` and
@@ -57,25 +64,37 @@ uses Dekker splitting and **robust-sum 1.0.0 / robust-subtract 1.0.0** provide
 ordered zero-eliminating expansion merges. Sum and subtraction share the same
 merge with an explicit sign. **robust-segment-intersect 1.0.1** supplies the
 four orientation tests and collinear bounding-box decision. Only hit parameters
-use division after the exact existence decision.
+use division after the exact existence decision. They are ordinary Float64
+quotients of `orient2d` values, whose magnitudes are approximate: near a line
+the exact branch returns only the leading expansion term, which can be off by
+a factor of two. The crossing of two nearly parallel segments can therefore be
+placed more than a tenth of a segment's length away from the true point.
 
 Quadratic construction follows **kld-intersections 0.7.0**: substitute Bézier's
 power-basis coefficients into the observation's supporting line. Solve the
 resulting degree-two polynomial, reduce exact zero coefficients to a line,
-retain bounded roots and evaluate points using de Casteljau. A normalized,
-expansion-evaluated discriminant and cancellation-resistant `q/a, c/q` roots
-preserve near-tangent roots without an epsilon that invents intersections.
-Coincident and point observations are treated separately, including a
-backtracking quadratic's interior extremum. KLD's `Coincident` status alone
-is deliberately not used as a finite intersection oracle.
+retain bounded roots and evaluate points using de Casteljau. The coefficients
+are scaled by a power of two, which is exact, and the discriminant's sign is
+evaluated exactly with expansion arithmetic, so a tangency whose coefficients
+are computed without rounding stays one double root. Cancellation-resistant
+`q/a, c/q` roots preserve near-tangent roots without an epsilon that invents
+intersections. Coincident and point observations are treated separately,
+including a backtracking quadratic's interior extremum. KLD's `Coincident`
+status alone is deliberately not used as a finite intersection oracle.
 
 Quadratic coefficient construction and root locations still use Float64; they
-are not exact algebraic-number arithmetic. Parameter acceptance/rounding uses
-32 machine epsilons (`7.105427357601002e-15`), never a pixel/price hit radius.
+are not exact algebraic-number arithmetic. With decimal prices, a touch that
+is tangent in decimal arithmetic is generally not tangent for the stored binary
+values, and the coefficients round, so it can report two close crossings or
+none.
+Parameter acceptance/rounding uses 32 machine epsilons
+(`7.105427357601002e-15`), never a pixel/price hit radius.
 An out-of-range curve or observation parameter within that bound is clamped
 only if the resulting curve point passes the exact finite-segment predicate.
 Curve endpoints are evaluated from the original coordinates, so clamping cannot
-extend a disjoint primitive or observation into a contact.
+extend a disjoint primitive or observation into a contact. The predicate tests
+the rounded curve point, so a contact exactly at the observation's start can
+fail it and be dropped, even with small integer coordinates.
 Point observations additionally check the evaluated coordinates against the
 same relative rounding bound. Ill-conditioned curves can retain root-location
 uncertainty; the tests pin tangency, degree reduction, nonmonotone X and bounded

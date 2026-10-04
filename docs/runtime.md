@@ -575,13 +575,3 @@ Generated code contains no host I/O, randomness, or wall-clock access. A finite
 run is determined by its module, parameter values, bound DataStreams, and the
 Pine clock values supplied for its attempts. GPU execution is determined by its
 artifact and concrete bindings.
-
-## Staged beyond this slice
-
-- live watermarks;
-- dynamic or nested requests;
-- Sweep and live Recipes;
-- optional application source registries;
-- broader GPU support for structs, resources, requests and non-scalar operations.
-  Existing append codecs support literal strings and packed colors; that does not
-  imply arbitrary string/color operations or user-defined struct execution.

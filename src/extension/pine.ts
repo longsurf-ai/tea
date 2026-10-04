@@ -6,20 +6,45 @@ import type {Module} from '../runtime/module-binding';
 import type {Stored} from '../runtime/value';
 
 /**
- * Supply per-step Pine values, such as `bar_index`, `time`, `timenow` and the
- * `barstate.*` flags, from the Node's position and source time. The
- * {@link tea} template installs one with default callbacks; pass one to
- * {@link createNode} when calling it directly, or to supply a host clock or
- * realtime flag.
- * Each attempt samples the supplied clock and live flag once; callers wanting
- * a fixed evaluation instant supply a constant function. Derived Nodes share
- * no clock memoization. Node gives one supplier to every request child, and
- * each child samples both callbacks at its own steps.
- * `barstate.isrealtime` reads the live flag and `barstate.ishistory` its
- * opposite. The default flag is false, so finite runs and `tea` template
- * Nodes report history; a live host calls `createNode` with its own flag.
- * Absent symbol/timeframe metadata uses the builtin's typed empty value.
- * Runtime overlays any bound fixed values.
+ * Returns the supplier of Pine's per-bar values, such as `bar_index`, `time`,
+ * `timenow` and the `barstate.*` flags, for {@link createNode}.
+ *
+ * The {@link tea} template installs one with the default callbacks; pass one
+ * to {@link createNode} when calling it directly, or to supply your own clock
+ * or realtime flag. A Node and each of its requests call the supplier on
+ * every step with their own bar index and input row, and each call samples
+ * `now` and `isRealtime` once; pass a constant function for a fixed time.
+ *
+ * | Builtin | Reads | Fails when |
+ * | --- | --- | --- |
+ * | `bar_index` | the bar's index | never |
+ * | `time` | the row's `time` field | the row has no time |
+ * | `timenow` | `now()` | `now()` is not a safe integer |
+ * | `barstate.isfirst` | whether the bar's index is 0 | never |
+ * | `barstate.isconfirmed` | whether `provisional` is not `true` | never |
+ * | `barstate.isnew` | whether the row is the bar's first | never |
+ * | `barstate.isrealtime` | `isRealtime()` | never |
+ * | `barstate.ishistory` | the opposite of `isRealtime()` | never |
+ * | `syminfo.*` | nothing: `na` | never |
+ * | `timeframe.*` | nothing: `na`, or `false` for the `is*` flags | never |
+ *
+ * The bar's index is the one in {@link Datum}: 0 for the first bar, and the
+ * same for every row of a bar. A failure throws {@link BindError} and fails
+ * the run. The supplier checks `now()` on every call, even when the script
+ * does not read `timenow`.
+ *
+ * `syminfo.*` and `timeframe.*` get real values only when the host fixes them
+ * while binding the module: the second argument of `Module.bind` maps the
+ * builtin's position in `module.inputs.builtins` to its value, which then
+ * replaces what this supplier gives on every step.
+ *
+ * @param now Returns the time for `timenow`, in epoch milliseconds. Defaults
+ * to `Date.now`.
+ * @param isRealtime Returns whether the current bar is live, for
+ * `barstate.isrealtime` and `barstate.ishistory`. Defaults to always `false`,
+ * so every bar counts as history.
+ * @returns The supplier to pass to {@link createNode}.
+ *
  * @example For a module containing only `emit "now" timenow`,
  * `pineBuiltinSupplier(() => 1000)([], module, 0, {})` returns `[1000]`.
  * `pineBuiltinSupplier(Date.now, () => live)` reports realtime bars once the

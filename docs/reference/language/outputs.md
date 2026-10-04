@@ -123,8 +123,8 @@ type appears in a published row.
 - A plain column that was not written holds null. Writing `na` also publishes
   null, except that a numeric `na` publishes NaN, which stays distinct from
   null.
-- A step that fails with a runtime error publishes nothing, including values
-  it emitted before the error.
+- A runtime error stops the run: the step where it happens publishes nothing,
+  including values it emitted before the error, and no later step runs.
 
 ```tea
 struct Order

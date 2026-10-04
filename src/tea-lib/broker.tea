@@ -1,48 +1,24 @@
 //@version=1
 /**
- * Order and fill types, and a deterministic broker emulator that fills
- * strategy orders against bar prices.
+ * Order and fill types, commission and slippage settings, and a deterministic
+ * broker emulator that fills strategy orders against bar prices.
  *
  * A broker turns strategy commands into orders, decides whether, when and at
- * what price each order fills, applies commission and slippage, and reports
- * each step as an event. The portfolio library applies fills to cash and
- * positions, and a trade coordinator sequences broker and portfolio on every
- * bar. A strategy imports all three, creates a broker with {@link broker.new}
- * or {@link broker.basic}, and hands it with a portfolio to a coordinator such
- * as {@link trade.nextOpen}; it then trades through the coordinator rather
- * than calling the broker. See the [strategy model](/strategy) for the full
- * responsibility boundary and the
- * [backtest guide](/getting-started/backtest-your-strategy) for a runnable
- * walkthrough.
+ * what price each order fills, charges commission, applies slippage, and
+ * reports each step as an event. The portfolio library applies fills to cash
+ * and positions, and a trade coordinator sequences broker and portfolio on
+ * every bar. A strategy creates a broker with {@link broker.new} or
+ * {@link broker.basic} and passes it, with a portfolio, to a coordinator such
+ * as {@link trade.nextOpen}, whose page shows a complete strategy; it then
+ * trades through the coordinator rather than calling the broker.
+ * {@link broker.BrokerEmulator} states the execution rules: when orders fill,
+ * at what price and size, and why they are rejected. The
+ * [strategy model](/strategy) describes the responsibility boundary.
  *
  * The library keeps no global state: each broker value holds its own orders,
  * ids and matching state. Broker events are appended to one output per event
  * type, such as `broker.FillExecuted`; each output keeps execution order, but
  * separate outputs share no ordering.
- *
- * ```tea
- * import broker
- * import portfolio
- * import trade
- *
- * fast = ta.ema(close, 10)
- * slow = ta.ema(close, 30)
- *
- * var strat = trade.nextOpen(
- *     broker.new(commission = broker.commissionRate(0.001)),
- *     portfolio.new(initialCash = 10000.0)
- * )
- *
- * strat.begin_bar(open, bar_index)
- * if ta.crossover(fast, slow)
- *     strat.entry("Long", trade.Direction.long)
- * if ta.crossunder(fast, slow)
- *     strat.close("Long")
- * strat.end_bar(close, false)
- *
- * metrics = strat.snapshot()
- * plot("equity", metrics.equity, "equity")
- * ```
  */
 library("broker")
 
@@ -52,13 +28,13 @@ library("broker")
  */
 export enum Side
 	/**
-	 * Increases the signed position: opens or adds to a long, or reduces a
-	 * short.
+	 * Increases the signed position: opens or adds to a long, or reduces or
+	 * reverses a short.
 	 */
 	buy
 	/**
-	 * Decreases the signed position: opens or adds to a short, or reduces a
-	 * long.
+	 * Decreases the signed position: opens or adds to a short, or reduces or
+	 * reverses a long.
 	 */
 	sell
 
@@ -83,7 +59,11 @@ export enum CommandKind
 	 * position.
 	 */
 	exit
-	/** Moves the net position to a {@link broker.PositionTarget}. */
+	/**
+	 * Moves the net position to a {@link broker.PositionTarget} with one fill;
+	 * when that fill opens or reverses the position, the rebalance's command id
+	 * becomes the entry id that later entries and exits must use.
+	 */
 	rebalance
 
 /**
@@ -119,7 +99,10 @@ export enum CommissionKind
 	rate
 	/** `value` is cash per unit of filled quantity. */
 	cashPerContract
-	/** `value` is cash per order; a reversal's two fills pay it once. */
+	/**
+	 * `value` is cash per order; the two fills of a scheduled reversal pay it
+	 * once.
+	 */
 	cashPerOrder
 
 /**
@@ -153,46 +136,106 @@ export enum PositionTargetKind
 
 /**
  * Why the broker refused a command, carried by {@link broker.OrderRejected}.
+ *
+ * A scheduled command is checked twice. When it is submitted, the broker
+ * checks its kind, side, prices and entry id, and whether another order is
+ * waiting. Its size, the commission, slippage and portfolio settings, and the
+ * capital are checked only on the bar the order would fill, so a command
+ * accepted with {@link broker.OrderSubmitted} can still be rejected there.
+ * Immediate execution checks the command, the settings and the account at
+ * once. The {@link broker.BrokerEmulator} page lists each check by stage.
  * @category Events
  */
 export enum Rejection
 	/**
-	 * The broker already holds a different pending command, or a different
-	 * attached exit.
+	 * At submission: the broker already holds a different pending command, or
+	 * a different attached exit.
 	 */
 	pendingOrder
 	/**
-	 * The command does not fit the broker or account state, for example a
-	 * wrong kind or side, no matching entry or lot, no position to close, no
-	 * pyramiding capacity, or too little capital.
+	 * The command does not fit the broker or account state. At submission: a
+	 * wrong kind or side, or an exit whose entry is neither pending nor open.
+	 * At fill: a close with no position to close, no pyramiding capacity, too
+	 * little capital, a nonpositive execution price or quantity, or a percent
+	 * target while equity or the reference price is not positive. A trailing
+	 * exit is also refused when matched outside the path coordinator.
 	 */
 	invalidAccountState
 	/**
-	 * Commission or slippage settings are invalid, or the account reports
-	 * invalid portfolio settings.
+	 * At fill: the commission or slippage settings are invalid, or the account
+	 * reports invalid portfolio settings.
 	 */
 	invalidConfiguration
 	/**
-	 * The size is invalid: more than one sizing field, a nonpositive size, or
-	 * an equity percent above `100`. Immediate execution also requires exactly
-	 * one of `quantity` and `notional`.
+	 * At fill: more than one sizing field, a nonpositive size, or an equity
+	 * percent above `100`. Immediate execution needs exactly one of `quantity`
+	 * and `notional`.
 	 */
 	invalidQuantity
 	/**
-	 * A stop, target, trailing value or rebalance target is missing,
-	 * nonpositive or inconsistent, such as a long exit whose stop is not below
-	 * its target.
+	 * At submission: an entry stop that is not positive; exit levels that are
+	 * missing, nonpositive or inconsistent, such as a long exit whose stop is
+	 * not below its target; or a rebalance target that is `na` or a percent
+	 * outside `-100` to `100`. In immediate execution: a touched stop that is
+	 * not positive.
 	 */
 	invalidPrice
 	/**
-	 * An entry on the open position's side uses a different command id; adding
-	 * to a position must reuse the id that opened it.
+	 * At submission: an entry on the open position's side uses a different
+	 * command id; adding to a position must reuse the id that opened it, which
+	 * can be a rebalance's id.
 	 */
 	entryIdMismatch
 
 /**
  * Commission setting for {@link broker.new}, made by a helper such as
  * {@link broker.commissionRate}.
+ *
+ * The broker charges it on each fill, except that a cash-per-order fee is
+ * charged once per order; a rate applies to the notional at the execution
+ * price, after slippage. The formula is on
+ * {@link broker.BrokerEmulator.commission_for}.
+ * @example
+ * The three kinds on the same buy of 10 units at the open of 110 on index 1:
+ * a rate of 0.1% charges 1.1, 2.5 per unit charges 25, and 7 per order
+ * charges 7.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var byRate = trade.nextOpen(
+ *     broker.new(commission = broker.commissionRate(0.001)),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * var byUnit = trade.nextOpen(
+ *     broker.new(commission = broker.commissionCashPerContract(2.5)),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * var byOrder = trade.nextOpen(
+ *     broker.new(commission = broker.commissionCashPerOrder(7.0)),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * a = byRate.begin_bar(open, bar_index)
+ * b = byUnit.begin_bar(open, bar_index)
+ * c = byOrder.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     byRate.entry("Long", trade.Direction.long, qty = 10.0)
+ *     byUnit.entry("Long", trade.Direction.long, qty = 10.0)
+ *     byOrder.entry("Long", trade.Direction.long, qty = 10.0)
+ * byRate.end_bar(close, false)
+ * byUnit.end_bar(close, false)
+ * byOrder.end_bar(close, false)
+ * emit "open" open
+ * emit "rate" a.fee
+ * emit "perContract" b.fee
+ * emit "perOrder" c.fee
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,110,112
+ * ```
  * @category Commission and slippage
  */
 export type Commission
@@ -204,6 +247,48 @@ export type Commission
 /**
  * Adverse slippage setting for {@link broker.new}, made by a helper such as
  * {@link broker.slippageRate}.
+ *
+ * The broker moves every fill's matched price against the order: buys fill
+ * higher and sells lower. Quantities sized from cash are then computed at that
+ * execution price. The formula is on
+ * {@link broker.BrokerEmulator.execution_price}.
+ * @example
+ * A buy at the open of 110 on index 1, closed at the open of 120 on index 2.
+ * A rate of 1% fills at 111.1 and 118.8; two ticks of 0.25 fill at 110.5 and
+ * 119.5.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var byRate = trade.nextOpen(
+ *     broker.new(slippage = broker.slippageRate(0.01)),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * var byTicks = trade.nextOpen(
+ *     broker.new(slippage = broker.slippageTicks(2.0, 0.25)),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * a = byRate.begin_bar(open, bar_index)
+ * b = byTicks.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     byRate.entry("Long", trade.Direction.long, qty = 10.0)
+ *     byTicks.entry("Long", trade.Direction.long, qty = 10.0)
+ * if bar_index == 1
+ *     byRate.close("Long")
+ *     byTicks.close("Long")
+ * byRate.end_bar(close, false)
+ * byTicks.end_bar(close, false)
+ * emit "open" open
+ * emit "rate" a.price
+ * emit "ticks" b.price
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,110,112
+ * 2,120,118
+ * ```
  * @category Commission and slippage
  */
 export type Slippage
@@ -225,9 +310,12 @@ export type Slippage
  * {@link trade.targetPercentOfEquity}.
  *
  * A rebalance fills the difference between the target and the current
- * position. With long margin enabled, a buy from a flat or long position is
- * limited to what the buying power pays for, so the position can stop short of
- * the target. A difference below `0.0000001` cancels the order instead.
+ * position with one buy or sell, even when that crosses zero. A percent target
+ * becomes a quantity at the fill's reference price, before slippage. With long
+ * margin enabled, a buy from a flat or long position is limited to what the
+ * buying power pays for, so the position can stop short of the target. A
+ * difference of at most `0.0000001` cancels the order instead. The formulas
+ * are on {@link broker.BrokerEmulator.execute}.
  * @category Orders and fills
  */
 export type PositionTarget
@@ -262,17 +350,22 @@ export type Account
 	int pyramiding
 	/**
 	 * Capital required for long exposure, as a percent of notional; `0` skips
-	 * the capital check.
+	 * the capital check and the rebalance buy cap, though an entry without a
+	 * size still needs cash above `0`. The reference portfolios support only
+	 * `0` and `100`; with another value they report invalid settings.
 	 */
 	float marginLong
 	/**
 	 * Capital required for short exposure, as a percent of notional; `0` skips
-	 * the capital check.
+	 * the capital check, though an entry without a size still needs equity
+	 * above `0`. It is checked per order against the whole equity, not net of
+	 * shorts already held: with `100` and a pyramiding of 3, three shorts of
+	 * 90% of equity each all fill, about 2.7 times equity short.
 	 */
 	float marginShort
 	/**
 	 * `false` when the portfolio's own settings are invalid; the broker then
-	 * rejects fills with `invalidConfiguration`.
+	 * rejects every order with `invalidConfiguration` when it would fill.
 	 */
 	bool configurationValid = true
 
@@ -282,12 +375,14 @@ export type Account
  * One instruction from a strategy to the broker, built by the trade
  * coordinators from calls such as `entry` and `exit`.
  *
- * The broker validates it when it is submitted or executed, and turns it into
- * an {@link broker.Order}. Which fields apply depends on `kind`; the rest keep
- * their defaults, and prices are absolute levels. An entry uses at most one of
- * `quantity`, `notional`, `cashBudget` and `equityPercent`; with none set, a
- * scheduled entry spends all available capital, cash for a buy and equity for
- * a sell.
+ * The broker turns it into an {@link broker.Order}, checking its kind, side,
+ * prices and entry id when it is submitted, and its size, the settings and
+ * the capital when the order would fill; immediate execution checks
+ * everything at once. Which fields apply depends on `kind`; the rest keep
+ * their defaults, and prices are absolute levels. An entry uses at most one
+ * of `quantity`, `notional`, `cashBudget` and `equityPercent`; with none set,
+ * a scheduled entry spends all available capital, cash for a buy and equity
+ * for a sell.
  * @category Orders and fills
  */
 export type Command
@@ -438,7 +533,10 @@ export type Fill
 	 * target level.
 	 */
 	float referencePrice
-	/** Execution price after adverse slippage. */
+	/**
+	 * Execution price: `referencePrice` after adverse slippage, and at least
+	 * one tick for an exit with tick slippage.
+	 */
 	float price
 	/** Filled quantity, always positive. */
 	float quantity
@@ -460,6 +558,10 @@ export type Fill
 /**
  * Event appended to the `broker.OrderSubmitted` output when the broker accepts
  * an order.
+ *
+ * Acceptance does not promise a fill: a scheduled order's size, the settings
+ * and the capital are checked on the bar it would fill, where it can still be
+ * rejected. Immediate execution appends this event only with its fill.
  * @category Events
  */
 export type OrderSubmitted
@@ -501,13 +603,18 @@ export type OrderCancelled
  * a command or order.
  *
  * An accepted scheduled order can still be refused when it tries to fill; the
- * event then carries that order's command id.
+ * event then carries that order's command id, and the order is removed rather
+ * than retried. {@link broker.Rejection} says which checks run at submission
+ * and which at the fill.
  * @category Events
  */
 export type OrderRejected
 	/** Command id of the refused command. */
 	string commandId
-	/** Side of the refused command or order. */
+	/**
+	 * Side of the refused command or order; for a rebalance refused when it
+	 * fills, the side of the fill it attempted.
+	 */
 	Side side
 	/**
 	 * Bar index of the refusal: the signal bar when submitting, the matching
@@ -533,7 +640,10 @@ export type BarMatches
 	 * path coordinator, which matches exits in `continue_bar`.
 	 */
 	Fill exit
-	/** Closing fill of a reversal completed on this bar, or `na`. */
+	/**
+	 * Closing fill of a reversal whose two fills both happened at the start of
+	 * this bar, or `na`.
+	 */
 	Fill reversalClose = na
 
 /**
@@ -566,20 +676,20 @@ export interface BrokerCommands
 	/**
 	 * Submits an entry, close or rebalance as the pending command.
 	 * @param command command to submit
-	 * @returns the accepted order, or `na` when rejected.
+	 * @returns `broker.Order`: the accepted order, or `na` when rejected.
 	 */
 	Order submit(Command command)
 	/**
 	 * Attaches an exit to the pending or open entry named by its `fromEntry`.
 	 * @param command exit command
-	 * @returns the accepted exit order, or `na` when rejected.
+	 * @returns `broker.Order`: the accepted exit order, or `na` when rejected.
 	 */
 	Order submit_exit(Command command)
 	/**
 	 * Cancels the pending command and the attached exit that have this command
 	 * id.
 	 * @param commandId command id to cancel
-	 * @returns the number of orders cancelled.
+	 * @returns `int`: the number of orders cancelled.
 	 */
 	int cancel(string commandId)
 
@@ -588,8 +698,8 @@ export interface BrokerCommands
  * Broker contract of {@link trade.NextOpenTrade}: commands fill at a later
  * bar's open, or optionally at a close.
  *
- * A reversal can complete on the same bar. This contract has no attached
- * exits.
+ * A reversal can complete on the same bar. The contract has no `submit_exit`,
+ * so the next-open coordinator attaches no exits.
  * @category Interfaces
  */
 export interface NextOpenBroker
@@ -600,14 +710,14 @@ export interface NextOpenBroker
 	/**
 	 * Submits an entry, close or rebalance as the pending command.
 	 * @param command command to submit
-	 * @returns the accepted order, or `na` when rejected.
+	 * @returns `broker.Order`: the accepted order, or `na` when rejected.
 	 */
 	Order submit(Command command)
 	/**
 	 * Cancels the pending command and the attached exit that have this command
 	 * id.
 	 * @param commandId command id to cancel
-	 * @returns the number of orders cancelled.
+	 * @returns `int`: the number of orders cancelled.
 	 */
 	int cancel(string commandId)
 	/**
@@ -615,7 +725,7 @@ export interface NextOpenBroker
 	 * @param referencePrice the bar's open
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
 	 */
 	Fill on_open(float referencePrice, Account account, int barIndex)
 	/**
@@ -623,7 +733,7 @@ export interface NextOpenBroker
 	 * closing fill.
 	 * @param account account view refreshed after the closing fill
 	 * @param barIndex current bar index
-	 * @returns the opening fill, or `na`.
+	 * @returns `broker.Fill`: the opening fill, or `na`.
 	 */
 	Fill continue_reversal(Account account, int barIndex)
 	/**
@@ -632,12 +742,12 @@ export interface NextOpenBroker
 	 * @param referencePrice the bar's close
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
 	 */
 	Fill on_close(float referencePrice, Account account, int barIndex)
 	/**
 	 * Expires every working order at the end of the data.
-	 * @returns the expired orders.
+	 * @returns `broker.FinishResult`: the expired orders.
 	 */
 	FinishResult finish()
 
@@ -655,20 +765,20 @@ export interface OhlcBroker
 	/**
 	 * Submits an entry, close or rebalance as the pending command.
 	 * @param command command to submit
-	 * @returns the accepted order, or `na` when rejected.
+	 * @returns `broker.Order`: the accepted order, or `na` when rejected.
 	 */
 	Order submit(Command command)
 	/**
 	 * Attaches an exit to the pending or open entry named by its `fromEntry`.
 	 * @param command exit command
-	 * @returns the accepted exit order, or `na` when rejected.
+	 * @returns `broker.Order`: the accepted exit order, or `na` when rejected.
 	 */
 	Order submit_exit(Command command)
 	/**
 	 * Cancels the pending command and the attached exit that have this command
 	 * id.
 	 * @param commandId command id to cancel
-	 * @returns the number of orders cancelled.
+	 * @returns `int`: the number of orders cancelled.
 	 */
 	int cancel(string commandId)
 	/**
@@ -678,7 +788,7 @@ export interface OhlcBroker
 	 * @param lowPrice the bar's low
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
 	 */
 	Fill match_pending(float openPrice, float highPrice, float lowPrice, Account account, int barIndex)
 	/**
@@ -686,7 +796,7 @@ export interface OhlcBroker
 	 * closing fill.
 	 * @param account account view refreshed after the closing fill
 	 * @param barIndex current bar index
-	 * @returns the opening fill, or `na`.
+	 * @returns `broker.Fill`: the opening fill, or `na`.
 	 */
 	Fill continue_reversal(Account account, int barIndex)
 	/**
@@ -696,7 +806,7 @@ export interface OhlcBroker
 	 * @param lowPrice the bar's low
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the exit fill, or `na`.
+	 * @returns `broker.Fill`: the exit fill, or `na`.
 	 */
 	Fill match_exit(float openPrice, float highPrice, float lowPrice, Account account, int barIndex)
 	/**
@@ -705,12 +815,12 @@ export interface OhlcBroker
 	 * @param referencePrice the bar's close
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
 	 */
 	Fill on_close(float referencePrice, Account account, int barIndex)
 	/**
 	 * Expires every working order at the end of the data.
-	 * @returns the expired orders.
+	 * @returns `broker.FinishResult`: the expired orders.
 	 */
 	FinishResult finish()
 
@@ -728,20 +838,20 @@ export interface PathBroker
 	/**
 	 * Submits an entry, close or rebalance as the pending command.
 	 * @param command command to submit
-	 * @returns the accepted order, or `na` when rejected.
+	 * @returns `broker.Order`: the accepted order, or `na` when rejected.
 	 */
 	Order submit(Command command)
 	/**
 	 * Attaches an exit to the pending or open entry named by its `fromEntry`.
 	 * @param command exit command
-	 * @returns the accepted exit order, or `na` when rejected.
+	 * @returns `broker.Order`: the accepted exit order, or `na` when rejected.
 	 */
 	Order submit_exit(Command command)
 	/**
 	 * Cancels the pending command and the attached exit that have this command
 	 * id.
 	 * @param commandId command id to cancel
-	 * @returns the number of orders cancelled.
+	 * @returns `int`: the number of orders cancelled.
 	 */
 	int cancel(string commandId)
 	/**
@@ -752,7 +862,7 @@ export interface PathBroker
 	 * @param closePrice the bar's close
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
 	 */
 	Fill match_path_primary(float openPrice, float highPrice, float lowPrice, float closePrice, Account account, int barIndex)
 	/**
@@ -760,7 +870,7 @@ export interface PathBroker
 	 * closing fill.
 	 * @param account account view refreshed after the closing fill
 	 * @param barIndex current bar index
-	 * @returns the opening fill, or `na`.
+	 * @returns `broker.Fill`: the opening fill, or `na`.
 	 */
 	Fill continue_reversal(Account account, int barIndex)
 	/**
@@ -771,12 +881,12 @@ export interface PathBroker
 	 * @param closePrice the bar's close
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the exit fill, or `na`.
+	 * @returns `broker.Fill`: the exit fill, or `na`.
 	 */
 	Fill match_path_exit(float openPrice, float highPrice, float lowPrice, float closePrice, Account account, int barIndex)
 	/**
 	 * Expires every working order at the end of the data.
-	 * @returns the expired orders.
+	 * @returns `broker.FinishResult`: the expired orders.
 	 */
 	FinishResult finish()
 
@@ -798,7 +908,7 @@ export interface ImmediateBroker
 	 * @param side side of the refused command
 	 * @param barIndex bar index of the refusal
 	 * @param reason why it was refused
-	 * @returns `0`.
+	 * @returns `int`: `0`.
 	 */
 	int reject(string commandId, Side side, int barIndex, Rejection reason)
 	/**
@@ -807,7 +917,7 @@ export interface ImmediateBroker
 	 * @param highPrice the bar's high
 	 * @param lowPrice the bar's low
 	 * @param stopPrice stop level
-	 * @returns `true` when touched.
+	 * @returns `bool`: `true` when touched.
 	 */
 	bool stop_touched(Side closeSide, float highPrice, float lowPrice, float stopPrice) const
 	/**
@@ -816,7 +926,7 @@ export interface ImmediateBroker
 	 * @param closePrice the bar's close
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na` when rejected.
+	 * @returns `broker.Fill`: the fill, or `na` when rejected.
 	 */
 	Fill execute_at_close(Command command, float closePrice, Account account, int barIndex)
 	/**
@@ -829,7 +939,7 @@ export interface ImmediateBroker
 	 * @param stopPrice stop level
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
 	 */
 	Fill execute_if_stop_touched(Command command, float openPrice, float highPrice, float lowPrice, float stopPrice, Account account, int barIndex)
 
@@ -841,14 +951,131 @@ export interface ImmediateBroker
  * It keeps a deliberately small order model: one pending command (a market or
  * stop entry, a close, or a rebalance) and one attached exit (stop, target,
  * bracket or trailing stop). It is not a general order book, and a target is
- * not a true limit order: adverse slippage still applies after it matches. The
- * scheduled methods make at most two fills per bar; an order beyond that
- * waits, and a reversal's opening fill moves to the next open.
- *
+ * not a true limit order: adverse slippage still applies after it matches.
  * All of its state lives in its fields, so a script can run several
- * independent brokers. The trade coordinators call its methods in a fixed
- * order on every bar, and strategies use the coordinator instead. The
- * [strategy model](/strategy) describes each coordinator's matching rules.
+ * independent brokers. Strategies use a trade coordinator, which calls these
+ * methods in a fixed order on every bar.
+ *
+ * **Execution rules.** A scheduled command can fill on any bar after the one
+ * it was submitted on. With `processOrdersOnClose`, the next-open and OHLC
+ * coordinators also fill commands at a close, from the close of that bar on;
+ * the path coordinator has no close step. A fill's reference price is the
+ * price it matched, before slippage:
+ *
+ * | Order | Fills when | Reference price |
+ * | --- | --- | --- |
+ * | Market entry, close or rebalance | it is eligible at an open or a close | that open or close |
+ * | Stop entry at an open or a close | that price is at or past the stop | that open or close |
+ * | Stop entry within a bar (OHLC, path) | the open is at or past the stop, or the bar reaches it | the open after a gap, else the stop |
+ * | Exit stop or target | the open is at or past a level, or the bar reaches one | the open after a gap, else the level |
+ * | Exit whose stop and target are both reached within the bar | both levels are reached | the level on the side of the high or low nearer the open; the stop on a tie |
+ * | Trailing stop (path only) | the trailing level is reached, see below | as an exit stop |
+ * | Immediate entry or close (lots) | at once | the close |
+ * | Immediate stop close (lots) | the bar reaches the stop | the open after a gap, else the stop |
+ *
+ * Past means above for a buy stop or a long position's target, and below for
+ * a sell stop or a short position's target. The bar reaches a level when its
+ * high, for a level above the open, or its low, for one below, gets to it.
+ * The path coordinator walks `open`, the extreme nearer the open (the low on
+ * a tie), the other extreme, then `close`, and a stop entry fills on the
+ * first segment that reaches its stop. An exit is live while its entry
+ * holds the position, from the bar after the entry's fill, or from that bar
+ * with `activateOnEntryBar`; on that bar the OHLC coordinator matches it
+ * against the whole bar, prices before the entry's fill included, while the
+ * path coordinator starts where the entry filled. A trailing stop activates
+ * when the path reaches `trailPrice` in the position's favor, then stays
+ * `trailOffset` behind the best price since; with a fixed stop as well, the
+ * tighter of the two applies.
+ *
+ * **Price, size and fee.** The execution price p moves the reference price r
+ * against the order: `r * (1 + rate)` for a buy and `r * (1 - rate)` for a
+ * sell, or `ticks * tickSize` above or below. An exit with tick slippage fills
+ * at no less than one tick. Sizes given as cash are divided by p, so slippage
+ * changes the quantity:
+ *
+ * | Size | Quantity |
+ * | --- | --- |
+ * | `quantity` | `quantity` |
+ * | `notional` | `notional / p` |
+ * | `cashBudget` | `D(cashBudget)` |
+ * | `equityPercent` | `budget / p`, where `budget = equity * equityPercent / 100` |
+ * | `equityPercent` with `commissionIncluded` | `D(budget)` |
+ * | none | `D(cash)` for a buy, `D(equity)` for a sell |
+ * | scheduled close, exit, closing fill of a reversal | the whole position |
+ *
+ * Equity is cash plus the position valued at r. `D(C)` is the quantity whose
+ * notional plus fee spends exactly C, where v is the commission's `value`:
+ *
+ * | Commission | Fee | `D(C)` |
+ * | --- | --- | --- |
+ * | `rate` | `notional * v` | `C / (p * (1 + v))` |
+ * | `cashPerContract` | `quantity * v` | `C / (p + v)` |
+ * | `cashPerOrder` | `v` | `(C - v) / p` |
+ *
+ * A cash-per-order fee is charged once per order: the opening fill of a
+ * reversal pays none, and its `D(C)` is `C / p`.
+ *
+ * **Capital check.** The margin m is the account's `marginLong` for a buy and
+ * `marginShort` for a sell, and the available capital is cash for a buy and
+ * equity for a sell. Unless m is `0`, an entry with a size fills only if
+ * `notional * m / 100 + fee` is at most the available capital; a `cashBudget`
+ * entry, or an `equityPercent` entry with `commissionIncluded`, needs at least
+ * its budget available instead. An entry without a size needs only available
+ * capital above `0`, whatever m is. Closes, exits and the closing fill of a
+ * reversal are not checked. The check is per order: a short added to a short
+ * is compared with the whole equity, not with what the first short left.
+ *
+ * **Rebalance.** The target is the given quantity, or for a percent target
+ * `equity * percent / 100 / r`, which needs r and equity above `0`. The order
+ * fills `target - position` as one buy or sell, even across zero; when the
+ * two differ by at most `0.0000001`, it is cancelled instead. A buy from a
+ * flat or long position is capped at `D(cash)` unless `marginLong` is `0`,
+ * so the position can stop short of the target. When the cap does not cut
+ * the quantity, a fill that grows the exposure, with m not `0`, needs
+ * `q * p * m / 100 + fee` at most the available capital, where q is the
+ * quantity it opens; that capital is equity when the position ends short or
+ * crosses zero, and cash otherwise. A fill that crosses zero also adds the
+ * slippage cost of the part it closes to what it needs. A rebalance that
+ * opens or reverses the position makes its command id the entry id.
+ *
+ * **Rejections.** A scheduled command is checked at two stages. A command
+ * refused at submission never becomes an order; an order refused on its fill
+ * bar is removed, not retried. Each refusal appends a
+ * {@link broker.OrderRejected} event:
+ *
+ * | Stage | Reason | Cause |
+ * | --- | --- | --- |
+ * | submission | `invalidAccountState` | a wrong kind or side, or an exit whose entry is neither pending nor open |
+ * | submission | `invalidPrice` | an entry stop not above `0`; exit levels that are missing, incomplete, not above `0` or out of order; a rebalance target that is `na` or a percent outside `-100` to `100` |
+ * | submission | `entryIdMismatch` | an entry on the position's side with another command id |
+ * | submission | `pendingOrder` | a different pending command, or a different attached exit, is waiting |
+ * | fill | `invalidConfiguration` | invalid commission, slippage or portfolio settings |
+ * | fill | `invalidQuantity` | several sizing fields, a size not above `0`, or an equity percent above `100` |
+ * | fill | `invalidAccountState` | nothing to close, no pyramiding capacity, too little capital, an execution price or quantity not above `0`, a percent target while equity or the reference price is not above `0`, or a trailing exit matched outside the path coordinator |
+ *
+ * Immediate execution checks the kind, side, size, settings and account at
+ * once, and rejects a touched stop that is not above `0` with
+ * `invalidPrice`.
+ *
+ * **Call order.** Each coordinator calls the broker in this order; after
+ * every fill, the portfolio applies it and the next call gets a fresh account:
+ *
+ * | Coordinator | `begin_bar` | Later in the bar | `end_bar` |
+ * | --- | --- | --- | --- |
+ * | {@link trade.nextOpen} | `on_open`, `continue_reversal` | none | `on_close`, `continue_reversal`, then `finish` on the last bar |
+ * | {@link trade.ohlc} | `match_pending`, `continue_reversal`, `match_exit` | none | `on_close`, `continue_reversal`, then `finish` on the last bar |
+ * | {@link trade.path} | `match_path_primary`, `continue_reversal` | `match_path_exit`, in `continue_bar` | `finish` on the last bar |
+ * | {@link trade.lots} | none | `stop_touched`, `execute_at_close`, `execute_if_stop_touched` or `reject`, in `entry`, `close_trade` and `close_trade_at_stop` | none |
+ *
+ * `on_close` fills only with `processOrdersOnClose`. The next-open and OHLC
+ * coordinators' `process_close` runs the same close step on demand.
+ *
+ * **Two fills per bar.** Scheduled matching makes at most two fills per bar,
+ * counting the pending command's fill, both fills of a reversal and the
+ * attached exit's fill. Once a bar has two, a pending command waits for its
+ * next match, the opening fill of a reversal moves to the next open, and the
+ * attached exit is neither checked nor trailed until the next bar. Immediate
+ * execution has no such limit.
  * @category Emulator
  */
 export type BrokerEmulator
@@ -937,7 +1164,7 @@ export type BrokerEmulator
 
 	/**
 	 * Clears the trailing-stop state.
-	 * @returns `0`.
+	 * @returns `int`: `0`.
 	 */
 	int reset_trail() =>
 		this.trailActivated := false
@@ -948,9 +1175,18 @@ export type BrokerEmulator
 	/**
 	 * Stop level of the attached exit: its fixed stop, its active trailing
 	 * stop, or the tighter of the two.
+	 *
+	 * In the formula, s is the exit's fixed `stop` and t the trailing stop
+	 * while it is active.
 	 * @param account account view; the position's sign decides which stop is
 	 * tighter
-	 * @returns the stop price, or `na` when there is none.
+	 * @returns `float`: the stop price, or `na` when there is none.
+	 * @formula
+	 * \mathit{stop} = \begin{cases}
+	 * \max(s, t) & \text{long position, both set} \\
+	 * \min(s, t) & \text{short position, both set} \\
+	 * s \text{ or } t & \text{only one set}
+	 * \end{cases}
 	 */
 	float effective_exit_stop(Account account) const =>
 		result = this.attachedExit.stop
@@ -961,9 +1197,20 @@ export type BrokerEmulator
 	/**
 	 * Applies adverse slippage: a buy fills above `referencePrice`, a sell
 	 * below.
+	 *
+	 * In the formula, r is `referencePrice` and v is `slippageValue`, a rate
+	 * or a number of ticks. `match_exit` also keeps a tick-slipped exit price
+	 * at one tick or more.
 	 * @param referencePrice matched price before slippage
 	 * @param side side of the fill
-	 * @returns the execution price.
+	 * @returns `float`: the execution price.
+	 * @formula
+	 * p = \begin{cases}
+	 * r \cdot (1 + v) & \text{buy, rate slippage} \\
+	 * r \cdot (1 - v) & \text{sell, rate slippage} \\
+	 * r + v \cdot \mathit{tickSize} & \text{buy, tick slippage} \\
+	 * r - v \cdot \mathit{tickSize} & \text{sell, tick slippage}
+	 * \end{cases}
 	 */
 	float execution_price(float referencePrice, Side side) const =>
 		isBuy = side == Side.buy
@@ -976,9 +1223,20 @@ export type BrokerEmulator
 
 	/**
 	 * Fee for one fill under the broker's commission setting.
+	 *
+	 * In the formula, c is `commissionValue`. The notional is the quantity
+	 * times the execution price, after slippage. Under `cashPerOrder`, the
+	 * broker charges the opening fill of a reversal nothing instead, because
+	 * the closing fill of the same order already paid.
 	 * @param quantity filled quantity
 	 * @param notional filled notional
-	 * @returns the fee.
+	 * @returns `float`: the fee.
+	 * @formula
+	 * \mathit{fee} = \begin{cases}
+	 * c \cdot \mathit{notional} & \text{rate} \\
+	 * c \cdot \mathit{quantity} & \text{cashPerContract} \\
+	 * c & \text{cashPerOrder}
+	 * \end{cases}
 	 */
 	float commission_for(float quantity, float notional) const =>
 		this.commissionKind == CommissionKind.cashPerContract ? quantity * this.commissionValue : this.commissionKind == CommissionKind.cashPerOrder ? this.commissionValue : notional * this.commissionValue
@@ -986,26 +1244,54 @@ export type BrokerEmulator
 	/**
 	 * Quantity whose notional plus commission spends all of `buyingPower`.
 	 *
-	 * Sizes buy and sell entries that set no size, and caps rebalance buys.
+	 * Sizes entries that set no size, with cash for a buy and equity for a
+	 * sell as `buyingPower`, and caps rebalance buys. Each case solves
+	 * `quantity * price + fee = buyingPower` for the quantity. In the formula,
+	 * C is `buyingPower`, p is `price`, the execution price after slippage,
+	 * and c is `commissionValue`.
 	 * @param price execution price
 	 * @param buyingPower capital to spend
+	 * @returns `float`: the quantity.
+	 * @formula
+	 * q = \begin{cases}
+	 * \dfrac{C}{p \cdot (1 + c)} & \text{rate} \\[2ex]
+	 * \dfrac{C}{p + c} & \text{cashPerContract} \\[2ex]
+	 * \dfrac{C - c}{p} & \text{cashPerOrder}
+	 * \end{cases}
 	 */
 	float default_buy_quantity(float price, float buyingPower) const =>
 		this.commissionKind == CommissionKind.cashPerContract ? buyingPower / (price + this.commissionValue) : this.commissionKind == CommissionKind.cashPerOrder ? (buyingPower - this.commissionValue) / price : buyingPower / (price * (1.0 + this.commissionValue))
 
 	/**
 	 * Quantity whose notional plus commission equals `budget`.
+	 *
+	 * The same computation as
+	 * {@link broker.BrokerEmulator.budgeted_entry_quantity}. In the formula, C
+	 * is `budget`, p is `price` and c is `commissionValue`.
 	 * @param price execution price
 	 * @param budget cash to spend
+	 * @returns `float`: the quantity.
+	 * @formula
+	 * q = \begin{cases}
+	 * \dfrac{C}{p \cdot (1 + c)} & \text{rate} \\[2ex]
+	 * \dfrac{C}{p + c} & \text{cashPerContract} \\[2ex]
+	 * \dfrac{C - c}{p} & \text{cashPerOrder}
+	 * \end{cases}
 	 */
 	float budgeted_buy_quantity(float price, float budget) const =>
 		this.commissionKind == CommissionKind.cashPerContract ? budget / (price + this.commissionValue) : this.commissionKind == CommissionKind.cashPerOrder ? (budget - this.commissionValue) / price : budget / (price * (1.0 + this.commissionValue))
 
 	/**
 	 * Account equity with the position valued at `referencePrice`.
+	 *
+	 * The broker uses the fill's reference price, before slippage, so equity
+	 * for sizing and capital checks does not include the fill's own slippage.
 	 * @param referencePrice price that values the position
 	 * @param account account view
-	 * @returns `buyingPower` plus the position's value.
+	 * @returns `float`: `buyingPower` plus the position's value.
+	 * @formula
+	 * \mathit{equity} = \mathit{buyingPower}
+	 * + \mathit{positionQuantity} \cdot \mathit{referencePrice}
 	 */
 	float equity_at(float referencePrice, Account account) const =>
 		account.buyingPower + account.positionQuantity * referencePrice
@@ -1014,9 +1300,18 @@ export type BrokerEmulator
 	 * Quantity whose notional plus commission equals `budget`.
 	 *
 	 * Sizes `cashBudget` entries and commission-inclusive `equityPercent`
-	 * entries.
+	 * entries. Each case solves `quantity * price + fee = budget` for the
+	 * quantity. In the formula, C is `budget`, p is `price`, the execution
+	 * price after slippage, and c is `commissionValue`.
 	 * @param price execution price
 	 * @param budget cash to spend
+	 * @returns `float`: the quantity.
+	 * @formula
+	 * q = \begin{cases}
+	 * \dfrac{C}{p \cdot (1 + c)} & \text{rate} \\[2ex]
+	 * \dfrac{C}{p + c} & \text{cashPerContract} \\[2ex]
+	 * \dfrac{C - c}{p} & \text{cashPerOrder}
+	 * \end{cases}
 	 */
 	float budgeted_entry_quantity(float price, float budget) const =>
 		this.commissionKind == CommissionKind.cashPerContract ? budget / (price + this.commissionValue) : this.commissionKind == CommissionKind.cashPerOrder ? (budget - this.commissionValue) / price : budget / (price * (1.0 + this.commissionValue))
@@ -1042,11 +1337,15 @@ export type BrokerEmulator
 	 * An entry with a `stop` becomes a stop order and anything else a market
 	 * order. A pending stop entry is replaced by a stop entry with the same
 	 * id, and a pending rebalance by a rebalance with the same id; the old
-	 * order is cancelled. Invalid commands, and commands that would need a
-	 * second pending order, are rejected; see {@link broker.Rejection}. Called
+	 * order is cancelled. It rejects on the spot only a wrong kind or side, an
+	 * invalid stop or rebalance target, an entry on the open position's side
+	 * under another command id, and a command that would need a second
+	 * pending order. Size, settings and capital are checked on the bar the
+	 * order would fill: a command with a negative quantity, for example, is
+	 * accepted here and rejected there; see {@link broker.Rejection}. Called
 	 * by the coordinators' `entry`, `close` and `rebalance`.
 	 * @param command command to submit
-	 * @returns the accepted order, or `na` when rejected.
+	 * @returns `broker.Order`: the accepted order, or `na` when rejected.
 	 */
 	Order submit(Command command) =>
 		Order order = na
@@ -1086,7 +1385,7 @@ export type BrokerEmulator
 	 * the command id and the entry match. Called by `exit` of
 	 * {@link trade.OhlcTrade} and {@link trade.PathTrade}.
 	 * @param command exit command
-	 * @returns the accepted exit order, or `na` when rejected.
+	 * @returns `broker.Order`: the accepted exit order, or `na` when rejected.
 	 */
 	Order submit_exit(Command command) =>
 		Order order = na
@@ -1131,7 +1430,7 @@ export type BrokerEmulator
 	 * Cancelling a pending entry also cancels the exit attached to it while no
 	 * position is open. Called by the coordinators' `cancel`.
 	 * @param commandId command id to cancel
-	 * @returns the number of orders cancelled, at most `2`.
+	 * @returns `int`: the number of orders cancelled, at most `2`.
 	 */
 	int cancel(string commandId) =>
 		cancelled = 0
@@ -1170,7 +1469,7 @@ export type BrokerEmulator
 	 * @param side side of the refused command
 	 * @param barIndex bar index of the refusal
 	 * @param reason why it was refused
-	 * @returns `0`.
+	 * @returns `int`: `0`.
 	 */
 	int reject(string commandId, Side side, int barIndex, Rejection reason) =>
 		emit.append "broker.OrderRejected" OrderRejected.new(commandId, side, barIndex, reason)
@@ -1184,7 +1483,7 @@ export type BrokerEmulator
 	 * @param highPrice the bar's high
 	 * @param lowPrice the bar's low
 	 * @param stopPrice stop level
-	 * @returns `true` when touched.
+	 * @returns `bool`: `true` when touched.
 	 */
 	bool stop_touched(Side closeSide, float highPrice, float lowPrice, float stopPrice) const =>
 		closeSide == Side.sell and lowPrice <= stopPrice or closeSide == Side.buy and highPrice >= stopPrice
@@ -1204,7 +1503,7 @@ export type BrokerEmulator
 	 * @param stopPrice stop level
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
 	 */
 	Fill execute_if_stop_touched(Command command, float openPrice, float highPrice, float lowPrice, float stopPrice, Account account, int barIndex) =>
 		Fill execution = na
@@ -1226,14 +1525,28 @@ export type BrokerEmulator
 	 * The command needs exactly one positive `quantity` or `notional`. An
 	 * entry needs pyramiding capacity and, unless its margin is `0`, enough
 	 * capital, and gets a new stable trade id; a close needs a positive
-	 * `tradeId` and the side opposite the open position. Emits
-	 * {@link broker.OrderSubmitted} and {@link broker.FillExecuted} on
-	 * success. Called by `entry` and `close_trade` of {@link trade.LotTrade}.
+	 * `tradeId` and the side opposite the open position, and has no capital
+	 * check. Emits {@link broker.OrderSubmitted} and
+	 * {@link broker.FillExecuted} on success. Called by `entry` and
+	 * `close_trade` of {@link trade.LotTrade}.
+	 *
+	 * In the formula, p is the execution price of `closePrice`, m is the
+	 * account's `marginLong` for a buy and `marginShort` for a sell, and A is
+	 * the cash for a buy and the equity at `closePrice` for a sell.
 	 * @param command entry or close command
 	 * @param closePrice the bar's close, used as the reference price
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na` when rejected.
+	 * @returns `broker.Fill`: the fill, or `na` when rejected.
+	 * @formula
+	 * \begin{aligned}
+	 * q &= \begin{cases}
+	 * \mathit{quantity} & \text{quantity set} \\
+	 * \mathit{notional} / p & \text{notional set}
+	 * \end{cases} \\[1ex]
+	 * &\text{an entry needs } m = 0 \text{ or }
+	 * q \cdot p \cdot m / 100 + \mathit{fee} \le A
+	 * \end{aligned}
 	 */
 	Fill execute_at_close(Command command, float closePrice, Account account, int barIndex) =>
 		Fill execution = na
@@ -1283,14 +1596,65 @@ export type BrokerEmulator
 	 * signal bar on during close processing with `processOrdersOnClose` set,
 	 * and only while the bar has fewer than two fills. Once attempted, it
 	 * stops being pending whether it filled or was rejected, unless a reversal
-	 * still owes its opening fill.
+	 * still owes its opening fill. An entry against an opposite position first
+	 * closes the whole position; its opening fill is sized from the account
+	 * after the portfolio applies that close.
+	 *
+	 * In the formula, r is `referencePrice` and p its execution price after
+	 * slippage; B is the account's cash, Q its signed position and E its
+	 * equity at r. A is the available capital, B for a buy and E for a sell,
+	 * and m the account's `marginLong` for a buy and `marginShort` for a
+	 * sell. `D(C)` is the quantity whose notional plus fee is C at p, from
+	 * {@link broker.BrokerEmulator.default_buy_quantity}; for the opening
+	 * fill of a reversal under `cashPerOrder` it is `C / p`. Closes and the
+	 * closing fill of a reversal have no capital check. Every fill also needs
+	 * a positive price and quantity.
+	 *
+	 * For a rebalance, v is the target's value and T the target quantity.
+	 * When `|T - Q|` is at most `0.0000001`, the order is cancelled. When the
+	 * cap does not cut the quantity and m is not `0`, a rebalance fill that
+	 * grows the exposure needs `q_open * p * m / 100 + fee + s` at most E if
+	 * the position ends short or crosses zero, else at most B. Here `q_open`
+	 * is the quantity the fill opens, and s is
+	 * `min(|Q|, q_rebalance) * |p - r|` when the fill crosses zero and `0`
+	 * otherwise.
 	 * @param referencePrice matched price before slippage
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
 	 * @param atClose whether this is close processing
 	 * @param priceTriggered whether the caller's trigger check passed
 	 * @param reversalContinuation whether this call completes a reversal
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
+	 * @formula
+	 * \begin{aligned}
+	 * E &= B + Q \cdot r, \qquad
+	 * P = E \cdot \mathit{equityPercent} / 100 \\[1ex]
+	 * q &= \begin{cases}
+	 * \mathit{quantity} & \text{quantity set} \\
+	 * \mathit{notional} / p & \text{notional set} \\
+	 * D(\mathit{cashBudget}) & \text{cashBudget set} \\
+	 * P / p & \text{equityPercent set} \\
+	 * D(P) & \text{equityPercent and commissionIncluded set} \\
+	 * D(B) \text{ for a buy},\ D(E) \text{ for a sell} & \text{no size set} \\
+	 * |Q| & \text{close, or closing fill of a reversal}
+	 * \end{cases} \\[1ex]
+	 * &\text{an entry with a size needs } m = 0 \text{ or }
+	 * \begin{cases}
+	 * \mathit{cashBudget} \le A & \text{cashBudget set} \\
+	 * P \le A & \text{equityPercent and commissionIncluded set} \\
+	 * q \cdot p \cdot m / 100 + \mathit{fee} \le A & \text{otherwise}
+	 * \end{cases} \\[1ex]
+	 * &\text{an entry without a size needs } A > 0 \\[1ex]
+	 * T &= \begin{cases}
+	 * v & \text{quantity target} \\
+	 * E \cdot v / (100 \cdot r) & \text{percent target, needs } r > 0,\ E > 0
+	 * \end{cases} \\[1ex]
+	 * q_{\text{rebalance}} &= \begin{cases}
+	 * \min(T - Q,\ \max(D(B), 0))
+	 * & T > Q \ge 0 \text{ and } \mathit{marginLong} \ne 0 \\
+	 * |T - Q| & \text{otherwise}
+	 * \end{cases}
+	 * \end{aligned}
 	 */
 	Fill execute(float referencePrice, Account account, int barIndex, bool atClose, bool priceTriggered = true, bool reversalContinuation = false) =>
 		Fill execution = na
@@ -1452,12 +1816,12 @@ export type BrokerEmulator
 	 *
 	 * Market orders fill at the open, and a stop entry fills there when the
 	 * open is at or past its stop; a reversal deferred from an earlier bar
-	 * completes here. Commands issued on this bar wait for a later bar. Called
-	 * by `begin_bar` of {@link trade.NextOpenTrade}.
+	 * completes here. Commands issued on this bar cannot fill here. Called by
+	 * `begin_bar` of {@link trade.NextOpenTrade}.
 	 * @param referencePrice the bar's open
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
 	 */
 	Fill on_open(float referencePrice, Account account, int barIndex) =>
 		deferredReversal = this.reversalPending and this.matchedBarIndex != barIndex
@@ -1468,15 +1832,15 @@ export type BrokerEmulator
 	 * Matches the pending command against the bar's open, high and low.
 	 *
 	 * Market orders fill at the open. A stop entry fills at the open when the
-	 * bar gaps past its stop, otherwise at the stop when the high (buy) or low
-	 * (sell) reaches it. A reversal deferred from an earlier bar completes at
-	 * the open. Called by `begin_bar` of {@link trade.OhlcTrade}.
+	 * open is at or past its stop, otherwise at the stop when the high (buy)
+	 * or low (sell) reaches it. A reversal deferred from an earlier bar
+	 * completes at the open. Called by `begin_bar` of {@link trade.OhlcTrade}.
 	 * @param openPrice the bar's open
 	 * @param highPrice the bar's high
 	 * @param lowPrice the bar's low
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
 	 */
 	Fill match_pending(float openPrice, float highPrice, float lowPrice, Account account, int barIndex) =>
 		Fill execution = na
@@ -1509,7 +1873,7 @@ export type BrokerEmulator
 	 * @param closePrice the bar's close
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
 	 */
 	Fill match_path_primary(float openPrice, float highPrice, float lowPrice, float closePrice, Account account, int barIndex) =>
 		this.pathBarIndex := barIndex
@@ -1571,7 +1935,7 @@ export type BrokerEmulator
 	 * then completes at the next open.
 	 * @param account account view refreshed after the closing fill
 	 * @param barIndex current bar index
-	 * @returns the opening fill, or `na`.
+	 * @returns `broker.Fill`: the opening fill, or `na`.
 	 */
 	Fill continue_reversal(Account account, int barIndex) =>
 		Fill execution = na
@@ -1591,14 +1955,35 @@ export type BrokerEmulator
 	 * level, and when both are touched, the side whose extreme is nearer the
 	 * open wins, ties going to the stop. A triggered exit is removed even if
 	 * its fill is rejected, and outside `match_path_exit` a trailing exit is
-	 * rejected and removed. Tick slippage cannot take the exit price below one
-	 * tick. Called by `begin_bar` of {@link trade.OhlcTrade}.
+	 * rejected with `invalidAccountState` and removed. Tick slippage cannot
+	 * take the exit price below one tick. Called by `begin_bar` of
+	 * {@link trade.OhlcTrade}.
+	 *
+	 * In the formula, S is the stop from
+	 * {@link broker.BrokerEmulator.effective_exit_stop} and G the target. For
+	 * a long position the open is past S at or below it and past G at or
+	 * above it, `d_stop` is `open - low` and `d_target` is `high - open`; a
+	 * short position mirrors this.
 	 * @param openPrice the bar's open
 	 * @param highPrice the bar's high
 	 * @param lowPrice the bar's low
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the exit fill, or `na`.
+	 * @returns `broker.Fill`: the exit fill, or `na`.
+	 * @formula
+	 * \begin{aligned}
+	 * r &= \begin{cases}
+	 * \mathit{openPrice} & \text{the open is past } S \text{ or } G \\
+	 * G & \text{only } G \text{ reached, or both and }
+	 * d_{\text{target}} < d_{\text{stop}} \\
+	 * S & \text{otherwise}
+	 * \end{cases} \\[1ex]
+	 * p &= \begin{cases}
+	 * \max(\mathrm{execution\_price}(r),\ \mathit{tickSize})
+	 * & \text{tick slippage} \\
+	 * \mathrm{execution\_price}(r) & \text{rate slippage}
+	 * \end{cases}
+	 * \end{aligned}
 	 */
 	Fill match_exit(float openPrice, float highPrice, float lowPrice, Account account, int barIndex) =>
 		Fill execution = na
@@ -1671,14 +2056,30 @@ export type BrokerEmulator
 	/**
 	 * Activates and ratchets the trailing stop over one path segment.
 	 *
-	 * It activates once price reaches `trailPrice`, then keeps the stop
-	 * `trailOffset` behind the best price so far; only moves in the position's
-	 * favor advance it.
+	 * It acts only while the exit is live and the bar has fewer than two
+	 * fills, and only on a segment that moves in the position's favor or on a
+	 * single point. The stop activates when such a segment ends at or past
+	 * `trailPrice`: at or above it for a long position, at or below it for a
+	 * short one. From then on it stays `trailOffset` behind the best price b,
+	 * so only moves in the position's favor advance it. In the formula, x is
+	 * `toPrice`.
 	 * @param fromPrice segment start price
 	 * @param toPrice segment end price
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns `0`.
+	 * @returns `int`: `0`.
+	 * @formula
+	 * \begin{aligned}
+	 * b &= \begin{cases}
+	 * x & \text{on activation} \\
+	 * \max(b, x) & \text{long position, after activation} \\
+	 * \min(b, x) & \text{short position, after activation}
+	 * \end{cases} \\[1ex]
+	 * \mathit{trailStop} &= \begin{cases}
+	 * b - \mathit{trailOffset} & \text{long position} \\
+	 * b + \mathit{trailOffset} & \text{short position}
+	 * \end{cases}
+	 * \end{aligned}
 	 */
 	int update_trail(float fromPrice, float toPrice, Account account, int barIndex) =>
 		if not na(this.attachedExit) and not na(this.activeEntryId) and this.attachedExit.fromEntry == this.activeEntryId and account.positionQuantity != 0.0 and this.fillsThisBar < 2
@@ -1704,7 +2105,7 @@ export type BrokerEmulator
 	 * @param toPrice segment end price
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the exit fill, or `na`.
+	 * @returns `broker.Fill`: the exit fill, or `na`.
 	 */
 	Fill match_path_exit_segment(float fromPrice, float toPrice, Account account, int barIndex) =>
 		execution = this.match_exit(fromPrice, math.max(fromPrice, toPrice), math.min(fromPrice, toPrice), account, barIndex)
@@ -1726,7 +2127,7 @@ export type BrokerEmulator
 	 * @param closePrice the bar's close
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the exit fill, or `na`.
+	 * @returns `broker.Fill`: the exit fill, or `na`.
 	 */
 	Fill match_path_exit(float openPrice, float highPrice, float lowPrice, float closePrice, Account account, int barIndex) =>
 		highFirst = math.abs(highPrice - openPrice) < math.abs(openPrice - lowPrice)
@@ -1763,7 +2164,7 @@ export type BrokerEmulator
 	 * @param referencePrice the bar's close
 	 * @param account account view from the portfolio
 	 * @param barIndex current bar index
-	 * @returns the fill, or `na`.
+	 * @returns `broker.Fill`: the fill, or `na`.
 	 */
 	Fill on_close(float referencePrice, Account account, int barIndex) =>
 		deferredReversal = this.reversalPending and this.matchedBarIndex != barIndex
@@ -1777,7 +2178,7 @@ export type BrokerEmulator
 	 * Emits {@link broker.OrderExpired} for each expired order; it does not
 	 * close positions. Called by the coordinators' `end_bar` and `finish` on
 	 * the final bar.
-	 * @returns the expired orders.
+	 * @returns `broker.FinishResult`: the expired orders.
 	 */
 	FinishResult finish() =>
 		expired = this.pending
@@ -1805,10 +2206,42 @@ export type BrokerEmulator
 /**
  * Commission charged as a fraction of each fill's notional.
  *
- * `0.001` charges 0.1%. A negative or `na` rate makes the broker reject every
- * fill with `invalidConfiguration`.
+ * `0.001` charges 0.1%. The notional is the filled quantity times the
+ * execution price, after slippage. A negative or `na` rate makes the broker
+ * reject every order with `invalidConfiguration` when it would fill.
  * @param rate commission as a fraction of notional
- * @returns a `rate` {@link broker.Commission}.
+ * @returns `broker.Commission`: a `rate` commission holding `rate`.
+ * @example
+ * A 10-unit buy at the open of 110 on index 1, sold at the open of 120 on
+ * index 2. Each fill pays 0.1% of its notional: 1.1 on 1100, then 1.2 on
+ * 1200.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.nextOpen(
+ *     broker.new(commission = broker.commissionRate(0.001)),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 10.0)
+ * if bar_index == 1
+ *     strat.close("Long")
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "notional" filled.notional
+ * emit "fee" filled.fee
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,110,112
+ * 2,120,118
+ * ```
+ * @see broker.commissionPercent
+ * @see broker.Commission
  * @category Commission and slippage
  */
 export commissionRate(float rate = 0.0) =>
@@ -1819,7 +2252,34 @@ export commissionRate(float rate = 0.0) =>
  *
  * `0.1` charges 0.1%; the same as `commissionRate(percent / 100)`.
  * @param percent commission as a percent of notional
- * @returns a `rate` {@link broker.Commission} holding `percent / 100`.
+ * @returns `broker.Commission`: a `rate` commission holding `percent / 100`.
+ * @example
+ * `commissionPercent(0.1)` holds the rate 0.001, so a 10-unit buy at the
+ * open of 110 on index 1 pays 1.1, as with `commissionRate(0.001)`.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * setting = broker.commissionPercent(0.1)
+ * var strat = trade.nextOpen(
+ *     broker.new(commission = setting),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 10.0)
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "rate" setting.value
+ * emit "fee" filled.fee
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,110,112
+ * ```
+ * @see broker.commissionRate
  * @category Commission and slippage
  */
 export commissionPercent(float percent = 0.0) =>
@@ -1827,8 +2287,42 @@ export commissionPercent(float percent = 0.0) =>
 
 /**
  * Commission charged as fixed cash per unit of filled quantity.
+ *
+ * The fee does not depend on the price. A negative or `na` amount makes the
+ * broker reject every order with `invalidConfiguration` when it would fill.
  * @param cash cash per unit
- * @returns a `cashPerContract` {@link broker.Commission}.
+ * @returns `broker.Commission`: a `cashPerContract` commission holding
+ * `cash`.
+ * @example
+ * 2.5 per unit: the 10-unit buy at the open of 110 on index 1 and its sale
+ * at the open of 120 on index 2 each pay 25, so cash goes from 10000 to 8875
+ * and then to 10050.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.nextOpen(
+ *     broker.new(commission = broker.commissionCashPerContract(2.5)),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 10.0)
+ * if bar_index == 1
+ *     strat.close("Long")
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "fee" filled.fee
+ * emit "cash" strat.cash()
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,110,112
+ * 2,120,118
+ * ```
+ * @see broker.Commission
  * @category Commission and slippage
  */
 export commissionCashPerContract(float cash = 0.0) =>
@@ -1837,9 +2331,43 @@ export commissionCashPerContract(float cash = 0.0) =>
 /**
  * Commission charged as fixed cash per order.
  *
- * A reversal's closing and opening fills belong to one order and pay it once.
+ * The closing and opening fills of a scheduled reversal belong to one order
+ * and pay it once. A negative or `na` amount makes the broker reject every
+ * order with `invalidConfiguration` when it would fill.
  * @param cash cash per order
- * @returns a `cashPerOrder` {@link broker.Commission}.
+ * @returns `broker.Commission`: a `cashPerOrder` commission holding `cash`.
+ * @example
+ * 7 per order. The 10-unit buy on index 1 pays 7. The short entry submitted
+ * on index 1 reverses the position on index 2 with two fills of one order:
+ * the closing fill pays 7 and the opening fill shown pays 0, so total fees
+ * reach 14.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.nextOpen(
+ *     broker.new(commission = broker.commissionCashPerOrder(7.0)),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 10.0)
+ * if bar_index == 1
+ *     strat.entry("Short", trade.Direction.short, qty = 10.0)
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "fee" filled.fee
+ * emit "totalFees" strat.snapshot().totalFees
+ * emit "position" strat.position_quantity()
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,110,112
+ * 2,120,118
+ * ```
+ * @see broker.Commission
  * @category Commission and slippage
  */
 export commissionCashPerOrder(float cash = 0.0) =>
@@ -1850,9 +2378,38 @@ export commissionCashPerOrder(float cash = 0.0) =>
  *
  * `0.001` fills buys 0.1% above and sells 0.1% below the matched price. The
  * rate must be at least `0` and below `1`; otherwise the broker rejects every
- * fill with `invalidConfiguration`.
+ * order with `invalidConfiguration` when it would fill.
  * @param rate slippage as a fraction of price
- * @returns a `rate` {@link broker.Slippage}.
+ * @returns `broker.Slippage`: a `rate` slippage holding `rate`.
+ * @example
+ * A 10-unit buy at the open of 110 on index 1 fills 1% higher, at 111.1; the
+ * sale at the open of 120 on index 2 fills 1% lower, at 118.8.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.nextOpen(
+ *     broker.new(slippage = broker.slippageRate(0.01)),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 10.0)
+ * if bar_index == 1
+ *     strat.close("Long")
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "price" filled.price
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,110,112
+ * 2,120,118
+ * ```
+ * @see broker.slippagePercent
+ * @see broker.slippageTicks
  * @category Commission and slippage
  */
 export slippageRate(float rate = 0.0) =>
@@ -1864,7 +2421,34 @@ export slippageRate(float rate = 0.0) =>
  * `0.1` moves each fill 0.1% against the order; the same as
  * `slippageRate(percent / 100)`.
  * @param percent slippage as a percent of price
- * @returns a `rate` {@link broker.Slippage} holding `percent / 100`.
+ * @returns `broker.Slippage`: a `rate` slippage holding `percent / 100`.
+ * @example
+ * `slippagePercent(1.0)` holds the rate 0.01, so a buy at the open of 110 on
+ * index 1 fills at 111.1, as with `slippageRate(0.01)`.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * setting = broker.slippagePercent(1.0)
+ * var strat = trade.nextOpen(
+ *     broker.new(slippage = setting),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 10.0)
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "rate" setting.value
+ * emit "price" filled.price
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,110,112
+ * ```
+ * @see broker.slippageRate
  * @category Commission and slippage
  */
 export slippagePercent(float percent = 0.0) =>
@@ -1875,26 +2459,42 @@ export slippagePercent(float percent = 0.0) =>
  *
  * Buys fill `ticks * tickSize` above the matched price and sells the same
  * distance below. Neither may be negative, and `tickSize` must be positive
- * whenever `ticks` is not zero; otherwise the broker rejects every fill with
- * `invalidConfiguration`.
- *
+ * whenever `ticks` is not zero; otherwise the broker rejects every order
+ * with `invalidConfiguration` when it would fill. An attached exit fills at
+ * no less than one tick, even when the slipped price would be lower.
+ * @param ticks number of ticks per fill
+ * @param tickSize price size of one tick
+ * @returns `broker.Slippage`: a `ticks` slippage holding `ticks` and
+ * `tickSize`.
+ * @example
+ * Two ticks of 0.25: the 10-unit buy at the open of 110 on index 1 fills 0.5
+ * higher, at 110.5, and the sale at the open of 120 on index 2 fills 0.5
+ * lower, at 119.5.
  * ```tea
  * import broker
  * import portfolio
  * import trade
  *
- * // Two ticks of 0.25 against every fill, plus 2.5 per contract.
  * var strat = trade.nextOpen(
- *     broker.new(
- *         commission = broker.commissionCashPerContract(2.5),
- *         slippage = broker.slippageTicks(2.0, 0.25)
- *     ),
- *     portfolio.new(initialCash = 50000.0)
+ *     broker.new(slippage = broker.slippageTicks(2.0, 0.25)),
+ *     portfolio.new(initialCash = 10000.0)
  * )
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 10.0)
+ * if bar_index == 1
+ *     strat.close("Long")
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "price" filled.price
  * ```
- * @param ticks number of ticks per fill
- * @param tickSize price size of one tick
- * @returns a `ticks` {@link broker.Slippage}.
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,110,112
+ * 2,120,118
+ * ```
+ * @see broker.slippageRate
  * @category Commission and slippage
  */
 export slippageTicks(float ticks = 0.0, float tickSize = 0.0) =>
@@ -1908,36 +2508,71 @@ export slippageTicks(float ticks = 0.0, float tickSize = 0.0) =>
  * `processOrdersOnClose = true`, the next-open and OHLC coordinators also fill
  * pending commands at bar closes, including the close of the bar a command was
  * issued on. Pass the result to a trade coordinator such as
- * {@link trade.nextOpen}.
- *
- * ```tea
- * import broker
- * import portfolio
- * import trade
- *
- * var strat = trade.ohlc(
- *     broker.new(
- *         commission = broker.commissionPercent(0.05),
- *         slippage = broker.slippageTicks(1.0, 0.01),
- *         processOrdersOnClose = true
- *     ),
- *     portfolio.new(initialCash = 10000.0)
- * )
- *
- * average = ta.sma(close, 20)
- * strat.begin_bar(open, high, low, bar_index)
- * if ta.crossover(close, average)
- *     // Fills at this bar's close because processOrdersOnClose is true.
- *     strat.entry("Long", trade.Direction.long, qty = 10.0)
- * strat.end_bar(close, false)
- * ```
+ * {@link trade.nextOpen}. {@link broker.BrokerEmulator} lists the execution
+ * rules.
  * @param commission commission setting from a helper such as
  * {@link broker.commissionRate}
  * @param slippage adverse slippage setting from a helper such as
  * {@link broker.slippageTicks}
  * @param processOrdersOnClose whether pending commands may also fill at bar
  * closes
- * @returns a new {@link broker.BrokerEmulator}.
+ * @returns `broker.BrokerEmulator`: a new broker with no pending orders.
+ * @example
+ * A 10-unit buy submitted on index 0 fills at the open of 110 on index 1.
+ * Slippage of 1% raises the price to 111.1, the 0.1% commission on the 1111
+ * notional is 1.111, and cash falls from 10000 to 8887.889.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.nextOpen(
+ *     broker.new(
+ *         commission = broker.commissionRate(0.001),
+ *         slippage = broker.slippageRate(0.01)
+ *     ),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 10.0)
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "price" filled.price
+ * emit "fee" filled.fee
+ * emit "cash" strat.cash()
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,110,112
+ * ```
+ * @example
+ * With `processOrdersOnClose = true`, a 10-unit buy fills at the close of 104
+ * on index 0, the bar it was submitted on, so cash falls to 8960 there.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.nextOpen(
+ *     broker.new(processOrdersOnClose = true),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 10.0)
+ * strat.end_bar(close, false)
+ * emit "close" close
+ * emit "position" strat.position_quantity()
+ * emit "cash" strat.cash()
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,104
+ * 1,110,112
+ * ```
+ * @see broker.basic
  * @category Creating brokers
  */
 export new(
@@ -1957,20 +2592,38 @@ export new(
  * `slippage = broker.slippageRate(adverseSlippageRate)` and
  * `processOrdersOnClose = false`. Note the argument order: slippage first,
  * then the fee.
- *
+ * @param adverseSlippageRate slippage as a fraction of price, as in
+ * {@link broker.slippageRate}
+ * @param takerFeeRate commission as a fraction of notional, as in
+ * {@link broker.commissionRate}
+ * @returns `broker.BrokerEmulator`: a new broker without close processing.
+ * @example
+ * `broker.basic(0.01, 0.001)` is 1% slippage and a 0.1% fee, the broker of
+ * the first {@link broker.new} example: the buy at the open of 110 fills at
+ * 111.1 and pays 1.111.
  * ```tea
  * import broker
  * import portfolio
  * import trade
  *
- * // 0.05% adverse slippage, then a 0.1% commission.
- * var strat = trade.nextOpen(broker.basic(0.0005, 0.001), portfolio.new())
+ * var strat = trade.nextOpen(
+ *     broker.basic(0.01, 0.001),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 10.0)
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "price" filled.price
+ * emit "fee" filled.fee
  * ```
- * @param adverseSlippageRate slippage as a fraction of price, as in
- * {@link broker.slippageRate}
- * @param takerFeeRate commission as a fraction of notional, as in
- * {@link broker.commissionRate}
- * @returns a new {@link broker.BrokerEmulator} without close processing.
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,110,112
+ * ```
+ * @see broker.new
  * @category Creating brokers
  */
 export basic(float adverseSlippageRate = 0.0, float takerFeeRate = 0.0) =>

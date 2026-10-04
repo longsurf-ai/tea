@@ -170,11 +170,3 @@ mode, result layout, and synchronization policy. This is static language data,
 not an instruction for Tea to acquire external data.
 The application chooses how much history the child DataStream holds; Node
 correctness depends only on the stream it actually receives.
-
-## Staged beyond this slice
-
-- dynamic requests;
-- requests nested inside another request capture;
-- live watermark policies;
-- an application-specific source registry, if an application chooses to build
-  one.

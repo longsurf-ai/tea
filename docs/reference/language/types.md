@@ -106,11 +106,12 @@ emit "labels" labels.size() // 0
 
 ## Collections
 
-Arrays, matrices and maps hold their contents by value: assigning a collection
-gives the destination the collection's current contents, and a later update
-through one variable or field does not change the others. A collection of
-structs holds references to them. The [memory model](../../memory-model.md)
-defines both behaviors.
+Arrays, matrices and maps hold their contents by value: assigning a collection,
+or passing it to a function, gives the destination the collection's current
+contents, and a later update through one variable, field or parameter does not
+change the others. A function that pushes to its argument leaves the caller's
+collection unchanged. A collection of structs holds references to them. The
+[memory model](../../memory-model.md) defines both behaviors.
 
 A collection is updated by a built-in function such as `push`, called on a
 variable or a struct field. A temporary collection, or one read through
@@ -138,7 +139,7 @@ Positions start at zero.
   [history](./expressions.md) of `values`. Use `values.get(i)` and
   `values.set(i, x)`, or visit every element with
   [`for … in`](./control-flow.md).
-- Reading outside the array's bounds stops the step with a runtime error.
+- Reading outside the array's bounds stops the run with a runtime error.
 
 Assigning an array keeps the value it had at that moment:
 
@@ -244,7 +245,7 @@ The value of `[a, b]`: several values returned together, by a function or a
 block. A tuple must be [destructured](./declarations.md#tuple-destructuring)
 at its declaration, as `[bottom, top] = f()`. It cannot be stored in one
 variable, a field or a collection, read through history, or compared. Its
-elements cannot be bare `na`.
+elements cannot be bare `na` or another tuple.
 
 ### `void`
 
@@ -265,6 +266,8 @@ A qualifier says when a value becomes known. From least to most variable:
 
 A value can be used wherever a later qualifier is accepted: a `const` value
 works where a `series` one is expected, never the other way.
+[Reading the reference](../overview.md#reading-signatures) explains how
+signatures show the qualifiers a parameter accepts.
 
 ```tea
 length = input.int(14, "Length") // input int
@@ -339,11 +342,5 @@ be used where at most `simple` is accepted.
 - A plain variable takes its initializer's qualifier. It is `series` if it is
   reassigned, or its collection updated, anywhere, and a variable declared with
   `var` or `varip` is always `series`. A `const` declaration is `const`.
-
-### Qualifiers in reference signatures
-
-Built-in parameter tables list each parameter's type with the most variable
-qualifier it accepts: `simple int` accepts `const`, `input` and `simple`
-arguments, and `series float` accepts any float. Functions written in Tea, such
-as [`ta`](../builtins/ta.md), show their declarations as written; a parameter
-without a qualifier accepts any.
+- Names declared by destructuring a tuple all take the most variable qualifier
+  of the whole tuple: after `[a, b] = [2, close]`, `a` is a `series int`.

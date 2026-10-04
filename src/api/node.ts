@@ -65,7 +65,13 @@ const noBuiltins: BuiltinSupplier = (path, module) => {
   return [];
 };
 
-/** Values accepted by `Node.bind()`: parameters, one stream, or named streams. */
+/**
+ * What {@link Node.bind} accepts: one {@link DataStream}, a record of named
+ * DataStreams, or a record of parameter values.
+ *
+ * A record is named streams only when it is non-empty and every value is a
+ * DataStream. Any other record, including `{}`, is a parameter patch.
+ */
 export type BindingInput =
   | DataStream<unknown>
   | Readonly<Record<string, unknown>>;
@@ -73,39 +79,86 @@ export type BindingInput =
 /**
  * A compiled Tea program that can be bound to streams and observed as output.
  *
- * Binding derives a new Node and module tree; stream connections live only in
- * the Node. Each derived Node owns the input
- * Observable graph, one child Node per request, and the runtime created when
- * execution starts. Module readiness describes configuration; Node readiness
- * also requires the source streams to be connected.
+ * `bind()` returns a new Node and never changes the receiver. The first
+ * `to()` call starts one run, which later observers share, and `dispose()`
+ * stops it. Each `request.*` declaration in the script runs as a child with
+ * its own parameters, streams and runtime. `module.ready()` covers only
+ * parameters and request settings; `ready()` also requires the streams.
  */
 export interface Node {
   /**
-   * The compiled module owned by this Node, including Arrow schemas and request
-   * children. It contains no stream connection state. Binding leaves it unchanged.
+   * The compiled module of this Node: its parameters, its input and output
+   * Arrow schemas, and its request children.
    *
-   * @example After `const bound = node.bind({length: 20})`, `bound.module.parameters[0].value`
+   * It holds no streams, and binding never changes it: each Node that
+   * `bind()` returns has its own module.
+   *
+   * @example For a script declaring `length = input.int(14)` first, after
+   * `const bound = node.bind({length: 20})`, `bound.module.parameters[0].value`
    * is 20. `node.module.ready()` may be true before `node.ready()`, which also
-   * requires connected streams.
+   * requires bound streams.
    */
   readonly module: Module;
 
   /**
-   * Returns a Node with a parameter patch or input streams, without subscribing.
-   * Parameter binding preserves previous values and fills only unset defaults;
-   * stream binding validates every requested field before deriving connections.
-   * A path selects nested request declaration names; no parent values are inherited.
-   * Streams may declare non-nullable Bool `provisional` metadata; it defaults
-   * to false. Repeated timed attempts require a pending provisional step;
-   * finalizing it commits one index before the source may advance time.
+   * Returns a new Node with parameter values or streams bound, leaving this
+   * Node unchanged and subscribing to nothing.
    *
-   * @example `node.bind({length: 20}).bind(closeStream)` derives a root run;
-   * `node.bind({length: 50}, ['daily'])` configures an independent child.
+   * The input takes one of three forms:
+   *
+   * - A {@link DataStream} supplies every series this Node reads that is not
+   *   bound yet; its schema must have a field for each.
+   * - A non-empty record whose values are all DataStreams binds streams by
+   *   name. A key names a series, such as `close`, or a request declared at
+   *   the top level of the script, such as `daily` in
+   *   `daily = request.security(...)`; that stream then supplies every series
+   *   the request's expression reads.
+   * - Any other record, including `{}`, sets parameters by input name. Named
+   *   inputs take the new values, inputs without a value take their defaults,
+   *   and the others keep theirs. So `bind({length: 5, close: stream})` throws
+   *   for the unknown parameter `close`: bind the stream in a separate call.
+   *
+   * `path` names a request declared at the top level, such as `['daily']`, and
+   * binds the input to that request instead of the main script. A request has
+   * its own copy of the inputs its expression uses: setting `length` on the
+   * main script leaves the request's `length` unchanged.
+   *
+   * A series field must be a non-nullable Arrow float, or an integer of at
+   * most 32 bits. A field named `time` of type `TimestampMillisecond` or
+   * `Int64` makes the stream timed: a row's time, when it has one, must be a
+   * whole number of epoch milliseconds that never decreases. A row may repeat
+   * the time of the row before it only when that row was provisional, and the
+   * row after a provisional row must repeat its time. A `time` field of
+   * another type is ignored.
+   *
+   * A stream may also have a non-nullable `Bool` field named `provisional`,
+   * read on every row: `true` marks a provisional update of the current bar,
+   * which later rows replace, and the next `false` row finalizes that bar.
+   * Without the field, every row is final.
+   *
+   * Streams bound to one Node are paired by position: their first rows form
+   * the first input row, and so on, and the run ends when any of them ends.
+   * Paired rows must agree on `time`, when both have one, and on
+   * `provisional`. Streams with a regular {@link Clock} must share it.
+   *
+   * Throws {@link BindError} for an unknown parameter or a value the input
+   * does not accept, a key or path that matches no declaration or more than
+   * one, a series that is already bound, a schema that lacks a series or gives
+   * it the wrong type, a `provisional` field that is not a non-nullable
+   * `Bool`, or clocks that disagree. Throws `Error` when this Node is
+   * disposed. Rows that break the time or pairing rules fail the run instead,
+   * and the error reaches observers through `error()`.
+   *
+   * @example `node.bind({length: 20}).bind(prices)` sets `length`, then binds
+   * every series from `prices`. `node.bind({daily: dailyPrices})` binds the
+   * request declared as `daily`, and `node.bind({length: 50}, ['daily'])`
+   * sets that request's `length`.
    */
   bind(input: BindingInput, path?: readonly string[]): Node;
 
   /**
-   * Reports whether the main program and every request child have all inputs.
+   * Reports whether the main script and every request have all their
+   * parameters, request settings and streams bound.
    *
    * @example A program using `close` is not ready until a DataStream supplying
    * `close` has been bound.
@@ -113,14 +166,37 @@ export interface Node {
   ready(): boolean;
 
   /**
-   * Observes output and starts execution when the first observer is attached.
+   * Attaches an observer to this Node's output, starting the run on the first
+   * call.
    *
-   * Later observers share the same runtime and receive only future output.
-   * If any observer throws while receiving a Datum, the shared execution stops
-   * and every observer receives that same error.
+   * The first call subscribes to the bound streams and runs the script once
+   * per input row; with a synchronous source, the whole run happens inside the
+   * call. Later calls join that run and receive only future Datums. Each
+   * observer gets one {@link Datum} per input row, then `complete()` when the
+   * inputs end or the Node is disposed.
    *
-   * @example `node.to(new StdoutSink())` starts the pipeline and prints each
-   * lossless output Datum.
+   * A run failure, such as a runtime error in the script or an input row that
+   * breaks the rules of `bind()`, ends the run and reaches every observer
+   * through `error()`; `to()` does not throw it. If an observer's `next()`
+   * throws, the run stops and every observer receives that error.
+   *
+   * Unsubscribing the returned Subscription removes only that observer. The
+   * run continues, even with no observers left, until its inputs end or
+   * `dispose()` is called.
+   *
+   * Throws a plain `Error`, not a {@link BindError}, when this Node is
+   * disposed or `ready()` is false, with a message such as
+   * `Node is missing bindings: close`, or when a request's stream has a clock
+   * that does not match the request's timeframe.
+   *
+   * @example
+   * This starts the run and logs each row's index, then any failure.
+   * ```ts
+   * node.to({
+   *   next: row => console.log(row.index),
+   *   error: error => console.error(error),
+   * });
+   * ```
    */
   to(observer: Partial<Observer<Datum>>): Subscription;
 
@@ -155,7 +231,12 @@ export interface Node {
   asStream(): DataStream;
 
   /**
-   * Stops the input subscription and releases every main and request runtime.
+   * Stops the run and releases the runtimes of this Node and its requests.
+   *
+   * It unsubscribes from the bound streams and completes every observer.
+   * Calling it again does nothing. Afterwards `bind()`, `to()` and
+   * `asStream()` throw `Error`. Nodes derived from this one with `bind()` have
+   * their own runs and keep going.
    *
    * @example Call `node.dispose()` to stop a live Subject or WebSocket source.
    */
@@ -1241,21 +1322,43 @@ class TeaNode implements Node {
 }
 
 /**
- * Creates the public Node owner for one compiled module tree.
+ * Creates a {@link Node} for a compiled module, with a child for each of its
+ * requests.
  *
- * Construction mirrors request children but does not bind streams, create a
- * runtime, or subscribe to anything.
+ * It binds no stream, creates no runtime and subscribes to nothing.
  *
  * @param module - The compiled module tree, usually `loadModule(source).bind()`
- * so parameter defaults are filled in.
+ * so parameter defaults are filled in. With an unbound module, the Node is
+ * not ready until `bind()` sets its parameters; `bind({})` fills in the
+ * defaults.
  * @param builtinSupplier - Supplies each step's contextual builtin values,
  * such as `bar_index` and `timenow`, to this Node and every request child.
  * The default supplies none, so a run whose module reads a contextual builtin
  * fails at its first step; pass the result of {@link pineBuiltinSupplier},
  * as the {@link tea} template does.
  *
- * @example A compiled program with no requests creates one Node. A program with
- * `daily = request.security(...)` creates the main Node plus one private child.
+ * @example
+ * ```ts
+ * import {of} from 'rxjs';
+ * import {Field, Float64, Schema} from 'apache-arrow';
+ * import {createNode, DataStream, pineBuiltinSupplier} from 'tea';
+ * import {compileToProgram, Errors, generate, loadModule} from 'tea/compiler';
+ *
+ * const source = 'emit "bar" bar_index\nemit "double" close * 2';
+ * const program = compileToProgram(
+ *   [{filename: 'double.tea', source}],
+ *   new Errors(),
+ * );
+ * if (program !== null) {
+ *   const prices = new DataStream(
+ *     new Schema([new Field('close', new Float64(), false)]),
+ *     of({close: 10}, {close: 11}),
+ *   );
+ *   createNode(loadModule(generate(program)).bind(), pineBuiltinSupplier())
+ *     .bind(prices)
+ *     .to({next: row => console.log(row.bar, row.double)}); // 0 20, 1 22
+ * }
+ * ```
  */
 export function createNode(
   module: Module,

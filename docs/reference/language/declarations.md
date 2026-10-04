@@ -66,9 +66,9 @@ its value; change it with `:=` or a collection update.
 
 - A `var` variable is always `series`.
 - Inside a function, each call written in the source has its own variable.
-- If the initializer does not finish, because it executes a `return` or the
-  step fails, the variable stays uninitialized and the initializer runs again
-  the next time it is reached.
+- If the initializer does not finish because it executes a `return`, the
+  variable stays uninitialized and the initializer runs again the next time it
+  is reached.
 - On live data a row can run several times before it is confirmed. Each run
   starts from the variable's value confirmed on the previous row, so
   reassignments made by an unconfirmed run are discarded. Changes to the
@@ -253,9 +253,12 @@ qualifier Type name
 ```
 
 - A typed parameter converts its argument to that type and rejects arguments
-  that do not convert. An untyped parameter takes the argument's type; the
-  body is checked for each combination of argument types it is called with.
-  An `na` argument needs a typed parameter.
+  that do not convert. An untyped parameter takes the argument's type. An `na`
+  argument needs a typed parameter.
+- The body is checked for each different combination of argument types,
+  qualifiers and constant values the function is called with. The body of a
+  function that is never called is not checked, even when every parameter has
+  a type: errors in it are reported only once a call to it is written.
 - A [qualifier](./types.md#qualifiers-in-annotations) caps how variable the
   argument may be: `simple int length` rejects a `series` argument. A
   qualifier needs a type after it.
@@ -369,7 +372,7 @@ collection element or a history read.
   declared outside the type, but not `this` or other parameters.
 - Method bodies follow the same rules as function bodies, and are checked even
   when the method is never called.
-- Through an `na` reference, a mutable method stops the step with a runtime
+- Through an `na` reference, a mutable method stops the run with a runtime
   error; a `const` method reads empty field values.
 - A method call's result is `series`.
 
@@ -495,8 +498,9 @@ cannot.
 - Inside the type, `T` can be used in field types, method signatures and
   bodies. A value of type `T` can call only the methods its constraint lists.
 - A type argument is a struct that satisfies the constraint. `Name.new(...)`
-  infers the arguments from the fields it is given; an annotation writes them
-  explicitly, as `Name<Source>`. `Name.new<Source>(...)` is an error.
+  infers the arguments from the fields it is given; an annotation, such as the
+  type of a variable, field or function parameter, writes them explicitly, as
+  `Name<Source>`. `Name.new<Source>(...)` is an error.
 - Each different list of type arguments makes a different type, named like
   `Name<Source>`.
 
@@ -514,6 +518,10 @@ struct Doubler<T: Reader>
 
 Doubler<Constant> doubled = Doubler.new(Constant.new(1.5))
 emit "value" doubled.read() // 3
+
+quadruple(Doubler<Constant> source) => source.read() * 2
+
+emit "quadrupled" quadruple(doubled) // 6
 ```
 
 ## Imports and exports

@@ -99,7 +99,7 @@ a collection accessor or history read. There is no receiver copy-in/copy-out.
 including a collection header stored there. It may mutate an independently
 referenced child struct:
 
-```tea
+```text
 struct Parent
     int value
     Counter child
@@ -137,10 +137,26 @@ b.push(2)
 // a contains [1]; b contains [1, 2].
 ```
 
+Passing a collection to a function copies the header the same way, so a
+function that updates its parameter leaves the caller's collection unchanged:
+
+```tea
+grow(array<int> values) =>
+    values.push(99)
+    values.size()
+
+values = array.from(1, 2)
+emit "inside" grow(values)   // 3
+emit "outside" values.size() // 2
+```
+
 The sized array constructor may omit its initial value. Its declared element
 type's empty value is used:
 
 ```tea
+struct Point
+    int x
+
 array.new<float>(3) // [na, na, na]
 array.new<bool>(2)  // [false, false]
 array.new<Point>(2) // [na, na]
@@ -165,6 +181,10 @@ A collection whose element type is a struct stores references. Accessors return
 ordinary element values, so a returned struct reference is mutable:
 
 ```tea
+struct Point
+    int x
+    int y
+
 point = Point.new(1, 2)
 points = array.from(point)
 points.get(0).x := 9
@@ -183,7 +203,8 @@ writes do not extend or reorder that iteration.
 ## History versions bindings
 
 Every runtime variable uses the same bounded history semantics. `name[N]` reads
-the value committed to that binding `N` iterations ago:
+the value committed to that binding `N` steps ago, never an earlier iteration
+of a loop in the current step:
 
 - primitive history contains prior primitive values;
 - collection history contains prior headers and immutable backing;
@@ -194,7 +215,7 @@ the same reference and therefore observe the same live body. If the Name was
 rebound, history may contain a different, older reference. Mutating through a
 historical struct reference is legal:
 
-```tea
+```text
 foo[1].x := 3
 ```
 
@@ -205,7 +226,7 @@ the Points reached through those references remain live.
 History syntax applies only to a direct readable binding. Computed-expression
 history is rejected:
 
-```tea
+```text
 foo[1]             // valid
 foo[1].x           // valid
 foo.x[1]           // invalid
@@ -215,7 +236,7 @@ Point.new(1, 2)[1] // invalid
 
 Bind the observation explicitly when its history is needed:
 
-```tea
+```text
 x = foo.x
 oldX = x[1]
 ```
@@ -276,8 +297,8 @@ plot("output0", counter.value)
 ```
 
 Successive ticks on one realtime bar observe `1`, then `2`, then `3`. If the
-third tick fails after writing `3`, abort restores `2`, and retry starts from
-`2`.
+third tick fails after writing `3`, abort restores `2` and the tick publishes
+nothing; the runtime error also stops the run.
 
 `var` and `varip` govern binding initialization and rebinding, not the body
 reached through a reference. Aliases with different storage classes still see
@@ -322,6 +343,27 @@ parent adapter. A `Ref` never crosses that boundary. For the Node-only
 `security_lower_tf` path, a frozen scalar batch enters the parent step and is
 materialized as an ordinary Tea array inside the parent Heap transaction. Detailed synchronization belongs to
 [Requests](requests.md).
+
+## Storage limits
+
+Each struct object, and the contents of each array, matrix and map, is one
+stored object. Every update of a collection, such as `push` or `set`, creates a
+new copy of its contents. A run stops with a runtime error when it exceeds one
+of these limits:
+
+| Limit                                  | Value   | Error code                  |
+| -------------------------------------- | ------- | --------------------------- |
+| Elements in one array, matrix or map   | 100,000 | `COLLECTION_LIMIT_EXCEEDED` |
+| Objects created during one step        | 10,000  | `HEAP_LIMIT_EXCEEDED`       |
+| Storage written during one step        | 16 MiB  | `HEAP_LIMIT_EXCEEDED`       |
+| Objects kept from one step to the next | 100,000 | `HEAP_LIMIT_EXCEEDED`       |
+| Storage kept from one step to the next | 64 MiB  | `HEAP_LIMIT_EXCEEDED`       |
+
+An object is kept while a variable, or a variable's history, still refers to
+it. The two limits on kept storage are checked when the next step starts, so
+the step after the one that passes them fails. Because every update copies, a
+step reaches its storage budget sooner than the element count suggests: 2,046
+`push` calls on an empty `array<float>` in one step write more than 16 MiB.
 
 ## Empty values and errors
 

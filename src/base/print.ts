@@ -43,9 +43,13 @@ export interface ErrorMsg {
  * The queue of one compilation's user-facing errors.
  *
  * Create one per compilation and pass it to every stage: stages report into
- * it and keep going, the driver reads `count` to stop later stages after a
+ * it and keep going, the compiler reads `count` to skip the stages after a
  * failed one, and the caller collects the batch with `flushErrors()`.
  * Nothing is printed or thrown when an error is reported.
+ *
+ * Flush it before reusing it. `compileToProgram` returns `null` whenever
+ * `count` is not zero, so errors left from an earlier compilation make a
+ * later compilation of valid source return `null` without a new error.
  *
  * @example
  * ```ts
@@ -118,11 +122,13 @@ export class Errors {
 }
 
 /**
- * A compiler defect: an internal invariant failed.
+ * A defect in Tea: one of its own checks failed in the compiler or at run time.
  *
- * {@link fatal} throws it, it never enters {@link Errors}, and its message
- * starts with `internal compiler error: `. A host should report it as a bug
- * in Tea rather than in the user's source.
+ * It is thrown, never queued in {@link Errors}, and its message starts with
+ * `internal compiler error: `. A feature Tea does not implement yet, such as
+ * compiling more than one entry file, throws one too, with a message ending
+ * in `is not implemented yet`. A host should report it as a problem in Tea
+ * rather than in the user's source.
  *
  * @example `error instanceof InternalError` separates a Tea bug from bad input.
  */

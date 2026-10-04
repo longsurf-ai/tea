@@ -101,9 +101,17 @@ safe = values.size() > 0 and values.first() > 0
 emit "safe" safe // false; first() never runs on an empty array
 ```
 
-A call that keeps history, such as a `ta` function, sees only the steps on
-which it is evaluated. To use one in a condition, compute it unconditionally
-first; see [values and control flow](../../language-guide/values-and-control-flow.md).
+A call is skipped on a step when execution does not reach it, as in an `if`
+branch or `switch` arm that does not run, the arm of `?:` that is not
+selected, or the right operand of `and` or `or` when it is not evaluated. On a
+skipped step, the function's parameters record the empty value in their
+history (`na`, or `false` for a `bool`), and its `var` variables keep their
+values. So a function that reads the history of its arguments, such as
+`ta.sma`, sees `na` for the skipped steps: `c ? ta.sma(close, 2) : na` is not
+`ta.sma(close, 2)` on the steps where `c` is true. History of market data read
+inside the function, such as `close[1]`, is not affected. Compute the call on
+every step and combine its result with the condition; see
+[values and control flow](../../language-guide/values-and-control-flow.md).
 
 ### Conditional: `?:`
 
@@ -113,7 +121,9 @@ condition ? whenTrue : whenFalse
 
 - `condition` must be a `bool`. Only the selected branch is evaluated.
 - The branches must share a type: `int` and `float` give `float`, and `na`
-  takes the other branch's type. Other mismatches are errors.
+  takes the other branch's type unless that type is `bool`. Other mismatches
+  are errors, including `na` against a `bool`: `c ? true : na` reports
+  mismatched types.
 - The result's qualifier is the most variable of the condition and both
   branches.
 
@@ -130,7 +140,10 @@ name[offset]
 ```
 
 Reads the value that a variable or built-in value held `offset` steps ago.
-`close[1]` is the previous step's close; `close[0]` is the current one.
+`close[1]` is the previous step's close; `close[0]` is the current one. Inside
+a loop body, `x[1]` is the value `x` had at the end of the previous step, on
+every iteration; it is never the value from the previous iteration (see
+[loops](./control-flow.md#loops)).
 
 - `name` is a variable, including a parameter, or a built-in value the host
   supplies, such as `close`, `bar_index` or `syminfo.ticker`. A call, an
@@ -140,10 +153,15 @@ Reads the value that a variable or built-in value held `offset` steps ago.
 - `offset` is an `int` expression. An offset that is negative or `na`, or that
   reaches back past the available steps, gives the type's empty value: `na`,
   or `false` for a `bool`.
-- An offset whose largest value is known before execution, such as a constant,
-  an `input` value or a loop index bounded by one, reaches as far back as it
-  needs. Any other offset reaches back at most 500 steps; reading further gives
-  the empty value.
+- An offset known before execution reaches as far back as it names: one
+  computed from constants and `input` values, or the index of a `for` loop
+  whose bounds are known before execution and whose body does not assign the
+  index, written alone as the offset (`close[i]`).
+- Any other offset, such as `close[bar_index]` or `close[i + 1]`, reaches back
+  as far as its variable keeps history: 500 steps, or further when another read
+  of the same variable needs more. With `close[1000]` elsewhere in the script,
+  `close[bar_index]` reaches 1000 steps back. Reading further gives the empty
+  value.
 - History applies before member access: `point[1].x` reads `x` from the
   reference `point` held one step ago; `point.x[1]` is an error.
 - `x[i]` is never element access. Read array elements with `values.get(i)`.
@@ -201,7 +219,7 @@ namespace.name
   `pkg.Enum.member`.
 - `Enum.member` names an enum member, and `Type.new(...)` constructs a struct.
 - Reading a field through an `na` reference gives the field's empty value.
-  Assigning a field, or calling a mutable method, through `na` stops the step
+  Assigning a field, or calling a mutable method, through `na` stops the run
   with a runtime error.
 
 ### Calls: `()`

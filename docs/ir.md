@@ -461,3 +461,12 @@ the Program or evaluates a second form of the bound expression. See
   resolved.
 - Batch collect merge for `request.security_lower_tf`; public Node
   collect synchronization is already defined in [Requests](requests.md).
+- Dynamic requests, and requests nested inside another request's expression.
+- Live watermark policies.
+- Sweep and live Recipes.
+- An application-specific source registry, if an application chooses to build
+  one.
+- Broader GPU support for structs, resources, requests and non-scalar
+  operations. Existing append codecs support literal strings and packed colors;
+  that does not imply arbitrary string/color operations or user-defined struct
+  execution.
