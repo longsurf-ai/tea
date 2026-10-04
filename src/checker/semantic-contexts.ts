@@ -56,7 +56,8 @@ export function semanticContexts(checked: CheckedPackage): Set<Info> {
  * once per called signature, so an argument the body cannot use is reported
  * inside the body, often in a library the reader never opened. The culprit is
  * the instance whose check reported the error; these are the calls a reader
- * can change.
+ * can change. `direct` marks a call whose own callee reported the error, as
+ * opposed to a function that callee calls in turn.
  *
  * Empty when no such call reaches the error, as for an error at the top of an
  * imported file.
@@ -64,14 +65,14 @@ export function semanticContexts(checked: CheckedPackage): Set<Info> {
  * @example
  * ```ts
  * // For `e = ta.ema("a", 14)`, the error sits inside ta.tea.
- * callsReaching(error, checked, new Set(['script.tea'])); // [the ta.ema call]
+ * callsReaching(error, checked, new Set(['script.tea'])); // [{call: the ta.ema call, direct: true}]
  * ```
  */
 export function callsReaching(
   error: ErrorMsg,
   checked: CheckedPackage,
   filenames: ReadonlySet<string>,
-): CallExpr[] {
+): {readonly call: CallExpr; readonly direct: boolean}[] {
   const samePos = (pos: Pos): boolean =>
     pos.base.filename === error.pos.base.filename &&
     pos.line === error.pos.line &&
@@ -87,7 +88,7 @@ export function callsReaching(
     [...instance.info.calls.values()].some(
       call => call.kind === CallKind.Function && reaches(call.instance),
     );
-  const calls: CallExpr[] = [];
+  const calls: {call: CallExpr; direct: boolean}[] = [];
   for (const info of semanticContexts(checked)) {
     for (const [call, resolution] of info.calls) {
       if (
@@ -95,9 +96,9 @@ export function callsReaching(
         resolution.kind === CallKind.Function &&
         !filenames.has(resolution.instance.template.decl.pos.base.filename) &&
         reaches(resolution.instance) &&
-        !calls.includes(call)
+        !calls.some(found => found.call === call)
       ) {
-        calls.push(call);
+        calls.push({call, direct: culprits.has(resolution.instance)});
       }
     }
   }

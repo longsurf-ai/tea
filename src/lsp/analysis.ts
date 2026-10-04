@@ -125,7 +125,23 @@ export function analyze(input: PackageSource): Analysis {
   const importPaths = file.stmtList.flatMap(stmt =>
     stmt.kind === NodeKind.ImportStmt ? [stmt.path] : [],
   );
-  const diagnostics = errors.flushErrors().flatMap(error => {
+  const flushed = errors.flushErrors();
+  // When the called function reports an error itself, errors from the
+  // functions it calls in turn are left off that call, as on the command line.
+  const reached = new Map(
+    flushed.map(error => [
+      error,
+      error.pos.base.filename === input.filename
+        ? []
+        : callsReaching(error, checked, new Set([input.filename])),
+    ]),
+  );
+  const reportsOwnError = new Set(
+    [...reached.values()].flatMap(calls =>
+      calls.filter(found => found.direct).map(found => found.call),
+    ),
+  );
+  const diagnostics = flushed.flatMap(error => {
     if (error.pos.base.filename === input.filename) {
       const path = importPaths.find(
         ({pos}) => pos.line === error.pos.line && pos.col === error.pos.col,
@@ -136,7 +152,12 @@ export function analyze(input: PackageSource): Analysis {
           : nodeRange(path);
       return [diagnostic(range, error.msg)];
     }
-    const calls = callsReaching(error, checked, new Set([input.filename]));
+    const reaching = reached.get(error)!;
+    const calls = reaching
+      .filter(({call, direct}) => direct || !reportsOwnError.has(call))
+      .map(({call}) => call);
+    // Every call that reaches it already shows its callee's own error.
+    if (reaching.length > 0 && calls.length === 0) return [];
     const where = formatPos(error.pos);
     if (calls.length === 0) {
       // No call of this document reaches it, as with an error at the top of

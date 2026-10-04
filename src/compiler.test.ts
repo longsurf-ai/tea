@@ -20,6 +20,19 @@ const TYPE_ERROR =
   "2: operator '+' requires numeric operands (got float and string)";
 const broken = [{filename: 'broken.tea', source: 'x = 1 +\ny = close + "a"\n'}];
 
+describe('errors inside a library', () => {
+  test("a call that breaks its callee's own rule reports that rule, not one of a function it calls", () => {
+    const errors = new Errors();
+    const source = '[m, u, l] = ta.bb(close, 0, 2)\nemit "m" m\n';
+    expect(compileToProgram([{filename: 'bb.tea', source}], errors)).toBeNull();
+    expect(lines(errors)).toEqual([
+      expect.stringMatching(
+        /^1: in ta\.bb \(tea-lib\/ta\.tea:\d+:\d+\): ta\.bb: length must be at least 1$/,
+      ),
+    ]);
+  });
+});
+
 describe('checking past parse errors', () => {
   test('compileToProgram stops at the parse barrier', () => {
     const errors = new Errors();

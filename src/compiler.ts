@@ -201,7 +201,10 @@ export function compileToProgram(
  * argument it cannot use is reported inside the library. Move each such error
  * onto the script calls that reached it, where the author can act, in the
  * form the language server shows: `in ta.ema (tea-lib/ta.tea:68:24): ...`.
- * An error no script call reaches keeps its position.
+ * When the called function reports an error itself, errors from the functions
+ * it calls in turn are dropped for that call, so `ta.bb(close, 0, 2)` names
+ * `ta.bb`'s own rule rather than that of the `ta.sma` inside it. An error no
+ * script call reaches keeps its position.
  */
 function reportAtScriptCalls(
   errors: Errors,
@@ -209,12 +212,21 @@ function reportAtScriptCalls(
   files: readonly File[],
 ): void {
   const scripts = new Set(files.map(file => file.pos.base.filename));
-  for (const error of errors.flushErrors()) {
-    const calls = scripts.has(error.pos.base.filename)
+  const reports = errors.flushErrors().map(error => ({
+    error,
+    calls: scripts.has(error.pos.base.filename)
       ? []
-      : callsReaching(error, checked, scripts);
+      : callsReaching(error, checked, scripts),
+  }));
+  const reportsOwnError = new Set(
+    reports.flatMap(({calls}) =>
+      calls.filter(found => found.direct).map(found => found.call),
+    ),
+  );
+  for (const {error, calls} of reports) {
     if (calls.length === 0) errors.errorAt(error.pos, error.msg);
-    for (const call of calls) {
+    for (const {call, direct} of calls) {
+      if (!direct && reportsOwnError.has(call)) continue;
       errors.errorAt(
         call.fun.pos,
         `in ${calleeName(call.fun)} (${formatPos(error.pos)}): ${error.msg}`,

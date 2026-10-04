@@ -132,6 +132,15 @@ describe('errors positioned in a library body', () => {
     );
   });
 
+  test('a function that rejects its own argument names itself, not the functions it calls', () => {
+    // ta.bb(close, 0, 2) would also call ta.sma and ta.stdev with length 0.
+    expect(rendered(analyzeText('[m, u, l] = ta.bb(close, 0, 2)\n'))).toEqual([
+      expect.stringMatching(
+        /^0:12-17 in ta\.bb \(tea-lib\/ta\.tea:\d+:\d+\): ta\.bb: length must be at least 1$/,
+      ),
+    ]);
+  });
+
   test('every error of one call is kept, on the same range', () => {
     const lines = rendered(analyzeText('s = ta.variance("x", 3)\n'));
     expect(lines.length).toBeGreaterThan(1);
