@@ -10,11 +10,64 @@ Williams %R: where [`close`](../price-and-volume.md#close) sits within the range
 ta.wpr(int length)
 ```
 
-| Parameter | Type  | Description                       |
-| --------- | ----- | --------------------------------- |
-| `length`  | `int` | Number of bars, a positive `int`. |
+| Parameter | Type  | Description                               |
+| --------- | ----- | ----------------------------------------- |
+| `length`  | `int` | Number of bars in the window, at least 1. |
 
-**Returns:** The percentage; `na` for the first `length - 1` bars, while any price in the window is `na`, and when the range is `0`.
+**Returns:** `float`: the position as a percentage of the range.
 
-It is `100 * (close - highest) / (highest - lowest)`, using the highest
-[`high`](../price-and-volume.md#high) and the lowest [`low`](../price-and-volume.md#low) of the last `length` bars.
+It is the position that [`ta.stoch`](./stoch.md) measures, shifted down by `100`:
+`0` when the close is at the highest [`high`](../price-and-volume.md#high) of the window and `-100`
+when it is at the lowest [`low`](../price-and-volume.md#low). It leaves `-100` to `0` only when the
+close lies outside that range.
+
+**Formula**
+
+$$
+\begin{aligned}
+\%R_t &= 100 \cdot \frac{\mathit{close}_t - H_t}{H_t - L_t} \\
+\text{where}\quad H_t &= \mathrm{highest}(\mathit{high}, \mathit{length})_t \\
+L_t &= \mathrm{lowest}(\mathit{low}, \mathit{length})_t
+\end{aligned}
+$$
+
+**Warm-up and na:** `na` on the first `length - 1` bars, when [`close`](../price-and-volume.md#close) is `na`,
+when a window has no known value, and when the range is `0`. Other `na`
+values are left out of the windows.
+
+**Example:** A 3-bar %R. At index 2 the close of 10 is 2 below the highest high, 12, in
+a range of 5, giving -40. The high is missing at index 3, so that window's
+highest high is 12, and the close of 12 gives 0.
+
+```tea
+emit "high" high
+emit "low" low
+emit "close" close
+emit "wpr" ta.wpr(3)
+```
+
+```csv
+time,high,low,close
+0,10,8,9
+1,12,9,11
+2,11,7,10
+3,,9,12
+4,12,8,9
+5,15,10,14
+6,14,9,10
+```
+
+**Output:**
+
+```text
+index  high  low  close  wpr
+0      10    8    9      na
+1      12    9    11     na
+2      11    7    10     -40
+3      na    9    12     0
+4      12    8    9      -60
+5      15    10   14     -14.285714285714286
+6      14    9    10     -71.42857142857143
+```
+
+**See also:** [`ta.stoch`](./stoch.md), [`ta.highest`](./highest.md), [`ta.lowest`](./lowest.md)

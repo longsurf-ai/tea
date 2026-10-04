@@ -27,15 +27,15 @@ An input declares a value the host supplies when it binds the script, falling ba
 
 ## Common parameters
 
-| Parameter | Type           | Description                                                                                                                                                                                                                                                                 |
-| --------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `title`   | `const string` | The label a host shows for the input. Must be a compile-time constant. Cannot be `na`.                                                                                                                                                                                      |
-| `tooltip` | `const string` | Help text a host shows with the input. Must be a compile-time constant. Cannot be `na`.                                                                                                                                                                                     |
-| `inline`  | `const string` | A host shows inputs that have the same `inline` text on one line. Must be a compile-time constant. Cannot be `na`.                                                                                                                                                          |
-| `group`   | `const string` | A host shows inputs that have the same `group` text together, under that text as a heading. Must be a compile-time constant. Cannot be `na`.                                                                                                                                |
-| `confirm` | `const bool`   | When `true`, asks a host to have the user confirm the value before the script runs. Must be a compile-time constant.                                                                                                                                                        |
-| `display` | `const string` | Where a host shows the input’s value: `display.all`, `display.data_window`, `display.status_line` or `display.none`; other `display` constants are rejected. The default is `display.all` unless the entry says otherwise. Must be a compile-time constant. Cannot be `na`. |
-| `active`  | `input bool`   | Whether a host shows the input as enabled. It is evaluated when the script is bound and may read other inputs; it never changes the input’s value.                                                                                                                          |
+| Parameter | Type           | Description                                                                                                                                                                                                                                                                                                                                                             |
+| --------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`   | `const string` | The label a host shows for the input. Must be a compile-time constant. Cannot be `na`.                                                                                                                                                                                                                                                                                  |
+| `tooltip` | `const string` | Help text a host shows with the input. Must be a compile-time constant. Cannot be `na`.                                                                                                                                                                                                                                                                                 |
+| `inline`  | `const string` | A host shows inputs that have the same `inline` text on one line. Must be a compile-time constant. Cannot be `na`.                                                                                                                                                                                                                                                      |
+| `group`   | `const string` | A host shows inputs that have the same `group` text together, under that text as a heading. Must be a compile-time constant. Cannot be `na`.                                                                                                                                                                                                                            |
+| `confirm` | `const bool`   | When `true`, asks a host to have the user confirm the value before the script runs. Must be a compile-time constant.                                                                                                                                                                                                                                                    |
+| `display` | `const string` | Where a host shows the input’s value: [`display.all`](./plots.md#display), [`display.data_window`](./plots.md#display), [`display.status_line`](./plots.md#display) or [`display.none`](./plots.md#display); the other `display` constants are rejected. The default is `display.all` unless the entry says otherwise. Must be a compile-time constant. Cannot be `na`. |
+| `active`  | `input bool`   | Whether a host shows the input as enabled. It is evaluated when the script is bound and may read other inputs; it never changes the input’s value.                                                                                                                                                                                                                      |
 
 ## Numbers
 
@@ -85,38 +85,37 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 
 A value below `minval`, above `maxval` or missing from `options` is rejected when the host binds the script; `step` only guides a host’s control and is not enforced. The default must meet the same limits, `minval` cannot exceed `maxval`, and `step` must be greater than zero. `options` replaces the range arguments and cannot be combined with them. See [`input`](./input.md#input) for how inputs are named and when they are fixed.
 
-**Example:**
+**Example:** The host supplies no value, so `length` is its default, 3, and `average` is the mean of the last three closes from bar 2 on.
 
 ```tea
-length = input.int(14, "Length", minval = 1, maxval = 200)
+length = input.int(3, "Length", minval = 1, maxval = 200)
+emit "close" close
 emit "average" ta.sma(close, length)
 ```
 
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
 
 ```text
-index  average
-0      na
-1      na
-2      na
-3      na
-4      na
-5      na
-6      na
-7      na
+index  close  average
+0      9      na
+1      12     na
+2      12     11
+3      15     13
+4      12     13
+5      18     15
 ```
+
+**See also:** [`input`](./input.md#input), [`input.float`](./input.md#float)
 
 ### float
 
@@ -164,38 +163,37 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 
 A value below `minval`, above `maxval` or missing from `options` is rejected when the host binds the script; `step` only guides a host’s control and is not enforced. The default must meet the same limits, `minval` cannot exceed `maxval`, and `step` must be greater than zero. `options` replaces the range arguments and cannot be combined with them.
 
-**Example:**
+**Example:** `offset` is its default, 0.5, so `shifted` is each close plus 0.5.
 
 ```tea
-width = input.float(2.0, "Band width", minval = 0.5, step = 0.5)
-emit "upper" ta.sma(close, 20) + width * ta.stdev(close, 20)
+offset = input.float(0.5, "Offset", minval = 0.0, step = 0.5)
+emit "close" close
+emit "shifted" close + offset
 ```
 
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
 
 ```text
-index  upper
-0      na
-1      na
-2      na
-3      na
-4      na
-5      na
-6      na
-7      na
+index  close  shifted
+0      9      9.5
+1      12     12.5
+2      12     12.5
+3      15     15.5
+4      12     12.5
+5      18     18.5
 ```
+
+**See also:** [`input.int`](./input.md#int)
 
 ### price
 
@@ -221,6 +219,36 @@ input float input.price(
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
 Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `inline`, `group`, `confirm`, `display`, `active`.
+
+**Example:** `above` is `true` only on bars 3 and 5, whose closes, 15 and 18, are above the default level of 12.
+
+```tea
+level = input.price(12.0, "Level")
+emit "close" close
+emit "above" close > level
+```
+
+```csv
+time,close
+0,9
+1,12
+2,12
+3,15
+4,12
+5,18
+```
+
+**Output:**
+
+```text
+index  close  above
+0      9      false
+1      12     false
+2      12     false
+3      15     true
+4      12     false
+5      18     true
+```
 
 ## Text and choices
 
@@ -251,38 +279,35 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 
 Its value is hidden by default (`display.none`).
 
-**Example:**
+**Example:** `smooth` is `true` by default, so `value` is the 3-bar average rather than the close, and `na` until bar 2.
 
 ```tea
 smooth = input.bool(true, "Smooth")
-average = ta.sma(close, 5)
+average = ta.sma(close, 3)
+emit "close" close
 emit "value" smooth ? average : close
 ```
 
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
 
 ```text
-index  value
-0      na
-1      na
-2      na
-3      na
-4      10.2
-5      11.2
-6      11
-7      12
+index  close  value
+0      9      na
+1      12     na
+2      12     11
+3      15     13
+4      12     13
+5      18     15
 ```
 
 ### string
@@ -312,40 +337,39 @@ input string input.string(
 
 Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `inline`, `group`, `confirm`, `display`, `active`.
 
-**Example:**
+**Example:** `kind` is its default, `"SMA"`, so `average` is the 3-bar simple average.
 
 ```tea
 kind = input.string("SMA", "Average", options = ["SMA", "EMA"])
-sma = ta.sma(close, 20)
-ema = ta.ema(close, 20)
+sma = ta.sma(close, 3)
+ema = ta.ema(close, 3)
+emit "close" close
 emit "average" kind == "SMA" ? sma : ema
 ```
 
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
 
 ```text
-index  average
-0      na
-1      na
-2      na
-3      na
-4      na
-5      na
-6      na
-7      na
+index  close  average
+0      9      na
+1      12     na
+2      12     11
+3      15     13
+4      12     13
+5      18     15
 ```
+
+**See also:** [`input.enum`](./input.md#enum)
 
 ### text_area
 
@@ -402,7 +426,7 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 
 A host supplies the member’s name, such as `"ema"`, not its title.
 
-**Example:**
+**Example:** `kind` is its default member, `Average.sma`, so `average` is the 3-bar simple average.
 
 ```tea
 enum Average
@@ -410,36 +434,35 @@ enum Average
     ema = "Exponential"
 
 kind = input.enum(Average.sma, "Average")
-sma = ta.sma(close, 20)
-ema = ta.ema(close, 20)
+sma = ta.sma(close, 3)
+ema = ta.ema(close, 3)
+emit "close" close
 emit "average" kind == Average.sma ? sma : ema
 ```
 
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
 
 ```text
-index  average
-0      na
-1      na
-2      na
-3      na
-4      na
-5      na
-6      na
-7      na
+index  close  average
+0      9      na
+1      12     na
+2      12     11
+3      15     13
+4      12     13
+5      18     15
 ```
+
+**See also:** [`input.string`](./input.md#string)
 
 ## Colors, symbols and time
 
@@ -470,37 +493,18 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 
 A host supplies the color as `#RRGGBB` or `#RRGGBBAA` text. Its value is hidden by default (`display.none`).
 
-**Example:**
+**Example:** The host supplies no value, so `lineColor` is its default, `color.blue`, shown by its red, green, blue and opacity (`a`) channels.
 
 ```tea
 lineColor = input.color(color.blue, "Line color")
-plot("close", close, color = lineColor)
-```
-
-```csv
-time,close
-0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+emit "line_color" lineColor
 ```
 
 **Output:**
 
 ```text
-index  close
-0      {"id":"close","series":9,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-1      {"id":"close","series":11,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-2      {"id":"close","series":10,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-3      {"id":"close","series":12,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-4      {"id":"close","series":9,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-5      {"id":"close","series":14,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-6      {"id":"close","series":10,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-7      {"id":"close","series":15,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+index  line_color
+0      {"r":33,"g":150,"b":243,"a":255}
 ```
 
 ### timeframe
@@ -627,19 +631,37 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 
 Tea treats the value as a plain `int`; give it in milliseconds since the Unix epoch so it compares directly with [`time`](./bar-and-time.md#time). Its value is hidden by default (`display.none`).
 
-**Example:**
+**Example:** Bars are 12 hours apart and bar 2 opens at 2024-01-01 00:00 UTC, the default start, so `started` is `true` from bar 2 on.
 
 ```tea
 start = input.time(1704067200000, "Start") // 2024-01-01 00:00 UTC
+emit "bar_time" time
 emit "started" time >= start
+```
+
+```csv
+time
+1703980800000
+1704024000000
+1704067200000
+1704110400000
+1704153600000
+1704196800000
 ```
 
 **Output:**
 
 ```text
-index  started
-0      false
+index  bar_time       started
+0      1703980800000  false
+1      1704024000000  false
+2      1704067200000  true
+3      1704110400000  true
+4      1704153600000  true
+5      1704196800000  true
 ```
+
+**See also:** [`time`](./bar-and-time.md#time)
 
 ## Series inputs
 
@@ -668,40 +690,39 @@ series float input.source(
 
 Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `inline`, `group`, `display`, `active`, `confirm`.
 
-The host supplies the name of a series, such as `"high"`, and must bind a data stream that has it. The result can be used like [`close`](./price-and-volume.md#close), including its history. A source input cannot be declared inside a request expression.
+The host supplies the name of a series, such as `"high"`, and must bind a data stream that has it; only the chosen series is needed, so with `"high"` chosen the stream needs no `close`. The result can be used like [`close`](./price-and-volume.md#close), including its history. A source input cannot be declared inside a request expression, and a request expression cannot read one.
 
-**Example:**
+**Example:** The host supplies no series name, so `source` is `close` and `average` is the 3-bar average of the closes.
 
 ```tea
 source = input.source(close, "Source")
-emit "average" ta.sma(source, 10)
+emit "close" close
+emit "average" ta.sma(source, 3)
 ```
 
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
 
 ```text
-index  average
-0      na
-1      na
-2      na
-3      na
-4      na
-5      na
-6      na
-7      na
+index  close  average
+0      9      na
+1      12     na
+2      12     11
+3      15     13
+4      12     13
+5      18     15
 ```
+
+**See also:** [`input.series`](./input.md#series)
 
 ### series
 
@@ -719,38 +740,38 @@ series float input.series(const string name)
 
 Every call with the same name reads the same series. A script can call it only at its top level, and a library only as an exported alias such as `export vwap = input.series("vwap")`, which is how [`close`](./price-and-volume.md#close) and the other price series are defined. Unlike [`input.source`](./input.md#source), the name is fixed in the source and is not a setting.
 
-**Example:**
+**Example:** `vwap` reads the CSV column of that name, so `distance` is `close - vwap` on each bar.
 
 ```tea
 vwap = input.series("vwap")
+emit "close" close
+emit "vwap" vwap
 emit "distance" close - vwap
 ```
 
 ```csv
 time,close,vwap
 0,9,9.5
-1,11,11.2
-2,10,10.4
-3,12,11.6
-4,9,10.1
-5,14,12.8
-6,10,11.0
-7,15,13.4
+1,12,11.75
+2,12,12.5
+3,15,14.25
+4,12,13
+5,18,16.5
 ```
 
 **Output:**
 
 ```text
-index  distance
-0      -0.5
-1      -0.1999999999999993
-2      -0.40000000000000036
-3      0.40000000000000036
-4      -1.0999999999999996
-5      1.1999999999999993
-6      -1
-7      1.5999999999999996
+index  close  vwap   distance
+0      9      9.5    -0.5
+1      12     11.75  0.25
+2      12     12.5   -0.5
+3      15     14.25  0.75
+4      12     13     -1
+5      18     16.5   1.5
 ```
+
+**See also:** [`input.source`](./input.md#source)
 
 ## Any type
 
@@ -828,40 +849,43 @@ series float input(
 
 Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `inline`, `group`, `display`, `active`.
 
-An input is fixed when the host binds the script and keeps that value on every bar; using another value means binding the script again. The host sets an input by the name of the top-level variable it directly initializes, such as `length` in `length = input.int(14)`. Any other input, such as one inside a function or an expression, is named by its position, `input@line:column`, and without a `title` its label is the name of the variable it initializes, if any. Each input call declares one input however many times it runs, and exported library functions cannot declare inputs. The arguments `title`, `tooltip`, `inline`, `group`, `confirm`, `display` and `active` only describe how a host presents an input.
+An input is fixed when the host binds the script and keeps that value on every bar; using another value means binding the script again. Each input call declares one input however many times it runs, and exported library functions cannot declare inputs. Arguments such as `title`, `group`, `display` and `active` only describe how a host presents an input.
+
+An input is named after the variable that declares it, and the host sets it by that name: `length = input.int(14)` declares the input `length`, which `tea run` sets with `--length 20`. That variable must be at the top level, initialized by the input call alone, declared without `var` or `varip`, and never reassigned. Any other input, such as one inside a function, a block or a larger expression, is named by its position, `input@line:column`: the host and `tea run` can set it only by that name, and a request expression cannot read the variable it initializes. Without a `title`, an input written as `fast = input.int(9)` inside a function or block, with `fast` never reassigned, is labeled `fast`.
+
+An input read inside a request expression is the request’s own copy: the host sets it separately for that request, and a value set for the script does not reach it.
 
 A `bool` or `color` input is hidden by default (`display.none`).
 
-**Example:**
+**Example:** `length` is an `int` input and `source` a source input, so with their defaults `average` is the 3-bar average of the closes.
 
 ```tea
-length = input(14, "Length")
+length = input(3, "Length")
 source = input(close, "Source")
+emit "close" close
 emit "average" ta.sma(source, length)
 ```
 
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
 
 ```text
-index  average
-0      na
-1      na
-2      na
-3      na
-4      na
-5      na
-6      na
-7      na
+index  close  average
+0      9      na
+1      12     na
+2      12     11
+3      15     13
+4      12     13
+5      18     15
 ```
+
+**See also:** [`input.int`](./input.md#int), [`input.source`](./input.md#source)

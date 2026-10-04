@@ -29,12 +29,12 @@ See [types](../language/types.md) for the `array<T>` type and [memory model](../
 Creates an array, empty or with a given number of elements.
 
 ```tea
-const array<T> array.new<T: storable>()
-
 array<T> array.new<T: storable>(
     series int size,
     series T initial = …
 )
+
+const array<T> array.new<T: storable>()
 ```
 
 | Parameter | Type         | Description                                                                                                           |
@@ -44,22 +44,25 @@ array<T> array.new<T: storable>(
 
 **Returns:** A new array.
 
-Write the element type in angle brackets, as in `array.new<float>(3)`, unless `initial` gives it. A negative size stops the run with an error. A collection holds at most 100,000 elements; a larger size also stops the run. A variable declared as `array<float> values = na` holds no array, and calling a function on it stops the run with an error.
+Write the element type in angle brackets, as in `array.new<float>(3)`, unless `initial` gives it. A negative or `na` size stops the run with an error. A collection holds at most 100,000 elements; a larger size also stops the run. Each change copies the collection and counts against a per-bar allocation budget; see [`array.push`](./array.md#push). A variable declared as `array<float> values = na` holds no array, and calling a function on it stops the run with an error.
 
-**Example:**
+**Example:** `zeros` holds three zeros; without `initial`, both elements of `missing` are `na`.
 
 ```tea
 zeros = array.new(3, 0.0)
-missing = array.new<float>(2) // two na elements
-emit "sizes" zeros.size() + missing.size() // 5
+missing = array.new<float>(2)
+emit "zeros" zeros
+emit "missing" missing
 ```
 
 **Output:**
 
 ```text
-index  sizes
-0      5
+index  zeros    missing
+0      [0,0,0]  ["na","na"]
 ```
+
+**See also:** [`array.from`](./array.md#from)
 
 ### from
 
@@ -77,19 +80,22 @@ array<T> array.from<T: storable>(series T ...values = …)
 
 The element type comes from the values; integers mixed with floats make a `float` array. With no values, or only `na`, write the type: `array.from<float>()`.
 
-**Example:**
+**Example:** The `int` values 1 and 4 join 2.5 in one `array<float>`; `first` is the element at position 0.
 
 ```tea
-levels = array.from(1, 2.5, 4) // an array<float>
-emit "first" levels.get(0) // 1
+levels = array.from(1, 2.5, 4)
+emit "levels" levels
+emit "first" levels.get(0)
 ```
 
 **Output:**
 
 ```text
-index  first
-0      1
+index  levels     first
+0      [1,2.5,4]  1
 ```
+
+**See also:** [`array.new`](./array.md#new)
 
 ### copy
 
@@ -105,7 +111,24 @@ array<T> array.copy<T: storable>(series array<T> self)
 
 **Returns:** A new array with the same elements.
 
-Arrays are values, so plain assignment already copies: after `b = a`, `b.push(x)` leaves `a` unchanged. The copy is shallow: struct elements still refer to the same structs.
+Arrays are values, so plain assignment already copies: after `b = a`, `b.push(x)` leaves `a` unchanged, and a function that pushes to an array it receives changes only its own copy. The copy is shallow: struct elements still refer to the same structs.
+
+**Example:** Pushing to the copy `b` leaves `a` with its two elements.
+
+```tea
+a = array.from(1.0, 2.0)
+b = a.copy()
+b.push(3.0)
+emit "a" a
+emit "b" b
+```
+
+**Output:**
+
+```text
+index  a      b
+0      [1,2]  [1,2,3]
+```
 
 ## Reading
 
@@ -154,11 +177,11 @@ T array.get<T: storable>(series array<T> self, series int index)
 
 An index that is negative, `na`, or not less than the size stops the run with an error; negative indexes do not count from the end.
 
-**Example:**
+**Example:** Positions count from 0, so `values.get(1)` is the second element, 20.
 
 ```tea
 values = array.from(10, 20, 30)
-emit "second" values.get(1) // 20
+emit "second" values.get(1)
 ```
 
 **Output:**
@@ -167,6 +190,8 @@ emit "second" values.get(1) // 20
 index  second
 0      20
 ```
+
+**See also:** [`array.set`](./array.md#set)
 
 ### first
 
@@ -184,6 +209,22 @@ T array.first<T: storable>(series array<T> self)
 
 An empty array stops the run with an error.
 
+**Example:** `first` is the element at position 0, 10.
+
+```tea
+values = array.from(10, 20, 30)
+emit "first" values.first()
+```
+
+**Output:**
+
+```text
+index  first
+0      10
+```
+
+**See also:** [`array.last`](./array.md#last)
+
 ### last
 
 Returns the last element of an array.
@@ -199,6 +240,22 @@ T array.last<T: storable>(series array<T> self)
 **Returns:** The element at the highest position.
 
 An empty array stops the run with an error.
+
+**Example:** `last` is the element at the highest position, 30.
+
+```tea
+values = array.from(10, 20, 30)
+emit "last" values.last()
+```
+
+**Output:**
+
+```text
+index  last
+0      30
+```
+
+**See also:** [`array.first`](./array.md#first)
 
 ## Changing
 
@@ -220,7 +277,24 @@ void array.set<T: storable>(
 | `index`   | `series int`      | The position, counting from 0 for the first element.                   |
 | `value`   | `series T`        | The new element.                                                       |
 
-An index that is negative, `na`, or not less than the size stops the run with an error.
+An index that is negative, `na`, or not less than the size stops the run with an error. Each change copies the collection and counts against a per-bar allocation budget; see [`array.push`](./array.md#push).
+
+**Example:** `values.set(1, 25)` replaces the second element.
+
+```tea
+values = array.from(10, 20, 30)
+values.set(1, 25)
+emit "values" values
+```
+
+**Output:**
+
+```text
+index  values
+0      [10,25,30]
+```
+
+**See also:** [`array.get`](./array.md#get)
 
 ### push
 
@@ -238,42 +312,42 @@ void array.push<T: storable>(
 | `self`    | `series array<T>` | The array to update. Must be a variable or field; the call updates it. |
 | `value`   | `series T`        | The value to append.                                                   |
 
-Appending to one variable does not change array values already assigned to other variables or committed to history. A struct element is stored by reference. A collection holds at most 100,000 elements; pushing past that stops the run with an error.
+Appending to one variable does not change array values already assigned to other variables or committed to history, and a function that pushes to an array it receives changes only its own copy. A struct element is stored by reference. A collection holds at most 100,000 elements; pushing past that stops the run with an error.
 
-**Example:**
+Each `push`, like every change to a collection, copies the whole collection into new storage. One bar may allocate at most 10,000 times and 16 MiB in all, where each copy counts 16 bytes plus 8 for each number, bool, string or color it holds; past either limit the run stops with `HEAP_LIMIT_EXCEEDED`. So an array of numbers created empty in a bar fails on its 2,046th push in that bar.
+
+**Example:** Declared with `var`, the array keeps its elements from bar to bar, so it gains one close on each bar.
 
 ```tea
-values = array.new<float>()
-values.push(open)
-values.push(close)
-emit "count" values.size() // 2
+var closes = array.new<float>()
+closes.push(close)
+emit "close" close
+emit "closes" closes
 ```
 
 ```csv
-time,open,close
-0,9,9
-1,10,11
-2,10,10
-3,10,12
-4,12,9
-5,10,14
-6,14,10
-7,11,15
+time,close
+0,9
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
 
 ```text
-index  count
-0      2
-1      2
-2      2
-3      2
-4      2
-5      2
-6      2
-7      2
+index  close  closes
+0      9      [9]
+1      12     [9,12]
+2      12     [9,12,12]
+3      15     [9,12,12,15]
+4      12     [9,12,12,15,12]
+5      18     [9,12,12,15,12,18]
 ```
+
+**See also:** [`array.pop`](./array.md#pop)
 
 ### pop
 
@@ -291,6 +365,24 @@ T array.pop<T: storable>(series array<T> self)
 
 An empty array stops the run with an error.
 
+**Example:** `pop` returns the last element, 30, and leaves the other two.
+
+```tea
+values = array.from(10, 20, 30)
+removed = values.pop()
+emit "removed" removed
+emit "values" values
+```
+
+**Output:**
+
+```text
+index  removed  values
+0      30       [10,20]
+```
+
+**See also:** [`array.push`](./array.md#push)
+
 ### clear
 
 Removes every element of an array.
@@ -302,3 +394,21 @@ void array.clear<T: storable>(series array<T> self)
 | Parameter | Type              | Description                                                            |
 | --------- | ----------------- | ---------------------------------------------------------------------- |
 | `self`    | `series array<T>` | The array to update. Must be a variable or field; the call updates it. |
+
+**Example:** After `clear`, `values` has no elements, so `size` is 0 and `empty` is `true`.
+
+```tea
+values = array.from(10, 20, 30)
+values.clear()
+emit "size" values.size()
+emit "empty" values.is_empty()
+```
+
+**Output:**
+
+```text
+index  size  empty
+0      0     true
+```
+
+**See also:** [`array.pop`](./array.md#pop)

@@ -27,57 +27,40 @@ See [types](../language/types.md) for the `matrix<T>` type and [memory model](..
 Creates a matrix with a fixed number of rows and columns.
 
 ```tea
-const matrix<T> matrix.new<T: storable>()
-
 matrix<T> matrix.new<T: storable>(
     series int rows,
     series int columns,
-    series T initial
+    series T initial = …
 )
+
+const matrix<T> matrix.new<T: storable>()
 ```
 
-| Parameter | Type         | Description                            |
-| --------- | ------------ | -------------------------------------- |
-| `rows`    | `series int` | The number of rows. Cannot be `na`.    |
-| `columns` | `series int` | The number of columns. Cannot be `na`. |
-| `initial` | `series T`   | The value of every element.            |
+| Parameter | Type         | Description                                                                                    |
+| --------- | ------------ | ---------------------------------------------------------------------------------------------- |
+| `rows`    | `series int` | The number of rows. Cannot be `na`.                                                            |
+| `columns` | `series int` | The number of columns. Cannot be `na`.                                                         |
+| `initial` | `series T`   | The value of every element. Without it, every element is `na`, or `false` in a `matrix<bool>`. |
 
 **Returns:** A new matrix.
 
-Without arguments the matrix has no rows or columns, and the element type must be written: `matrix.new<float>()`. A matrix keeps its shape; no function adds or removes rows or columns. A negative dimension stops the run with an error. A collection holds at most 100,000 elements; a larger matrix also stops the run.
+Without arguments the matrix has no rows or columns, and the element type must be written: `matrix.new<float>()`. A matrix keeps its shape; no function adds or removes rows or columns. A negative or `na` dimension stops the run with an error. A collection holds at most 100,000 elements; a larger matrix also stops the run. Each change copies the collection and counts against a per-bar allocation budget; see [`matrix.set`](./matrix.md#set). A `for … in` loop cannot iterate over a matrix; loop over its rows and columns by index.
 
-**Example:**
+**Example:** `grid` has 2 rows and 3 columns of zeros; after the `set`, its second row ends with 5.
 
 ```tea
 grid = matrix.new<float>(2, 3, 0.0)
-grid.set(1, 2, close)
-emit "cells" grid.elements_count() // 6
-```
-
-```csv
-time,close
-0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+grid.set(1, 2, 5.0)
+emit "rows" grid.rows()
+emit "columns" grid.columns()
+emit "second_row" grid.row(1)
 ```
 
 **Output:**
 
 ```text
-index  cells
-0      6
-1      6
-2      6
-3      6
-4      6
-5      6
-6      6
-7      6
+index  rows  columns  second_row
+0      2     3        [0,0,5]
 ```
 
 ### copy
@@ -94,7 +77,24 @@ matrix<T> matrix.copy<T: storable>(series matrix<T> self)
 
 **Returns:** A new matrix with the same shape and elements.
 
-Matrices are values, so plain assignment already copies them. The copy is shallow: struct elements still refer to the same structs.
+Matrices are values, so plain assignment already copies them, and a function that changes a matrix it receives changes only its own copy. The copy is shallow: struct elements still refer to the same structs.
+
+**Example:** Setting an element of the copy `b` leaves `a` unchanged.
+
+```tea
+a = matrix.new<int>(1, 2, 0)
+b = a.copy()
+b.set(0, 0, 5)
+emit "a" a.row(0)
+emit "b" b.row(0)
+```
+
+**Output:**
+
+```text
+index  a      b
+0      [0,0]  [5,0]
+```
 
 ## Reading
 
@@ -162,6 +162,23 @@ T matrix.get<T: storable>(
 
 A row or column outside the matrix, or `na`, stops the run with an error.
 
+**Example:** Rows and columns count from 0, so `grid.get(1, 0)` reads the first element of the second row, 7.
+
+```tea
+grid = matrix.new<int>(2, 2, 0)
+grid.set(1, 0, 7)
+emit "cell" grid.get(1, 0)
+```
+
+**Output:**
+
+```text
+index  cell
+0      7
+```
+
+**See also:** [`matrix.set`](./matrix.md#set)
+
 ### row
 
 Returns one row of a matrix as a new array.
@@ -182,6 +199,25 @@ array<T> matrix.row<T: storable>(
 
 A row outside the matrix, or `na`, stops the run with an error.
 
+**Example:** `top` was read before the `set`, so it keeps the old first row; `changed` shows the 9.
+
+```tea
+grid = matrix.new<int>(2, 3, 0)
+top = grid.row(0)
+grid.set(0, 1, 9)
+emit "top" top
+emit "changed" grid.row(0)
+```
+
+**Output:**
+
+```text
+index  top      changed
+0      [0,0,0]  [0,9,0]
+```
+
+**See also:** [`matrix.column`](./matrix.md#column)
+
 ### column
 
 Returns one column of a matrix as a new array.
@@ -201,6 +237,23 @@ array<T> matrix.column<T: storable>(
 **Returns:** A new array of the column’s elements from top to bottom; later changes to the matrix do not affect it.
 
 A column outside the matrix, or `na`, stops the run with an error.
+
+**Example:** The second column reads 7 from the first row and 0 from the second.
+
+```tea
+grid = matrix.new<int>(2, 3, 0)
+grid.set(0, 1, 7)
+emit "second_column" grid.column(1)
+```
+
+**Output:**
+
+```text
+index  second_column
+0      [7,0]
+```
+
+**See also:** [`matrix.row`](./matrix.md#row)
 
 ## Changing
 
@@ -224,7 +277,27 @@ void matrix.set<T: storable>(
 | `column`  | `series int`       | The column, counting from 0.                                            |
 | `value`   | `series T`         | The new element.                                                        |
 
-A row or column outside the matrix, or `na`, stops the run with an error.
+A row or column outside the matrix, or `na`, stops the run with an error. A function that changes a matrix it receives changes only its own copy.
+
+Each `set`, like every change to a collection, copies the whole collection into new storage. One bar may allocate at most 10,000 times and 16 MiB in all, where each copy counts 16 bytes plus 8 for each number, bool, string or color it holds; past either limit the run stops with `HEAP_LIMIT_EXCEEDED`. So a 100 by 100 matrix of numbers created in a bar allows 208 calls to `set` in that bar, and the 209th fails.
+
+**Example:** `grid.set(0, 1, 7)` changes only the second element of the first row.
+
+```tea
+grid = matrix.new<int>(2, 2, 0)
+grid.set(0, 1, 7)
+emit "first_row" grid.row(0)
+emit "second_row" grid.row(1)
+```
+
+**Output:**
+
+```text
+index  first_row  second_row
+0      [0,7]      [0,0]
+```
+
+**See also:** [`matrix.get`](./matrix.md#get), [`matrix.fill`](./matrix.md#fill)
 
 ### fill
 
@@ -241,3 +314,23 @@ void matrix.fill<T: storable>(
 | --------- | ------------------ | ----------------------------------------------------------------------- |
 | `self`    | `series matrix<T>` | The matrix to update. Must be a variable or field; the call updates it. |
 | `value`   | `series T`         | The value for every element.                                            |
+
+Each change copies the collection and counts against a per-bar allocation budget; see [`matrix.set`](./matrix.md#set).
+
+**Example:** After `fill(1)`, every element of both rows is 1.
+
+```tea
+grid = matrix.new<int>(2, 2, 0)
+grid.fill(1)
+emit "first_row" grid.row(0)
+emit "second_row" grid.row(1)
+```
+
+**Output:**
+
+```text
+index  first_row  second_row
+0      [1,1]      [1,1]
+```
+
+**See also:** [`matrix.set`](./matrix.md#set)

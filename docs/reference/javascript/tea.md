@@ -11,36 +11,36 @@ import {…} from 'tea';
 
 The JavaScript embedding API. Start with the [`tea`](./tea.md#tea) template tag, which compiles a program into a [`Node`](./tea.md#node): bind parameters and [`DataStream`](./tea.md#datastream) inputs with `bind()`, then observe [`Datum`](./tea.md#datum) rows with `to()`. [`fromCSV`](./tea.md#fromcsv), [`fromWS`](./tea.md#fromws), [`CSVSink`](./tea.md#csvsink) and [`WebSocketSink`](./tea.md#websocketsink) adapt files and sockets, and [`batchRecipe`](./tea.md#batchrecipe) runs a Node over finite data until it completes.
 
-| Name                                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`batchRecipe`](#batchrecipe)                 | Creates one finite Recipe from ordinary public Node inputs and output.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| [`createNode`](#createnode)                   | Creates the public Node owner for one compiled module tree.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| [`discoverCSVSchema`](#discovercsvschema)     | Read CSV column names as non-nullable Arrow Utf8 fields. Headers establish names, not numeric types; supply an explicit schema to request conversion.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| [`fromCSV`](#fromcsv)                         | Create a finite, cold DataStream over a CSV file, reading its header first when no schema is supplied.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| [`fromWS`](#fromws)                           | Create a cold JSON WebSocket stream validated against an Arrow schema.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| [`pineBuiltinSupplier`](#pinebuiltinsupplier) | Supply per-step Pine values, such as `bar_index`, `time`, `timenow` and the `barstate.*` flags, from the Node's position and source time. The [`tea`](./tea.md#tea) template installs one with default callbacks; pass one to [`createNode`](./tea.md#createnode) when calling it directly, or to supply a host clock or realtime flag. Each attempt samples the supplied clock and live flag once; callers wanting a fixed evaluation instant supply a constant function. Derived Nodes share no clock memoization. Node gives one supplier to every request child, and each child samples both callbacks at its own steps. `barstate.isrealtime` reads the live flag and `barstate.ishistory` its opposite. The default flag is false, so finite runs and `tea` template Nodes report history; a live host calls `createNode` with its own flag. Absent symbol/timeframe metadata uses the builtin's typed empty value. Runtime overlays any bound fixed values. |
-| [`sync`](#sync)                               | Emits once per `target` notification, projecting the `source` values that have been buffered up to that point.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| [`tea`](#tea)                                 | Compile an in-memory Tea template and prepare its usable parameter defaults. The returned Node owns future stream connections; constructing it does not subscribe to data or execute a step. Diagnostics throw TeaCompileError.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| [`timeframeClock`](#timeframeclock)           | Convert one concrete Tea timeframe to its regular clock, or `i`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| [`BindError`](#binderror)                     | Host-supplied configuration or input that the compiled program cannot accept. It reports a mistake in the host's binding, never in Tea source.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| [`CSVSink`](#csvsink)                         | Write validated rows in Arrow field order, or infer columns from the first row when no schema is supplied. Completion waits for the file to finish; errors reject `completion`. Construction never opens the file for writing; in append mode it reads the header of an existing non-empty file and throws if that header is invalid or does not match the schema's columns.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| [`CSVSource`](#csvsource)                     | A cold CSV source with declared Arrow fields. CSV text is converted to each field's scalar type before validation; undeclared CSV columns are ignored. No file is opened by the constructor. `open()` reads the header first when no schema is supplied.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| [`DataStream`](#datastream)                   | A read-only Observable validated once per emission against an Arrow schema. The stream owns a schema copy; inspecting `schema` returns another copy, so callers cannot change validation after construction. No subscription is created until `subscribe()` or the returned Observable is subscribed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| [`StdoutSink`](#stdoutsink)                   | Print each value as one line as soon as it arrives, for inspecting a Node run or any other Observable.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| [`TeaCompileError`](#teacompileerror)         | The source passed to the [`tea`](./tea.md#tea) template did not compile.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| [`WebSocketSink`](#websocketsink)             | Validate rows with Arrow and send JSON text through one bounded socket queue. `completion` resolves after queued messages and the socket buffer drain. JSON's limitations still apply: binary/BigInt/NaN need an appropriate wire codec if their exact representation matters; Arrow IPC is a separate format.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| [`WebSocketSource`](#websocketsource)         | A cold JSON text source. Each subscription owns one socket and closes it on completion, error, or cancellation. JSON values must already match the Arrow schema; domain conversions belong in the producer or an RxJS map.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| [`Datum`](#datum)                             | A detached row matching the module's Arrow output schema. Assignment fields are nullable values; append fields contain values in per-column execution order.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| [`Node`](#node)                               | A compiled Tea program that can be bound to streams and observed as output.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| [`Recipe`](#recipe)                           | A Tea run whose program, inputs, outputs, and execution rules have already been chosen.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| [`Source`](#source)                           | A source owns decoding and an Arrow schema; its DataStream owns validation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| [`BatchResult`](#batchresult)                 | The summary returned after a Batch Recipe finishes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| [`BindingInput`](#bindinginput)               | Values accepted by `Node.bind()`: parameters, one stream, or named streams.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| [`Clock`](#clock)                             | A regular sampling period in nanoseconds, or [`i`](./tea.md#constants) when the period is irregular or unknown. A [`DataStream`](./tea.md#datastream) carries one Clock.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| [`CSVMode`](#csvmode)                         | How a [`CSVSink`](./tea.md#csvsink) opens its file, as the Node.js `fs` flag of the same name.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| [`CSVRow`](#csvrow)                           | One CSV row as text, keyed by column name: the row type of a CSV stream opened without a schema, where every column is a non-nullable Utf8 field.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| [`OverflowMode`](#overflowmode)               | What a [`WebSocketSink`](./tea.md#websocketsink) does with a new message when its send queue already holds `capacity` messages.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| [`Wait`](#wait)                               | The projector's "not yet" result. A projector obtains it only by calling the `wait` argument it receives, so returning it is always deliberate.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Name                                          | Description                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`batchRecipe`](#batchrecipe)                 | Creates one finite Recipe from ordinary public Node inputs and output.                                                                                                                                                                                                                                                                                                       |
+| [`createNode`](#createnode)                   | Creates a [`Node`](./tea.md#node) for a compiled module, with a child for each of its requests.                                                                                                                                                                                                                                                                              |
+| [`discoverCSVSchema`](#discovercsvschema)     | Read CSV column names as non-nullable Arrow Utf8 fields. Headers establish names, not numeric types; supply an explicit schema to request conversion.                                                                                                                                                                                                                        |
+| [`fromCSV`](#fromcsv)                         | Create a finite, cold DataStream over a CSV file, reading its header first when no schema is supplied.                                                                                                                                                                                                                                                                       |
+| [`fromWS`](#fromws)                           | Create a cold JSON WebSocket stream validated against an Arrow schema.                                                                                                                                                                                                                                                                                                       |
+| [`pineBuiltinSupplier`](#pinebuiltinsupplier) | Returns the supplier of Pine's per-bar values, such as `bar_index`, `time`, `timenow` and the `barstate.*` flags, for [`createNode`](./tea.md#createnode).                                                                                                                                                                                                                   |
+| [`sync`](#sync)                               | Emits once per `target` notification, projecting the `source` values that have been buffered up to that point.                                                                                                                                                                                                                                                               |
+| [`tea`](#tea)                                 | Compile an in-memory Tea template and prepare its usable parameter defaults. The returned Node owns future stream connections; constructing it does not subscribe to data or execute a step. Diagnostics throw TeaCompileError.                                                                                                                                              |
+| [`timeframeClock`](#timeframeclock)           | Convert one concrete Tea timeframe to its regular clock, or `i`.                                                                                                                                                                                                                                                                                                             |
+| [`BindError`](#binderror)                     | Host-supplied configuration or input that the compiled program cannot accept. It reports a mistake in the host's binding, never in Tea source.                                                                                                                                                                                                                               |
+| [`CSVSink`](#csvsink)                         | Write validated rows in Arrow field order, or infer columns from the first row when no schema is supplied. Completion waits for the file to finish; errors reject `completion`. Construction never opens the file for writing; in append mode it reads the header of an existing non-empty file and throws if that header is invalid or does not match the schema's columns. |
+| [`CSVSource`](#csvsource)                     | A cold CSV source with declared Arrow fields. CSV text is converted to each field's scalar type before validation; undeclared CSV columns are ignored. No file is opened by the constructor. `open()` reads the header first when no schema is supplied.                                                                                                                     |
+| [`DataStream`](#datastream)                   | A read-only Observable validated once per emission against an Arrow schema. The stream owns a schema copy; inspecting `schema` returns another copy, so callers cannot change validation after construction. No subscription is created until `subscribe()` or the returned Observable is subscribed.                                                                        |
+| [`StdoutSink`](#stdoutsink)                   | Print each value as one line as soon as it arrives, for inspecting a Node run or any other Observable.                                                                                                                                                                                                                                                                       |
+| [`TeaCompileError`](#teacompileerror)         | The source passed to the [`tea`](./tea.md#tea) template did not compile.                                                                                                                                                                                                                                                                                                     |
+| [`WebSocketSink`](#websocketsink)             | Validate rows with Arrow and send JSON text through one bounded socket queue. `completion` resolves after queued messages and the socket buffer drain. JSON's limitations still apply: binary/BigInt/NaN need an appropriate wire codec if their exact representation matters; Arrow IPC is a separate format.                                                               |
+| [`WebSocketSource`](#websocketsource)         | A cold JSON text source. Each subscription owns one socket and closes it on completion, error, or cancellation. JSON values must already match the Arrow schema; domain conversions belong in the producer or an RxJS map.                                                                                                                                                   |
+| [`Datum`](#datum)                             | One output row of a run: the row's position and status, then one field per output of the script, in the order of the module's output schema.                                                                                                                                                                                                                                 |
+| [`Node`](#node)                               | A compiled Tea program that can be bound to streams and observed as output.                                                                                                                                                                                                                                                                                                  |
+| [`Recipe`](#recipe)                           | A Tea run whose program, inputs, outputs, and execution rules have already been chosen.                                                                                                                                                                                                                                                                                      |
+| [`Source`](#source)                           | A source owns decoding and an Arrow schema; its DataStream owns validation.                                                                                                                                                                                                                                                                                                  |
+| [`BatchResult`](#batchresult)                 | The summary returned after a Batch Recipe finishes.                                                                                                                                                                                                                                                                                                                          |
+| [`BindingInput`](#bindinginput)               | What [`Node.bind`](./tea.md#node-node-bind) accepts: one [`DataStream`](./tea.md#datastream), a record of named DataStreams, or a record of parameter values.                                                                                                                                                                                                                |
+| [`Clock`](#clock)                             | A regular sampling period in nanoseconds, or [`i`](./tea.md#constants) when the period is irregular or unknown. A [`DataStream`](./tea.md#datastream) carries one Clock.                                                                                                                                                                                                     |
+| [`CSVMode`](#csvmode)                         | How a [`CSVSink`](./tea.md#csvsink) opens its file, as the Node.js `fs` flag of the same name.                                                                                                                                                                                                                                                                               |
+| [`CSVRow`](#csvrow)                           | One CSV row as text, keyed by column name: the row type of a CSV stream opened without a schema, where every column is a non-nullable Utf8 field.                                                                                                                                                                                                                            |
+| [`OverflowMode`](#overflowmode)               | What a [`WebSocketSink`](./tea.md#websocketsink) does with a new message when its send queue already holds `capacity` messages.                                                                                                                                                                                                                                              |
+| [`Wait`](#wait)                               | The projector's "not yet" result. A projector obtains it only by calling the `wait` argument it receives, so returning it is always deliberate.                                                                                                                                                                                                                              |
 
 ## Functions
 
@@ -67,7 +67,7 @@ finite price stream, observes every Datum, and waits for the sink to finish.
 
 ### createNode
 
-Creates the public Node owner for one compiled module tree.
+Creates a [`Node`](./tea.md#node) for a compiled module, with a child for each of its requests.
 
 ```ts
 function createNode(module: Module, builtinSupplier?: BuiltinSupplier): Node;
@@ -75,14 +75,32 @@ function createNode(module: Module, builtinSupplier?: BuiltinSupplier): Node;
 
 | Parameter         | Description                                                                                                                                                                                                                                                                                                                                         |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `module`          | The compiled module tree, usually `loadModule(source).bind()` so parameter defaults are filled in.                                                                                                                                                                                                                                                  |
+| `module`          | The compiled module tree, usually `loadModule(source).bind()` so parameter defaults are filled in. With an unbound module, the Node is not ready until `bind()` sets its parameters; `bind({})` fills in the defaults.                                                                                                                              |
 | `builtinSupplier` | Supplies each step's contextual builtin values, such as `bar_index` and `timenow`, to this Node and every request child. The default supplies none, so a run whose module reads a contextual builtin fails at its first step; pass the result of [`pineBuiltinSupplier`](./tea.md#pinebuiltinsupplier), as the [`tea`](./tea.md#tea) template does. |
 
-Construction mirrors request children but does not bind streams, create a
-runtime, or subscribe to anything.
+It binds no stream, creates no runtime and subscribes to nothing.
 
-**Example:** A compiled program with no requests creates one Node. A program with
-`daily = request.security(...)` creates the main Node plus one private child.
+```ts
+import { of } from "rxjs";
+import { Field, Float64, Schema } from "apache-arrow";
+import { createNode, DataStream, pineBuiltinSupplier } from "tea";
+import { compileToProgram, Errors, generate, loadModule } from "tea/compiler";
+
+const source = 'emit "bar" bar_index\nemit "double" close * 2';
+const program = compileToProgram(
+  [{ filename: "double.tea", source }],
+  new Errors(),
+);
+if (program !== null) {
+  const prices = new DataStream(
+    new Schema([new Field("close", new Float64(), false)]),
+    of({ close: 10 }, { close: 11 }),
+  );
+  createNode(loadModule(generate(program)).bind(), pineBuiltinSupplier())
+    .bind(prices)
+    .to({ next: (row) => console.log(row.bar, row.double) }); // 0 20, 1 22
+}
+```
 
 ### discoverCSVSchema
 
@@ -142,7 +160,7 @@ prices.subscribe({ next: (row) => console.log(row.close) }); // {"close":12.5} e
 
 ### pineBuiltinSupplier
 
-Supply per-step Pine values, such as `bar_index`, `time`, `timenow` and the `barstate.*` flags, from the Node's position and source time. The [`tea`](./tea.md#tea) template installs one with default callbacks; pass one to [`createNode`](./tea.md#createnode) when calling it directly, or to supply a host clock or realtime flag. Each attempt samples the supplied clock and live flag once; callers wanting a fixed evaluation instant supply a constant function. Derived Nodes share no clock memoization. Node gives one supplier to every request child, and each child samples both callbacks at its own steps. `barstate.isrealtime` reads the live flag and `barstate.ishistory` its opposite. The default flag is false, so finite runs and `tea` template Nodes report history; a live host calls `createNode` with its own flag. Absent symbol/timeframe metadata uses the builtin's typed empty value. Runtime overlays any bound fixed values.
+Returns the supplier of Pine's per-bar values, such as `bar_index`, `time`, `timenow` and the `barstate.*` flags, for [`createNode`](./tea.md#createnode).
 
 ```ts
 function pineBuiltinSupplier(
@@ -155,6 +173,42 @@ function pineBuiltinSupplier(
   datum: Readonly<Record<string, unknown>>,
 ) => readonly Stored[];
 ```
+
+| Parameter    | Description                                                                                                                                              |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `now`        | Returns the time for `timenow`, in epoch milliseconds. Defaults to `Date.now`.                                                                           |
+| `isRealtime` | Returns whether the current bar is live, for `barstate.isrealtime` and `barstate.ishistory`. Defaults to always `false`, so every bar counts as history. |
+
+**Returns:** The supplier to pass to [`createNode`](./tea.md#createnode).
+
+The [`tea`](./tea.md#tea) template installs one with the default callbacks; pass one
+to [`createNode`](./tea.md#createnode) when calling it directly, or to supply your own clock
+or realtime flag. A Node and each of its requests call the supplier on
+every step with their own bar index and input row, and each call samples
+`now` and `isRealtime` once; pass a constant function for a fixed time.
+
+| Builtin                | Reads                                         | Fails when                    |
+| ---------------------- | --------------------------------------------- | ----------------------------- |
+| `bar_index`            | the bar's index                               | never                         |
+| `time`                 | the row's `time` field                        | the row has no time           |
+| `timenow`              | `now()`                                       | `now()` is not a safe integer |
+| `barstate.isfirst`     | whether the bar's index is 0                  | never                         |
+| `barstate.isconfirmed` | whether `provisional` is not `true`           | never                         |
+| `barstate.isnew`       | whether the row is the bar's first            | never                         |
+| `barstate.isrealtime`  | `isRealtime()`                                | never                         |
+| `barstate.ishistory`   | the opposite of `isRealtime()`                | never                         |
+| `syminfo.*`            | nothing: `na`                                 | never                         |
+| `timeframe.*`          | nothing: `na`, or `false` for the `is*` flags | never                         |
+
+The bar's index is the one in [`Datum`](./tea.md#datum): 0 for the first bar, and the
+same for every row of a bar. A failure throws [`BindError`](./tea.md#binderror) and fails
+the run. The supplier checks `now()` on every call, even when the script
+does not read `timenow`.
+
+`syminfo.*` and `timeframe.*` get real values only when the host fixes them
+while binding the module: the second argument of `Module.bind` maps the
+builtin's position in `module.inputs.builtins` to its value, which then
+replaces what this supplier gives on every step.
 
 **Example:** For a module containing only `emit "now" timenow`,
 `pineBuiltinSupplier(() => 1000)([], module, 0, {})` returns `[1000]`.
@@ -273,9 +327,8 @@ An error from either Observable, a throwing projector, or an invalid
 `consume` errors the output.
 Unsubscribing from the output unsubscribes from both.
 
-## Examples
-
-Default projection
+Without a projector, a notification emits everything buffered since the
+previous one, and waits while the buffer is empty.
 
 ```ts
 import { Subject } from "rxjs";
@@ -292,7 +345,7 @@ target.next(); // queued
 source.next(3); // 3
 ```
 
-Consume one buffered value per notification
+This projector consumes one buffered value per notification.
 
 ```ts
 source
@@ -309,15 +362,24 @@ target.next(); // 1
 target.next(); // 2
 ```
 
-Wait until two values are buffered, then take both
+This projector waits until two values are buffered, then takes both.
 
 ```ts
-sync(target, (_, buffer, wait) =>
-  buffer.length < 2 ? wait() : [buffer.slice(0, 2), 2],
-);
+source
+  .pipe(
+    sync(target, (_, buffer, wait) =>
+      buffer.length < 2 ? wait() : [buffer.slice(0, 2), 2],
+    ),
+  )
+  .subscribe((x) => console.log(x));
+
+source.next(1);
+target.next(); // queued
+source.next(2); // [1, 2]
 ```
 
-Carry the newest source value forward past source completion
+With `continueAfterSourceComplete`, this projector keeps serving the newest
+source value after the source completes.
 
 ```ts
 source
@@ -383,11 +445,13 @@ class BindError extends OperationalError {
 receiver unchanged: for an unknown or ill-typed parameter, invalid fixed
 context, a request path or stream name that matches no declaration or more
 than one, or a stream whose schema lacks a required numeric series, repeats
-a bound series, or disagrees with another bound stream's clock. During a
-step, the Pine builtin supplier throws it when its clock returns a value
-that is not a safe integer, or when the program reads `time` from an input
-without an exact epoch-millisecond time; that error fails the run and
-reaches its observers.
+a bound series, or disagrees with another bound stream's clock.
+`Node.to()` throws it when a binding is still missing. During a run, Node
+throws it for an input row that breaks the time, provisional or pairing
+rules of `bind()`, and the Pine builtin supplier throws it when its clock
+returns a value that is not a safe integer, or when the program reads
+`time` from an input without an exact epoch-millisecond time; that error
+fails the run and reaches its observers.
 
 ```ts
 const node = tea`
@@ -817,7 +881,7 @@ stream(): DataStream<T>;
 
 ### Datum
 
-A detached row matching the module's Arrow output schema. Assignment fields are nullable values; append fields contain values in per-column execution order.
+One output row of a run: the row's position and status, then one field per output of the script, in the order of the module's output schema.
 
 ```ts
 interface Datum extends Readonly<Record<string, unknown>> {
@@ -828,7 +892,56 @@ interface Datum extends Readonly<Record<string, unknown>> {
 }
 ```
 
-**Example:** `{index: 0, timed: false, provisional: false, price: 10, fills: []}`.
+- An `emit` output holds the value written on this step, or `null` when
+  the statement did not run on this step. A numeric `na` is `NaN`; any
+  other `na` is `null`.
+- An `emit.append` output holds an array of the values appended on this
+  step, in the order they were appended; it is empty when none were.
+- A `plot()` output holds an object with the call's arguments under their
+  parameter names, such as `series`, `title` and `color`. A color is an
+  object `{r, g, b, a}` with values from 0 to 255, or `null` for `na`.
+
+A Datum and its values are frozen copies, so they stay valid after later
+steps.
+
+**Example:** With `close` at 10, a script with `emit "price" close` and
+`emit.append "fills" "buy"` publishes
+`{index: 0, timed: false, provisional: false, price: 10, fills: ['buy']}`.
+
+#### Datum Datum index
+
+The bar this row belongs to: 0 for the first bar, then one more for each bar after it.
+
+```ts
+readonly index: number;
+```
+
+A provisional update carries the index of the bar it updates, so several
+rows can share an index; the row that finalizes that bar has it too.
+
+#### Datum Datum time
+
+The input row's time, in epoch milliseconds: absent when the input is not timed or the row has no time, and `null` when the row's time is null.
+
+```ts
+readonly time?: number | null;
+```
+
+#### Datum Datum provisional
+
+Whether this row is a provisional update that a later row replaces.
+
+```ts
+readonly provisional: boolean;
+```
+
+#### Datum Datum timed
+
+Whether `time` is present, including when it is `null`.
+
+```ts
+readonly timed: boolean;
+```
 
 ### Node
 
@@ -845,38 +958,90 @@ interface Node {
 }
 ```
 
-Binding derives a new Node and module tree; stream connections live only in
-the Node. Each derived Node owns the input
-Observable graph, one child Node per request, and the runtime created when
-execution starts. Module readiness describes configuration; Node readiness
-also requires the source streams to be connected.
+`bind()` returns a new Node and never changes the receiver. The first
+`to()` call starts one run, which later observers share, and `dispose()`
+stops it. Each `request.*` declaration in the script runs as a child with
+its own parameters, streams and runtime. `module.ready()` covers only
+parameters and request settings; `ready()` also requires the streams.
 
 #### Node Node module
 
-The compiled module owned by this Node, including Arrow schemas and request children. It contains no stream connection state. Binding leaves it unchanged.
+The compiled module of this Node: its parameters, its input and output Arrow schemas, and its request children.
 
 ```ts
 readonly module: Module;
 ```
 
-**Example:** After `const bound = node.bind({length: 20})`, `bound.module.parameters[0].value`
+It holds no streams, and binding never changes it: each Node that
+`bind()` returns has its own module.
+
+**Example:** For a script declaring `length = input.int(14)` first, after
+`const bound = node.bind({length: 20})`, `bound.module.parameters[0].value`
 is 20. `node.module.ready()` may be true before `node.ready()`, which also
-requires connected streams.
+requires bound streams.
 
 #### Node Node bind
 
-Returns a Node with a parameter patch or input streams, without subscribing. Parameter binding preserves previous values and fills only unset defaults; stream binding validates every requested field before deriving connections. A path selects nested request declaration names; no parent values are inherited. Streams may declare non-nullable Bool `provisional` metadata; it defaults to false. Repeated timed attempts require a pending provisional step; finalizing it commits one index before the source may advance time.
+Returns a new Node with parameter values or streams bound, leaving this Node unchanged and subscribing to nothing.
 
 ```ts
 bind(input: BindingInput, path?: readonly string[]): Node;
 ```
 
-**Example:** `node.bind({length: 20}).bind(closeStream)` derives a root run;
-`node.bind({length: 50}, ['daily'])` configures an independent child.
+The input takes one of three forms:
+
+- A [`DataStream`](./tea.md#datastream) supplies every series this Node reads that is not
+  bound yet; its schema must have a field for each.
+- A non-empty record whose values are all DataStreams binds streams by
+  name. A key names a series, such as `close`, or a request declared at
+  the top level of the script, such as `daily` in
+  `daily = request.security(...)`; that stream then supplies every series
+  the request's expression reads.
+- Any other record, including `{}`, sets parameters by input name. Named
+  inputs take the new values, inputs without a value take their defaults,
+  and the others keep theirs. So `bind({length: 5, close: stream})` throws
+  for the unknown parameter `close`: bind the stream in a separate call.
+
+`path` names a request declared at the top level, such as `['daily']`, and
+binds the input to that request instead of the main script. A request has
+its own copy of the inputs its expression uses: setting `length` on the
+main script leaves the request's `length` unchanged.
+
+A series field must be a non-nullable Arrow float, or an integer of at
+most 32 bits. A field named `time` of type `TimestampMillisecond` or
+`Int64` makes the stream timed: a row's time, when it has one, must be a
+whole number of epoch milliseconds that never decreases. A row may repeat
+the time of the row before it only when that row was provisional, and the
+row after a provisional row must repeat its time. A `time` field of
+another type is ignored.
+
+A stream may also have a non-nullable `Bool` field named `provisional`,
+read on every row: `true` marks a provisional update of the current bar,
+which later rows replace, and the next `false` row finalizes that bar.
+Without the field, every row is final.
+
+Streams bound to one Node are paired by position: their first rows form
+the first input row, and so on, and the run ends when any of them ends.
+Paired rows must agree on `time`, when both have one, and on
+`provisional`. Streams with a regular [`Clock`](./tea.md#clock) must share it.
+
+Throws [`BindError`](./tea.md#binderror) for an unknown parameter or a value the input
+does not accept, a key or path that matches no declaration or more than
+one, a series that is already bound, a single DataStream when every
+series is already bound, a schema that lacks a series or gives it the
+wrong type, a `provisional` field that is not a non-nullable `Bool`, or
+clocks that disagree. Throws `Error` when this Node is
+disposed. Rows that break the time or pairing rules fail the run instead,
+and the error reaches observers through `error()`.
+
+**Example:** `node.bind({length: 20}).bind(prices)` sets `length`, then binds
+every series from `prices`. `node.bind({daily: dailyPrices})` binds the
+request declared as `daily`, and `node.bind({length: 50}, ['daily'])`
+sets that request's `length`.
 
 #### Node Node ready
 
-Reports whether the main program and every request child have all inputs.
+Reports whether the main script and every request have all their parameters, request settings and streams bound. A disposed Node is never ready.
 
 ```ts
 ready(): boolean;
@@ -887,18 +1052,42 @@ ready(): boolean;
 
 #### Node Node to
 
-Observes output and starts execution when the first observer is attached.
+Attaches an observer to this Node's output, starting the run on the first call.
 
 ```ts
 to(observer: Partial<Observer<Datum>>): Subscription;
 ```
 
-Later observers share the same runtime and receive only future output.
-If any observer throws while receiving a Datum, the shared execution stops
-and every observer receives that same error.
+The first call subscribes to the bound streams and runs the script once
+per input row; with a synchronous source, the whole run happens inside the
+call. Later calls join that run and receive only future Datums. Each
+observer gets one [`Datum`](./tea.md#datum) per input row, then `complete()` when the
+inputs end or the Node is disposed.
 
-**Example:** `node.to(new StdoutSink())` starts the pipeline and prints each
-lossless output Datum.
+A run failure, such as a runtime error in the script or an input row that
+breaks the rules of `bind()`, ends the run and reaches every observer
+through `error()`; `to()` does not throw it. An observer without `error()`
+gets the failure as an unhandled RxJS error, which Node.js reports as an
+uncaught exception. If an observer's `next()` throws, the run stops and
+every observer receives that error.
+
+Unsubscribing the returned Subscription removes only that observer. The
+run continues, even with no observers left, until its inputs end or
+`dispose()` is called.
+
+Throws a plain `Error` when this Node is disposed, and a
+[`BindError`](./tea.md#binderror) when `ready()` is false, with a message such as
+`Node is missing bindings: close`, or when a request's stream has a clock
+that does not match the request's timeframe.
+
+This starts the run and logs each row's index, then any failure.
+
+```ts
+node.to({
+  next: (row) => console.log(row.index),
+  error: (error) => console.error(error),
+});
+```
 
 #### Node Node asStream
 
@@ -934,11 +1123,16 @@ doubled.asStream().subscribe({
 
 #### Node Node dispose
 
-Stops the input subscription and releases every main and request runtime.
+Stops the run and releases the runtimes of this Node and its requests.
 
 ```ts
 dispose(): void;
 ```
+
+It unsubscribes from the bound streams and completes every observer.
+Calling it again does nothing. Afterwards `bind()`, `to()` and
+`asStream()` throw `Error`. Nodes derived from this one with `bind()` have
+their own runs and keep going.
 
 **Example:** Call `node.dispose()` to stop a live Subject or WebSocket source.
 
@@ -998,11 +1192,14 @@ type BatchResult = Readonly<{
 
 ### BindingInput
 
-Values accepted by `Node.bind()`: parameters, one stream, or named streams.
+What [`Node.bind`](./tea.md#node-node-bind) accepts: one [`DataStream`](./tea.md#datastream), a record of named DataStreams, or a record of parameter values.
 
 ```ts
 type BindingInput = DataStream<unknown> | Readonly<Record<string, unknown>>;
 ```
+
+A record is named streams only when it is non-empty and every value is a
+DataStream. Any other record, including `{}`, is a parameter patch.
 
 ### Clock
 

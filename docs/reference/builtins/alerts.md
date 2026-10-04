@@ -9,17 +9,38 @@ Each call writes one named output that a host can deliver as an alert. See [outp
 
 Functions that describe plots, shapes, colors and alerts as named outputs.
 
-Each call records its arguments in a description value and writes it to the
-output named by its first argument, `id`. Tea draws and sends nothing: the
-host decides how to draw or deliver each output, so options such as
-`linewidth` or `display` are hints recorded exactly as passed. Only the
-script itself can call these functions, not a library file.
+Each plotting call records its arguments in a description value and writes
+it to the output named by its first argument, `id`; each alert call appends
+an event to the list named by `id`. Tea draws and sends nothing: the host
+decides how to draw or deliver each output. Tea does not check the options
+either: a style, line style, location, size, display or format name is
+recorded as written, so a misspelled one is not an error, and numbers such
+as `linewidth` are recorded even when negative. Only the script itself can
+call these functions, not a library file.
+
+A host recognizes each output by its type id: `visual.Plot` for
+[`plot`](./plots.md#plot), `visual.Hline` for [`hline`](./plots.md#hline), `visual.Fill` for
+[`fill`](./plots.md#fill), `visual.Shape` for [`plotshape`](./plots.md#plotshape), `visual.Character` for
+[`plotchar`](./plots.md#plotchar), `visual.Background` for [`bgcolor`](./plots.md#bgcolor) and
+`visual.BarColor` for [`barcolor`](./plots.md#barcolor). An alert output is a list of
+`visual.Alert` events for [`alertcondition`](./alerts.md#alertcondition), or of
+`visual.AlertEvent<T>` events for [`alert`](./alerts.md#alert), where `T` is the type of
+the alert's payload.
 
 An `id` is a constant string, unique among the script's outputs; only alert
 calls may share one. It cannot be empty or one of `index`, `time`, `timed`
 and `provisional`. Apart from the alerts, a call may run at most once per
-row, so not inside a loop, and on a row where it does not run, such as
-inside an `if` whose condition is false, its output holds no value.
+bar, so not inside a loop. On a bar where it does not run, such as inside
+an `if` whose condition is false, its output is `null`, which `tea run`
+prints as `na`. An alert output holds a list on every bar, `[]` when no
+event was appended.
+
+**Pine Script:** Every plot and alert function takes an output `id` first, so Pine
+Script's `plot(ta.sma(close, 2))` fails with "missing argument 'series' in
+call to 'plot'"; write `plot("sma", ta.sma(close, 2))`. Tea cannot create
+drawing objects: there is no `label.new`, `line.new`, `box.new`,
+`table.new`, `polyline.new` or `linefill.new`, so every value of the
+`label`, `line`, `box`, `table`, `polyline` and `linefill` types is `na`.
 
 Available in every script without an import or namespace.
 
@@ -27,7 +48,7 @@ Available in every script without an import or namespace.
 
 ### alertcondition
 
-Appends an alert event with fixed text on each row where a condition is true.
+Appends an alert event with fixed text on each bar where a condition is true.
 
 ```tea
 alertcondition(
@@ -38,31 +59,60 @@ alertcondition(
 )
 ```
 
-| Parameter   | Type           | Default | Description                                                                                                                                         |
-| ----------- | -------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`        | `const string` |         | Name of the event list this call appends to. Several `alertcondition` calls may share one `id`; their events keep the order in which the calls run. |
-| `condition` | `series bool`  |         | Whether to append an event on the current row.                                                                                                      |
-| `title`     | `const string` | `""`    | Event title.                                                                                                                                        |
-| `message`   | `const string` | `""`    | Event message.                                                                                                                                      |
+| Parameter   | Type           | Default | Description                                                                                                                                                                                                  |
+| ----------- | -------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`        | `const string` |         | Name of the event list this call appends to. Several `alertcondition` calls may share one `id`, and one call may run several times on a bar, as in a loop; the events keep the order in which the calls run. |
+| `condition` | `series bool`  |         | Whether to append an event on the current bar.                                                                                                                                                               |
+| `title`     | `const string` | `""`    | Event title; it cannot change from bar to bar.                                                                                                                                                               |
+| `message`   | `const string` | `""`    | Event message; it cannot change from bar to bar.                                                                                                                                                             |
 
 **Returns:** Nothing; use the call as a statement.
 
-Each such row appends one event with the fields `title` and `message`; other
-rows append nothing. A condition that stays true appends an event on every
-row, so pass a transition such as [`ta.crossover`](./ta/crossover.md) to alert once per
-crossing. When the host re-runs the current row with live updates, each run
-replaces that row's events; combine the condition with
-[`barstate.isconfirmed`](./bar-and-time.md#isconfirmed) to append only on the row's final run. Tea
+Each bar where `condition` is true appends one event with the fields `title`
+and `message`, and the output `id` holds the bar's events as a list, `[]` on
+a bar with none.
+A condition that stays true appends an event on every bar, so pass a
+transition such as [`ta.crossover`](./ta/crossover.md) to alert once per crossing. When
+the host re-runs the current bar with live updates, each run writes only its
+own events, replacing those of the earlier runs; combine the condition with
+[`barstate.isconfirmed`](./bar-and-time.md#isconfirmed) to append only on the bar's final run. Tea
 sends no notification: the host decides what to do with each event.
 
+**Example:** `above` appends an event on every bar whose close is above `11`, indexes 1,
+2 and 4; `cross` appends only where the close crosses above `11`, indexes 1
+and 4. A bar without an event holds `[]`.
+
 ```tea
-crossed = ta.crossover(close, ta.sma(close, 20))
-alertcondition("cross", barstate.isconfirmed and crossed, "Cross", "Close crossed its 20-row average")
+emit "close" close
+alertcondition("above", close > 11, "Above", "Close is above 11")
+alertcondition("cross", ta.crossover(close, 11.0), "Cross", "Close crossed above 11")
 ```
+
+```csv
+time,close
+0,10
+1,12
+2,13
+3,10
+4,12
+```
+
+**Output:**
+
+```text
+index  close  above                                              cross
+0      10     []                                                 []
+1      12     [{"title":"Above","message":"Close is above 11"}]  [{"title":"Cross","message":"Close crossed above 11"}]
+2      13     [{"title":"Above","message":"Close is above 11"}]  []
+3      10     []                                                 []
+4      12     [{"title":"Above","message":"Close is above 11"}]  [{"title":"Cross","message":"Close crossed above 11"}]
+```
+
+**See also:** [`alert`](./alerts.md#alert)
 
 ### alert
 
-Appends an alert event with per-row text and a struct payload on each row where a condition is true.
+Appends an alert event with per-bar text and a struct payload on each bar where a condition is true.
 
 ```tea
 alert(
@@ -77,23 +127,53 @@ alert(
 | Parameter   | Type            | Description                                                                                                                                                          |
 | ----------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`        | `const string`  | Name of the event list this call appends to. Several `alert` calls may share one `id` when they pass the same `data` type; an `alertcondition` call cannot share it. |
-| `condition` | `series bool`   | Whether to append an event on the current row.                                                                                                                       |
-| `title`     | `series string` | Event title; may change from row to row.                                                                                                                             |
-| `message`   | `series string` | Event message; may change from row to row.                                                                                                                           |
-| `data`      |                 | Payload: any struct value, such as `Move.new(syminfo.ticker, close)`. Numbers, arrays and other non-struct values are rejected.                                      |
+| `condition` | `series bool`   | Whether to append an event on the current bar.                                                                                                                       |
+| `title`     | `series string` | Event title; may change from bar to bar.                                                                                                                             |
+| `message`   | `series string` | Event message; may change from bar to bar.                                                                                                                           |
+| `data`      |                 | Payload: any struct value, such as `Move.new(close, change)` in the example. Numbers, strings, arrays and other values that are not structs are rejected.            |
 
 **Returns:** Nothing; use the call as a statement.
 
-Each row where `condition` is true appends one event with the fields
-`title`, `message` and `data`; other rows append nothing. Unlike
-[`alertcondition`](./alerts.md#alertcondition), the text can change from row to row, and `data`
-carries a struct value whose fields keep their types in the output. Repeated
-true rows and live re-runs behave as for [`alertcondition`](./alerts.md#alertcondition).
+Each bar where `condition` is true appends one event with the fields
+`title`, `message` and `data`, and the output `id` holds the bar's events as
+a list, `[]` on a bar with none. Unlike [`alertcondition`](./alerts.md#alertcondition), the text can
+change from bar to bar, and `data` carries a struct value whose fields keep
+their types in the output. Repeated true bars and live re-runs behave as for
+[`alertcondition`](./alerts.md#alertcondition).
+
+**Example:** An event on each bar whose close moves by `2` or more, at indexes 1 and 3.
+The message shows the move, and `data` keeps the struct's fields.
 
 ```tea
 struct Move
-    string symbol
     float price
+    float change
 
-alert("move", barstate.isconfirmed and close > 50, "Price above 50", "Close " + str.tostring(close), Move.new(syminfo.ticker, close))
+emit "close" close
+change = close - close[1]
+alert("move", math.abs(change) >= 2, "Big move", "Close moved " + str.tostring(change), Move.new(close, change))
 ```
+
+```csv
+time,close
+0,10
+1,13
+2,12
+3,9
+```
+
+**Output:**
+
+```text
+index  close  move
+0      10     []
+1      13     [{"title":"Big move","message":"Close moved 3","data":{"price":13,"change":3}}]
+2      12     []
+3      9      [{"title":"Big move","message":"Close moved -3","data":{"price":9,"change":-3}}]
+```
+
+**Pine Script:** Pine Script's `alert(message, freq)` has a different signature: it
+takes no `id`, condition, title or payload, and Tea has no `freq` parameter
+or `alert.freq_*` constants.
+
+**See also:** [`alertcondition`](./alerts.md#alertcondition)

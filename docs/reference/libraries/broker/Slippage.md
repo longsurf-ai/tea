@@ -15,3 +15,56 @@ type Slippage
 | `broker.SlippageKind kind` | How `value` is applied.                                                                                                     |
 | `float value`              | Rate below `1` or number of ticks, depending on `kind`; must be zero or positive.                                           |
 | `float tickSize`           | Price size of one tick, used only by `ticks` slippage; must not be negative, and must be positive when `value` is not zero. |
+
+The broker moves every fill's matched price against the order: buys fill
+higher and sells lower. Quantities sized from cash are then computed at that
+execution price. The formula is on
+[`broker.BrokerEmulator.execution_price`](./BrokerEmulator.md#execution_price).
+
+**Example:** A buy at the open of 110 on index 1, closed at the open of 120 on index 2.
+A rate of 1% fills at 111.1 and 118.8; two ticks of 0.25 fill at 110.5 and
+119.5.
+
+```tea
+import broker
+import portfolio
+import trade
+
+var byRate = trade.nextOpen(
+    broker.new(slippage = broker.slippageRate(0.01)),
+    portfolio.new(initialCash = 10000.0)
+)
+var byTicks = trade.nextOpen(
+    broker.new(slippage = broker.slippageTicks(2.0, 0.25)),
+    portfolio.new(initialCash = 10000.0)
+)
+a = byRate.begin_bar(open, bar_index)
+b = byTicks.begin_bar(open, bar_index)
+if bar_index == 0
+    byRate.entry("Long", trade.Direction.long, qty = 10.0)
+    byTicks.entry("Long", trade.Direction.long, qty = 10.0)
+if bar_index == 1
+    byRate.close("Long")
+    byTicks.close("Long")
+byRate.end_bar(close, false)
+byTicks.end_bar(close, false)
+emit "open" open
+emit "rate" a.price
+emit "ticks" b.price
+```
+
+```csv
+time,open,close
+0,100,100
+1,110,112
+2,120,118
+```
+
+**Output:**
+
+```text
+index  open  rate   ticks
+0      100   na     na
+1      110   111.1  110.5
+2      120   118.8  119.5
+```

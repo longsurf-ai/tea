@@ -40,7 +40,7 @@ broker.Order submit(broker.Command command)
 | --------- | ---------------- | ----------------- |
 | `command` | `broker.Command` | command to submit |
 
-**Returns:** the accepted order, or `na` when rejected.
+**Returns:** `broker.Order`: the accepted order, or `na` when rejected.
 
 ### submit_exit
 
@@ -54,7 +54,7 @@ broker.Order submit_exit(broker.Command command)
 | --------- | ---------------- | ------------ |
 | `command` | `broker.Command` | exit command |
 
-**Returns:** the accepted exit order, or `na` when rejected.
+**Returns:** `broker.Order`: the accepted exit order, or `na` when rejected.
 
 ### cancel
 
@@ -68,7 +68,7 @@ int cancel(string commandId)
 | ----------- | -------- | -------------------- |
 | `commandId` | `string` | command id to cancel |
 
-**Returns:** the number of orders cancelled.
+**Returns:** `int`: the number of orders cancelled.
 
 ### match_pending
 
@@ -92,7 +92,7 @@ broker.Fill match_pending(
 | `account`   | `broker.Account` | account view from the portfolio |
 | `barIndex`  | `int`            | current bar index               |
 
-**Returns:** the fill, or `na`.
+**Returns:** `broker.Fill`: the fill, or `na`.
 
 ### continue_reversal
 
@@ -110,7 +110,7 @@ broker.Fill continue_reversal(
 | `account`  | `broker.Account` | account view refreshed after the closing fill |
 | `barIndex` | `int`            | current bar index                             |
 
-**Returns:** the opening fill, or `na`.
+**Returns:** `broker.Fill`: the opening fill, or `na`.
 
 ### match_exit
 
@@ -134,7 +134,7 @@ broker.Fill match_exit(
 | `account`   | `broker.Account` | account view from the portfolio |
 | `barIndex`  | `int`            | current bar index               |
 
-**Returns:** the exit fill, or `na`.
+**Returns:** `broker.Fill`: the exit fill, or `na`.
 
 ### on_close
 
@@ -154,7 +154,7 @@ broker.Fill on_close(
 | `account`        | `broker.Account` | account view from the portfolio |
 | `barIndex`       | `int`            | current bar index               |
 
-**Returns:** the fill, or `na`.
+**Returns:** `broker.Fill`: the fill, or `na`.
 
 ### finish
 
@@ -164,4 +164,4 @@ Expires every working order at the end of the data.
 broker.FinishResult finish()
 ```
 
-**Returns:** the expired orders.
+**Returns:** `broker.FinishResult`: the expired orders.

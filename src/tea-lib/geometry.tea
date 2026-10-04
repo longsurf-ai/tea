@@ -300,8 +300,9 @@ sameSide(float a, float b) =>
  *   \operatorname{sign} \mathrm{orient2d}(b, p, q) \le 0 \\
  * \land{} & \operatorname{sign} \mathrm{orient2d}(p, a, b) \cdot
  *   \operatorname{sign} \mathrm{orient2d}(q, a, b) \le 0 \\
- * \land{} & \text{if all four signs are } 0\text{, both the } x
- *   \text{ ranges and the } y \text{ ranges of the segments overlap}
+ * \land{} & \text{if all four signs are } 0\text{: both the } x
+ *   \text{ ranges} \\
+ * & \text{and the } y \text{ ranges of the segments overlap}
  * \end{aligned}
  * @example
  * With `bar_index` as `x`, the line from `(0, 100)` to `(100, 110)` rises by

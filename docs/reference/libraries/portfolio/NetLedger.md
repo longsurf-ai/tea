@@ -11,7 +11,8 @@ interface NetLedger
 ```
 
 [`portfolio.NetPortfolio`](./NetPortfolio.md) satisfies it. It has no per-lot methods;
-those belong to [`portfolio.LotLedger`](./LotLedger.md).
+those belong to [`portfolio.LotLedger`](./LotLedger.md). Passing one of those
+coordinators a portfolio without these methods is a compile error.
 
 ## Methods
 

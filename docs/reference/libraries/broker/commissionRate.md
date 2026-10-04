@@ -14,7 +14,49 @@ broker.commissionRate(float rate = 0.0)
 | --------- | ------- | ------- | ------------------------------------ |
 | `rate`    | `float` | `0.0`   | commission as a fraction of notional |
 
-**Returns:** a `rate` [`broker.Commission`](./Commission.md).
+**Returns:** `broker.Commission`: a `rate` commission holding `rate`.
 
-`0.001` charges 0.1%. A negative or `na` rate makes the broker reject every
-fill with `invalidConfiguration`.
+`0.001` charges 0.1%. The notional is the filled quantity times the
+execution price, after slippage. A negative or `na` rate makes the broker
+reject every order with `invalidConfiguration` when it would fill.
+
+**Example:** A 10-unit buy at the open of 110 on index 1, sold at the open of 120 on
+index 2. Each fill pays 0.1% of its notional: 1.1 on 1100, then 1.2 on 1200.
+
+```tea
+import broker
+import portfolio
+import trade
+
+var strat = trade.nextOpen(
+    broker.new(commission = broker.commissionRate(0.001)),
+    portfolio.new(initialCash = 10000.0)
+)
+filled = strat.begin_bar(open, bar_index)
+if bar_index == 0
+    strat.entry("Long", trade.Direction.long, qty = 10.0)
+if bar_index == 1
+    strat.close("Long")
+strat.end_bar(close, false)
+emit "open" open
+emit "notional" filled.notional
+emit "fee" filled.fee
+```
+
+```csv
+time,open,close
+0,100,100
+1,110,112
+2,120,118
+```
+
+**Output:**
+
+```text
+index  open  notional  fee
+0      100   na        na
+1      110   1100      1.1
+2      120   1200      1.2
+```
+
+**See also:** [`broker.commissionPercent`](./commissionPercent.md), [`broker.Commission`](./Commission.md)

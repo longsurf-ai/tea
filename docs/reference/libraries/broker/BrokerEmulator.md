@@ -40,18 +40,138 @@ type BrokerEmulator
 | `float trailBestPrice = na`            | Most favorable price reached since the trailing stop activated.                                   |
 | `float trailStopPrice = na`            | Current trailing stop level.                                                                      |
 | `bool matchingPathExit = false`        | Whether a path exit match is running, which permits trailing exits.                               |
+| `bool entryFilledIntrabar = false`     | Whether the latest OHLC match filled a stop entry inside the bar, after its open.                 |
 
 It keeps a deliberately small order model: one pending command (a market or
 stop entry, a close, or a rebalance) and one attached exit (stop, target,
 bracket or trailing stop). It is not a general order book, and a target is
-not a true limit order: adverse slippage still applies after it matches. The
-scheduled methods make at most two fills per bar; an order beyond that
-waits, and a reversal's opening fill moves to the next open.
-
+not a true limit order: adverse slippage still applies after it matches.
 All of its state lives in its fields, so a script can run several
-independent brokers. The trade coordinators call its methods in a fixed
-order on every bar, and strategies use the coordinator instead. The
-[strategy model](../../../strategy.md) describes each coordinator's matching rules.
+independent brokers. Strategies use a trade coordinator, which calls these
+methods in a fixed order on every bar.
+
+**Execution rules.** A scheduled command can fill on any bar after the one
+it was submitted on. With `processOrdersOnClose`, the next-open and OHLC
+coordinators also fill commands at a close, from the close of that bar on;
+the path coordinator has no close step. A fill's reference price is the
+price it matched, before slippage:
+
+| Order                                                      | Fills when                                             | Reference price                                                             |
+| ---------------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Market entry, close or rebalance                           | it is eligible at an open or a close                   | that open or close                                                          |
+| Stop entry at an open or a close                           | that price is at or past the stop                      | that open or close                                                          |
+| Stop entry within a bar (OHLC, path)                       | the open is at or past the stop, or the bar reaches it | the open after a gap, else the stop                                         |
+| Exit stop or target                                        | the open is at or past a level, or the bar reaches one | the open after a gap, else the level                                        |
+| Exit whose stop and target are both reached within the bar | both levels are reached                                | the level on the side of the high or low nearer the open; the stop on a tie |
+| Trailing stop (path only)                                  | the trailing level is reached, see below               | as an exit stop                                                             |
+| Immediate entry or close (lots)                            | at once                                                | the close                                                                   |
+| Immediate stop close (lots)                                | the bar reaches the stop                               | the open after a gap, else the stop                                         |
+
+Past means above for a buy stop or a long position's target, and below for
+a sell stop or a short position's target. The bar reaches a level when its
+high, for a level above the open, or its low, for one below, gets to it.
+The path coordinator walks `open`, the extreme nearer the open (the low on
+a tie), the other extreme, then `close`, and a stop entry fills on the
+first segment that reaches its stop. An exit is live while its entry
+holds the position, from the bar after the entry's fill, or from that bar
+with `activateOnEntryBar`. On that bar the OHLC coordinator matches it
+against the whole bar when the entry filled at the open, and from the next
+bar when a stop entry filled later in the bar, since the high and low
+cannot tell what came after the fill; the path coordinator starts where
+the entry filled. A trailing stop activates
+when the path reaches `trailPrice` in the position's favor, then stays
+`trailOffset` behind the best price since; with a fixed stop as well, the
+tighter of the two applies.
+
+**Price, size and fee.** The execution price p moves the reference price r
+against the order: `r * (1 + rate)` for a buy and `r * (1 - rate)` for a
+sell, or `ticks * tickSize` above or below. An exit with tick slippage fills
+at no less than one tick. Sizes given as cash are divided by p, so slippage
+changes the quantity:
+
+| Size                                              | Quantity                                                    |
+| ------------------------------------------------- | ----------------------------------------------------------- |
+| `quantity`                                        | `quantity`                                                  |
+| `notional`                                        | `notional / p`                                              |
+| `cashBudget`                                      | `D(cashBudget)`                                             |
+| `equityPercent`                                   | `budget / p`, where `budget = equity * equityPercent / 100` |
+| `equityPercent` with `commissionIncluded`         | `D(budget)`                                                 |
+| none                                              | `D(cash)` for a buy, `D(equity)` for a sell                 |
+| scheduled close, exit, closing fill of a reversal | the whole position                                          |
+
+Equity is cash plus the position valued at r. `D(C)` is the quantity whose
+notional plus fee spends exactly C, where v is the commission's `value`:
+
+| Commission        | Fee            | `D(C)`              |
+| ----------------- | -------------- | ------------------- |
+| `rate`            | `notional * v` | `C / (p * (1 + v))` |
+| `cashPerContract` | `quantity * v` | `C / (p + v)`       |
+| `cashPerOrder`    | `v`            | `(C - v) / p`       |
+
+A cash-per-order fee is charged once per order: the opening fill of a
+reversal pays none, and its `D(C)` is `C / p`.
+
+**Capital check.** The margin m is the account's `marginLong` for a buy and
+`marginShort` for a sell, and the available capital is cash for a buy and
+equity for a sell. Unless m is `0`, an entry with a size fills only if
+`notional * m / 100 + fee` is at most the available capital; a `cashBudget`
+entry, or an `equityPercent` entry with `commissionIncluded`, needs at least
+its budget available instead. An entry without a size needs only available
+capital above `0`, whatever m is. Closes, exits and the closing fill of a
+reversal are not checked. The check is per order: a short added to a short
+is compared with the whole equity, not with what the first short left.
+
+**Rebalance.** The target is the given quantity, or for a percent target
+`equity * percent / 100 / r`, which needs r and equity above `0`. The order
+fills `target - position` as one buy or sell, even across zero; when the
+two differ by at most `0.0000001`, it is cancelled instead. A buy from a
+flat or long position is capped at `D(cash)` unless `marginLong` is `0`,
+so the position can stop short of the target. When the cap does not cut
+the quantity, a fill that grows the exposure, with m not `0`, needs
+`q * p * m / 100 + fee` at most the available capital, where q is the
+quantity it opens; that capital is equity when the position ends short or
+crosses zero, and cash otherwise. A fill that crosses zero also adds the
+slippage cost of the part it closes to what it needs. A rebalance that
+opens or reverses the position makes its command id the entry id.
+
+**Rejections.** A scheduled command is checked at two stages. A command
+refused at submission never becomes an order; an order refused on its fill
+bar is removed, not retried. Each refusal appends a
+[`broker.OrderRejected`](./OrderRejected.md) event:
+
+| Stage      | Reason                 | Cause                                                                                                                                                                                                                                      |
+| ---------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| submission | `invalidAccountState`  | a wrong kind or side, or an exit whose entry is neither pending nor open                                                                                                                                                                   |
+| submission | `invalidPrice`         | an entry stop not above `0`; exit levels that are missing, incomplete, not above `0` or out of order; a rebalance target that is `na` or a percent outside `-100` to `100`                                                                 |
+| submission | `entryIdMismatch`      | an entry on the position's side with another command id                                                                                                                                                                                    |
+| submission | `pendingOrder`         | a different pending command, or a different attached exit, is waiting                                                                                                                                                                      |
+| fill       | `invalidConfiguration` | invalid commission, slippage or portfolio settings                                                                                                                                                                                         |
+| fill       | `invalidQuantity`      | several sizing fields, a size not above `0`, or an equity percent above `100`                                                                                                                                                              |
+| fill       | `invalidAccountState`  | nothing to close, no pyramiding capacity, too little capital, an execution price or quantity not above `0`, a percent target while equity or the reference price is not above `0`, or a trailing exit matched outside the path coordinator |
+
+Immediate execution checks the kind, side, size, settings and account at
+once, and rejects a touched stop that is not above `0` with
+`invalidPrice`.
+
+**Call order.** Each coordinator calls the broker in this order; after
+every fill, the portfolio applies it and the next call gets a fresh account:
+
+| Coordinator                              | `begin_bar`                                        | Later in the bar                                                                                                               | `end_bar`                                                      |
+| ---------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| [`trade.nextOpen`](../trade/nextOpen.md) | `on_open`, `continue_reversal`                     | none                                                                                                                           | `on_close`, `continue_reversal`, then `finish` on the last bar |
+| [`trade.ohlc`](../trade/ohlc.md)         | `match_pending`, `continue_reversal`, `match_exit` | none                                                                                                                           | `on_close`, `continue_reversal`, then `finish` on the last bar |
+| [`trade.path`](../trade/path.md)         | `match_path_primary`, `continue_reversal`          | `match_path_exit`, in `continue_bar`                                                                                           | `finish` on the last bar                                       |
+| [`trade.lots`](../trade/lots.md)         | none                                               | `stop_touched`, `execute_at_close`, `execute_if_stop_touched` or `reject`, in `entry`, `close_trade` and `close_trade_at_stop` | none                                                           |
+
+`on_close` fills only with `processOrdersOnClose`. The next-open and OHLC
+coordinators' `process_close` runs the same close step on demand.
+
+**Two fills per bar.** Scheduled matching makes at most two fills per bar,
+counting the pending command's fill, both fills of a reversal and the
+attached exit's fill. Once a bar has two, a pending command waits for its
+next match, the opening fill of a reversal moves to the next open, and the
+attached exit is neither checked nor trailed until the next bar. Immediate
+execution has no such limit.
 
 ## Methods
 
@@ -79,7 +199,7 @@ Clears the trailing-stop state.
 int reset_trail()
 ```
 
-**Returns:** `0`.
+**Returns:** `int`: `0`.
 
 ### effective_exit_stop
 
@@ -93,7 +213,20 @@ float effective_exit_stop(broker.Account account) const
 | --------- | ---------------- | --------------------------------------------------------------- |
 | `account` | `broker.Account` | account view; the position's sign decides which stop is tighter |
 
-**Returns:** the stop price, or `na` when there is none.
+**Returns:** `float`: the stop price, or `na` when there is none.
+
+In the formula, s is the exit's fixed `stop` and t the trailing stop
+while it is active.
+
+**Formula**
+
+$$
+\mathit{stop} = \begin{cases}
+\max(s, t) & \text{long position, both set} \\
+\min(s, t) & \text{short position, both set} \\
+s \text{ or } t & \text{only one set}
+\end{cases}
+$$
 
 ### execution_price
 
@@ -111,7 +244,22 @@ float execution_price(
 | `referencePrice` | `float`       | matched price before slippage |
 | `side`           | `broker.Side` | side of the fill              |
 
-**Returns:** the execution price.
+**Returns:** `float`: the execution price.
+
+In the formula, r is `referencePrice` and v is `slippageValue`, a rate
+or a number of ticks. `match_exit` also keeps a tick-slipped exit price
+at one tick or more.
+
+**Formula**
+
+$$
+p = \begin{cases}
+r \cdot (1 + v) & \text{buy, rate slippage} \\
+r \cdot (1 - v) & \text{sell, rate slippage} \\
+r + v \cdot \mathit{tickSize} & \text{buy, tick slippage} \\
+r - v \cdot \mathit{tickSize} & \text{sell, tick slippage}
+\end{cases}
+$$
 
 ### commission_for
 
@@ -126,7 +274,22 @@ float commission_for(float quantity, float notional) const
 | `quantity` | `float` | filled quantity |
 | `notional` | `float` | filled notional |
 
-**Returns:** the fee.
+**Returns:** `float`: the fee.
+
+In the formula, c is `commissionValue`. The notional is the quantity
+times the execution price, after slippage. Under `cashPerOrder`, the
+broker charges the opening fill of a reversal nothing instead, because
+the closing fill of the same order already paid.
+
+**Formula**
+
+$$
+\mathit{fee} = \begin{cases}
+c \cdot \mathit{notional} & \text{rate} \\
+c \cdot \mathit{quantity} & \text{cashPerContract} \\
+c & \text{cashPerOrder}
+\end{cases}
+$$
 
 ### default_buy_quantity
 
@@ -141,20 +304,23 @@ float default_buy_quantity(float price, float buyingPower) const
 | `price`       | `float` | execution price  |
 | `buyingPower` | `float` | capital to spend |
 
-Sizes buy and sell entries that set no size, and caps rebalance buys.
+**Returns:** `float`: the quantity.
 
-### budgeted_buy_quantity
+Sizes entries that set no size, with cash for a buy and equity for a
+sell as `buyingPower`, and caps rebalance buys. Each case solves
+`quantity * price + fee = buyingPower` for the quantity. In the formula,
+C is `buyingPower`, p is `price`, the execution price after slippage,
+and c is `commissionValue`.
 
-Quantity whose notional plus commission equals `budget`.
+**Formula**
 
-```tea
-float budgeted_buy_quantity(float price, float budget) const
-```
-
-| Parameter | Type    | Description     |
-| --------- | ------- | --------------- |
-| `price`   | `float` | execution price |
-| `budget`  | `float` | cash to spend   |
+$$
+q = \begin{cases}
+\dfrac{C}{p \cdot (1 + c)} & \text{rate} \\[2ex]
+\dfrac{C}{p + c} & \text{cashPerContract} \\[2ex]
+\dfrac{C - c}{p} & \text{cashPerOrder}
+\end{cases}
+$$
 
 ### equity_at
 
@@ -172,7 +338,17 @@ float equity_at(
 | `referencePrice` | `float`          | price that values the position |
 | `account`        | `broker.Account` | account view                   |
 
-**Returns:** `buyingPower` plus the position's value.
+**Returns:** `float`: `buyingPower` plus the position's value.
+
+The broker uses the fill's reference price, before slippage, so equity
+for sizing and capital checks does not include the fill's own slippage.
+
+**Formula**
+
+$$
+\mathit{equity} = \mathit{buyingPower}
++ \mathit{positionQuantity} \cdot \mathit{referencePrice}
+$$
 
 ### budgeted_entry_quantity
 
@@ -187,8 +363,22 @@ float budgeted_entry_quantity(float price, float budget) const
 | `price`   | `float` | execution price |
 | `budget`  | `float` | cash to spend   |
 
+**Returns:** `float`: the quantity.
+
 Sizes `cashBudget` entries and commission-inclusive `equityPercent`
-entries.
+entries. Each case solves `quantity * price + fee = budget` for the
+quantity. In the formula, C is `budget`, p is `price`, the execution
+price after slippage, and c is `commissionValue`.
+
+**Formula**
+
+$$
+q = \begin{cases}
+\dfrac{C}{p \cdot (1 + c)} & \text{rate} \\[2ex]
+\dfrac{C}{p + c} & \text{cashPerContract} \\[2ex]
+\dfrac{C - c}{p} & \text{cashPerOrder}
+\end{cases}
+$$
 
 ### configuration_valid
 
@@ -214,13 +404,17 @@ broker.Order submit(broker.Command command)
 | --------- | ---------------- | ----------------- |
 | `command` | `broker.Command` | command to submit |
 
-**Returns:** the accepted order, or `na` when rejected.
+**Returns:** `broker.Order`: the accepted order, or `na` when rejected.
 
 An entry with a `stop` becomes a stop order and anything else a market
 order. A pending stop entry is replaced by a stop entry with the same
 id, and a pending rebalance by a rebalance with the same id; the old
-order is cancelled. Invalid commands, and commands that would need a
-second pending order, are rejected; see [`broker.Rejection`](./Rejection.md). Called
+order is cancelled. It rejects on the spot only a wrong kind or side, an
+invalid stop or rebalance target, an entry on the open position's side
+under another command id, and a command that would need a second
+pending order. Size, settings and capital are checked on the bar the
+order would fill: a command with a negative quantity, for example, is
+accepted here and rejected there; see [`broker.Rejection`](./Rejection.md). Called
 by the coordinators' `entry`, `close` and `rebalance`.
 
 ### submit_exit
@@ -235,7 +429,7 @@ broker.Order submit_exit(broker.Command command)
 | --------- | ---------------- | ------------ |
 | `command` | `broker.Command` | exit command |
 
-**Returns:** the accepted exit order, or `na` when rejected.
+**Returns:** `broker.Order`: the accepted exit order, or `na` when rejected.
 
 It needs a stop, a target or a trailing stop (`trailPrice` with
 `trailOffset`), all positive, with a long exit's stop below its target
@@ -255,10 +449,11 @@ int cancel(string commandId)
 | ----------- | -------- | -------------------- |
 | `commandId` | `string` | command id to cancel |
 
-**Returns:** the number of orders cancelled, at most `2`.
+**Returns:** `int`: the number of orders cancelled, at most `2`.
 
-Cancelling a pending entry also cancels the exit attached to it while no
-position is open. Called by the coordinators' `cancel`.
+Cancelling a pending entry also cancels the exit attached to it, unless
+that exit protects the open position of the same entry id. Called by the
+coordinators' `cancel`.
 
 ### reject
 
@@ -280,7 +475,7 @@ int reject(
 | `barIndex`  | `int`              | bar index of the refusal    |
 | `reason`    | `broker.Rejection` | why it was refused          |
 
-**Returns:** `0`.
+**Returns:** `int`: `0`.
 
 Called by [`trade.LotTrade`](../trade/LotTrade.md) for commands it refuses before
 execution.
@@ -305,7 +500,7 @@ bool stop_touched(
 | `lowPrice`  | `float`       | the bar's low                                  |
 | `stopPrice` | `float`       | stop level                                     |
 
-**Returns:** `true` when touched.
+**Returns:** `bool`: `true` when touched.
 
 ### execute_if_stop_touched
 
@@ -333,7 +528,7 @@ broker.Fill execute_if_stop_touched(
 | `account`   | `broker.Account` | account view from the portfolio           |
 | `barIndex`  | `int`            | current bar index                         |
 
-**Returns:** the fill, or `na`.
+**Returns:** `broker.Fill`: the fill, or `na`.
 
 Execution then follows `execute_at_close`. An untouched stop, or a
 command that is not a close, returns `na` without an event or a new id;
@@ -360,14 +555,32 @@ broker.Fill execute_at_close(
 | `account`    | `broker.Account` | account view from the portfolio              |
 | `barIndex`   | `int`            | current bar index                            |
 
-**Returns:** the fill, or `na` when rejected.
+**Returns:** `broker.Fill`: the fill, or `na` when rejected.
 
 The command needs exactly one positive `quantity` or `notional`. An
 entry needs pyramiding capacity and, unless its margin is `0`, enough
 capital, and gets a new stable trade id; a close needs a positive
-`tradeId` and the side opposite the open position. Emits
-[`broker.OrderSubmitted`](./OrderSubmitted.md) and [`broker.FillExecuted`](./FillExecuted.md) on
-success. Called by `entry` and `close_trade` of [`trade.LotTrade`](../trade/LotTrade.md).
+`tradeId` and the side opposite the open position, and has no capital
+check. Emits [`broker.OrderSubmitted`](./OrderSubmitted.md) and
+[`broker.FillExecuted`](./FillExecuted.md) on success. Called by `entry` and
+`close_trade` of [`trade.LotTrade`](../trade/LotTrade.md).
+
+In the formula, p is the execution price of `closePrice`, m is the
+account's `marginLong` for a buy and `marginShort` for a sell, and A is
+the cash for a buy and the equity at `closePrice` for a sell.
+
+**Formula**
+
+$$
+\begin{aligned}
+q &= \begin{cases}
+\mathit{quantity} & \text{quantity set} \\
+\mathit{notional} / p & \text{notional set}
+\end{cases} \\[1ex]
+&\text{an entry needs } m = 0 \text{ or }
+q \cdot p \cdot m / 100 + \mathit{fee} \le A
+\end{aligned}
+$$
 
 ### execute
 
@@ -393,13 +606,72 @@ broker.Fill execute(
 | `priceTriggered`       | `bool`           | `true`  | whether the caller's trigger check passed |
 | `reversalContinuation` | `bool`           | `false` | whether this call completes a reversal    |
 
-**Returns:** the fill, or `na`.
+**Returns:** `broker.Fill`: the fill, or `na`.
 
 A command is eligible on any bar after its signal bar, or from its
 signal bar on during close processing with `processOrdersOnClose` set,
 and only while the bar has fewer than two fills. Once attempted, it
 stops being pending whether it filled or was rejected, unless a reversal
-still owes its opening fill.
+still owes its opening fill. An entry against an opposite position first
+closes the whole position; its opening fill is sized from the account
+after the portfolio applies that close.
+
+In the formula, r is `referencePrice` and p its execution price after
+slippage; B is the account's cash, Q its signed position and E its
+equity at r. A is the available capital, B for a buy and E for a sell,
+and m the account's `marginLong` for a buy and `marginShort` for a
+sell. `D(C)` is the quantity whose notional plus fee is C at p, from
+[`broker.BrokerEmulator.default_buy_quantity`](./BrokerEmulator.md#default_buy_quantity); for the opening
+fill of a reversal under `cashPerOrder` it is `C / p`. Closes and the
+closing fill of a reversal have no capital check. Every fill also needs
+a positive price and quantity.
+
+For a rebalance, v is the target's value and T the target quantity.
+When `|T - Q|` is at most `0.0000001`, the order is cancelled. When the
+cap does not cut the quantity and m is not `0`, a rebalance fill that
+grows the exposure needs `q_open * p * m / 100 + fee + s` at most E if
+the position ends short or crosses zero, else at most B. Here `q_open`
+is the quantity the fill opens, and s is
+`min(|Q|, q_rebalance) * |p - r|` when the fill crosses zero and `0`
+otherwise.
+
+**Formula**
+
+$$
+\begin{aligned}
+E &= B + Q \cdot r, \qquad
+P = E \cdot \mathit{equityPercent} / 100 \\[1ex]
+q &= \begin{cases}
+\mathit{quantity} & \text{quantity set} \\
+\mathit{notional} / p & \text{notional set} \\
+D(\mathit{cashBudget}) & \text{cashBudget set} \\
+P / p & \text{equityPercent set} \\
+D(P) & \text{equityPercent, commissionIncluded set} \\
+D(B) & \text{a buy with no size set} \\
+D(E) & \text{a sell with no size set} \\
+|Q| & \text{a close, or a reversal's closing fill}
+\end{cases} \\[1ex]
+&\text{an entry with a size needs } m = 0 \text{ or } C \le A
+\text{, where} \\
+C &= \begin{cases}
+\mathit{cashBudget} & \text{cashBudget set} \\
+P & \text{equityPercent, commissionIncluded set} \\
+P \cdot m / 100 + \mathit{fee} & \text{equityPercent set} \\
+\mathit{notional} \cdot m / 100 + \mathit{fee} & \text{notional set} \\
+q \cdot p \cdot m / 100 + \mathit{fee} & \text{otherwise}
+\end{cases} \\[1ex]
+&\text{an entry without a size needs } A > 0 \\[1ex]
+T &= \begin{cases}
+v & \text{quantity target} \\
+E \cdot v / (100 \cdot r) & \text{percent target, needs } r > 0,\ E > 0
+\end{cases} \\[1ex]
+q_{\text{rebalance}} &= \begin{cases}
+\min(T - Q,\ \max(D(B), 0))
+& T > Q \ge 0 \text{ and } \mathit{marginLong} \ne 0 \\
+|T - Q| & \text{otherwise}
+\end{cases}
+\end{aligned}
+$$
 
 ### on_open
 
@@ -419,12 +691,12 @@ broker.Fill on_open(
 | `account`        | `broker.Account` | account view from the portfolio |
 | `barIndex`       | `int`            | current bar index               |
 
-**Returns:** the fill, or `na`.
+**Returns:** `broker.Fill`: the fill, or `na`.
 
 Market orders fill at the open, and a stop entry fills there when the
 open is at or past its stop; a reversal deferred from an earlier bar
-completes here. Commands issued on this bar wait for a later bar. Called
-by `begin_bar` of [`trade.NextOpenTrade`](../trade/NextOpenTrade.md).
+completes here. Commands issued on this bar cannot fill here. Called by
+`begin_bar` of [`trade.NextOpenTrade`](../trade/NextOpenTrade.md).
 
 ### match_pending
 
@@ -448,12 +720,12 @@ broker.Fill match_pending(
 | `account`   | `broker.Account` | account view from the portfolio |
 | `barIndex`  | `int`            | current bar index               |
 
-**Returns:** the fill, or `na`.
+**Returns:** `broker.Fill`: the fill, or `na`.
 
 Market orders fill at the open. A stop entry fills at the open when the
-bar gaps past its stop, otherwise at the stop when the high (buy) or low
-(sell) reaches it. A reversal deferred from an earlier bar completes at
-the open. Called by `begin_bar` of [`trade.OhlcTrade`](../trade/OhlcTrade.md).
+open is at or past its stop, otherwise at the stop when the high (buy)
+or low (sell) reaches it. A reversal deferred from an earlier bar
+completes at the open. Called by `begin_bar` of [`trade.OhlcTrade`](../trade/OhlcTrade.md).
 
 ### match_path_primary
 
@@ -479,7 +751,7 @@ broker.Fill match_path_primary(
 | `account`    | `broker.Account` | account view from the portfolio |
 | `barIndex`   | `int`            | current bar index               |
 
-**Returns:** the fill, or `na`.
+**Returns:** `broker.Fill`: the fill, or `na`.
 
 The extreme nearer the open comes first, and the low on a tie. Market
 orders fill at the open; a stop entry fills at the open on a gap,
@@ -503,7 +775,7 @@ broker.Fill continue_reversal(
 | `account`  | `broker.Account` | account view refreshed after the closing fill |
 | `barIndex` | `int`            | current bar index                             |
 
-**Returns:** the opening fill, or `na`.
+**Returns:** `broker.Fill`: the opening fill, or `na`.
 
 The coordinators call it right after the portfolio applies the first
 fill, so sizing sees the refreshed account. It does nothing without a
@@ -532,7 +804,7 @@ broker.Fill match_exit(
 | `account`   | `broker.Account` | account view from the portfolio |
 | `barIndex`  | `int`            | current bar index               |
 
-**Returns:** the exit fill, or `na`.
+**Returns:** `broker.Fill`: the exit fill, or `na`.
 
 The exit is live while its entry holds the position, from the bar after
 the entry fill unless `activateOnEntryBar` is set. A gap past the stop
@@ -540,8 +812,33 @@ or target fills at the open; otherwise a touched level fills at that
 level, and when both are touched, the side whose extreme is nearer the
 open wins, ties going to the stop. A triggered exit is removed even if
 its fill is rejected, and outside `match_path_exit` a trailing exit is
-rejected and removed. Tick slippage cannot take the exit price below one
-tick. Called by `begin_bar` of [`trade.OhlcTrade`](../trade/OhlcTrade.md).
+rejected with `invalidAccountState` and removed. Tick slippage cannot
+take the exit price below one tick. Called by `begin_bar` of
+[`trade.OhlcTrade`](../trade/OhlcTrade.md).
+
+In the formula, S is the stop from
+[`broker.BrokerEmulator.effective_exit_stop`](./BrokerEmulator.md#effective_exit_stop) and G the target. For
+a long position the open is past S at or below it and past G at or
+above it, `d_stop` is `open - low` and `d_target` is `high - open`; a
+short position mirrors this.
+
+**Formula**
+
+$$
+\begin{aligned}
+r &= \begin{cases}
+\mathit{openPrice} & \text{the open is past } S \text{ or } G \\
+G & \text{only } G \text{ reached, or both and }
+d_{\text{target}} < d_{\text{stop}} \\
+S & \text{otherwise}
+\end{cases} \\[1ex]
+p &= \begin{cases}
+\max(\mathrm{execution\_price}(r),\ \mathit{tickSize})
+& \text{tick slippage} \\
+\mathrm{execution\_price}(r) & \text{rate slippage}
+\end{cases}
+\end{aligned}
+$$
 
 ### update_trail
 
@@ -563,11 +860,31 @@ int update_trail(
 | `account`   | `broker.Account` | account view from the portfolio |
 | `barIndex`  | `int`            | current bar index               |
 
-**Returns:** `0`.
+**Returns:** `int`: `0`.
 
-It activates once price reaches `trailPrice`, then keeps the stop
-`trailOffset` behind the best price so far; only moves in the position's
-favor advance it.
+It acts only while the exit is live and the bar has fewer than two
+fills, and only on a segment that moves in the position's favor or on a
+single point. The stop activates when such a segment ends at or past
+`trailPrice`: at or above it for a long position, at or below it for a
+short one. From then on it stays `trailOffset` behind the best price b,
+so only moves in the position's favor advance it. In the formula, x is
+`toPrice`.
+
+**Formula**
+
+$$
+\begin{aligned}
+b &= \begin{cases}
+x & \text{on activation} \\
+\max(b, x) & \text{long position, after activation} \\
+\min(b, x) & \text{short position, after activation}
+\end{cases} \\[1ex]
+\mathit{trailStop} &= \begin{cases}
+b - \mathit{trailOffset} & \text{long position} \\
+b + \mathit{trailOffset} & \text{short position}
+\end{cases}
+\end{aligned}
+$$
 
 ### match_path_exit_segment
 
@@ -589,7 +906,7 @@ broker.Fill match_path_exit_segment(
 | `account`   | `broker.Account` | account view from the portfolio |
 | `barIndex`  | `int`            | current bar index               |
 
-**Returns:** the exit fill, or `na`.
+**Returns:** `broker.Fill`: the exit fill, or `na`.
 
 A trailing stop moved by a segment applies from the next segment.
 
@@ -617,7 +934,7 @@ broker.Fill match_path_exit(
 | `account`    | `broker.Account` | account view from the portfolio |
 | `barIndex`   | `int`            | current bar index               |
 
-**Returns:** the exit fill, or `na`.
+**Returns:** `broker.Fill`: the exit fill, or `na`.
 
 It starts where the pending command filled on this bar, or at the open,
 so earlier prices on the bar cannot trigger the exit; trailing stops
@@ -642,7 +959,7 @@ broker.Fill on_close(
 | `account`        | `broker.Account` | account view from the portfolio |
 | `barIndex`       | `int`            | current bar index               |
 
-**Returns:** the fill, or `na`.
+**Returns:** `broker.Fill`: the fill, or `na`.
 
 Commands issued on this bar are eligible. Market orders fill at the
 close, and a stop entry fills when the close is at or past its stop.
@@ -657,7 +974,7 @@ Expires the pending command and the attached exit, and clears entry, reversal an
 broker.FinishResult finish()
 ```
 
-**Returns:** the expired orders.
+**Returns:** `broker.FinishResult`: the expired orders.
 
 Emits [`broker.OrderExpired`](./OrderExpired.md) for each expired order; it does not
 close positions. Called by the coordinators' `end_bar` and `finish` on

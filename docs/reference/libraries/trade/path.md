@@ -15,29 +15,67 @@ trade.path(broker, portfolio)
 | `broker`    | A broker with the [`broker.PathBroker`](../broker/PathBroker.md) methods, normally from [`broker.new`](../broker/new.md).              |
 | `portfolio` | A portfolio with the [`portfolio.NetLedger`](../portfolio/NetLedger.md) methods, normally from [`portfolio.new`](../portfolio/new.md). |
 
-**Returns:** A [`trade.PathTrade`](./PathTrade.md) that owns both values.
+**Returns:** `trade.PathTrade`: a coordinator that owns both values.
 
 Each bar, call `begin_bar(open, high, low, close, bar_index)`, attach or
-adjust exits, call `continue_bar(open, high, low, close)`, submit new
-orders, then call `end_bar(close, false)`.
+adjust exits, call `continue_bar(open, high, low, close)`, submit new orders,
+then call `end_bar(close, false)`. A broker or portfolio without the required
+methods is a compile error.
+
+**Example:** The 2-bar average crosses above the 3-bar average on bar 3, and the entry
+buys 50% of the 1000 equity, 5 units, at bar 4's open of 100. The exit
+attached from that fill has a stop at 95 and a trailing stop that starts at
+105 and keeps 2 below the best price. Bar 4's path rises to 112, which puts
+the trailing stop at 110, and bar 5's path falls through it.
 
 ```tea
 import broker
 import portfolio
 import trade
 
-fast = ta.ema(close, 10)
-slow = ta.ema(close, 30)
-crossedUp = ta.crossover(fast, slow)
-
-var strat = trade.path(broker.new(), portfolio.new(initialCash = 10000.0))
-fills = strat.begin_bar(open, high, low, close, bar_index)
-if not na(fills.pending) and strat.position_quantity() > 0.0
-    // Derive the exit from the entry price; continue_bar checks the rest of this bar.
-    entryPrice = strat.position_avg_price()
-    strat.exit("Trail", fromEntry = "Long", stop = entryPrice * 0.95, activateOnEntryBar = true, trailPrice = entryPrice * 1.05, trailOffset = entryPrice * 0.02)
-strat.continue_bar(open, high, low, close)
+crossedUp = ta.crossover(ta.sma(close, 2), ta.sma(close, 3))
+var strat = trade.path(broker.new(),
+    portfolio.new(initialCash = 1000.0))
+matches = strat.begin_bar(open, high, low, close, bar_index)
+if not na(matches.pending) and strat.position_quantity() > 0.0
+    // Levels from the fill; continue_bar checks the rest of this bar.
+    price = matches.pending.price
+    strat.exit("Trail", fromEntry = "Long", stop = price * 0.95,
+        activateOnEntryBar = true, trailPrice = price * 1.05,
+        trailOffset = price * 0.02)
+exitFill = strat.continue_bar(open, high, low, close)
 if crossedUp and strat.position_quantity() == 0.0
-    strat.entry("Long", trade.Direction.long, qty = 10.0)
+    strat.entry("Long", trade.Direction.long,
+        sizing = trade.percentOfEquity(50.0))
 strat.end_bar(close, false)
+emit "close" close
+emit "entry" na(matches.pending) ? na : matches.pending.price
+emit "exit" na(exitFill) ? na : exitFill.price
+emit "position" strat.position_quantity()
 ```
+
+```csv
+time,open,high,low,close
+0,104,105,101,102
+1,102,103,99,100
+2,100,101,97,98
+3,98,105,97,104
+4,100,112,99,111
+5,111,111.5,108,109
+6,109,110,107,108
+```
+
+**Output:**
+
+```text
+index  close  entry  exit  position
+0      102    na     na    0
+1      100    na     na    0
+2      98     na     na    0
+3      104    na     na    0
+4      111    100    na    5
+5      109    na     110   0
+6      108    na     na    0
+```
+
+**See also:** [`trade.PathTrade`](./PathTrade.md)

@@ -45,7 +45,7 @@ broker.Order submit(broker.Command command)
 | --------- | ---------------- | ----------------- |
 | `command` | `broker.Command` | command to submit |
 
-**Returns:** the accepted order, or `na` when rejected.
+**Returns:** `broker.Order`: the accepted order, or `na` when rejected.
 
 ### submit_exit
 
@@ -59,7 +59,7 @@ broker.Order submit_exit(broker.Command command)
 | --------- | ---------------- | ------------ |
 | `command` | `broker.Command` | exit command |
 
-**Returns:** the accepted exit order, or `na` when rejected.
+**Returns:** `broker.Order`: the accepted exit order, or `na` when rejected.
 
 ### cancel
 
@@ -73,4 +73,4 @@ int cancel(string commandId)
 | ----------- | -------- | -------------------- |
 | `commandId` | `string` | command id to cancel |
 
-**Returns:** the number of orders cancelled.
+**Returns:** `int`: the number of orders cancelled.

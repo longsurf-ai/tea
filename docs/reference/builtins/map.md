@@ -33,27 +33,25 @@ const map<K, V> map.new<K: map-key, V: storable>()
 
 **Returns:** A new map with no entries.
 
-Write the key and value types in angle brackets, as in `map.new<string, float>()`. Keys can be `int`, `float`, `bool`, `string`, `color` or an enum. A map keeps its keys in the order they were added. A variable declared as `map<string, float> prices = na` holds no map, and calling a function on it stops the run with an error.
+Write the key and value types in angle brackets, as in `map.new<string, float>()`. Keys can be `int`, `float`, `bool`, `string`, `color` or an enum, and an `na` key stops the run with an error. A map keeps its keys in the order they were added. A collection holds at most 100,000 elements. Each change copies the collection and counts against a per-bar allocation budget; see [`map.put`](./map.md#put). A variable declared as `map<string, float> prices = na` holds no map, and calling a function on it stops the run with an error.
 
-**Example:**
+**Example:** `latest` holds only the key `"close"`, so looking up `"open"` gives `na`.
 
 ```tea
 latest = map.new<string, float>()
 latest.put("close", close)
 emit "close" latest.get("close")
-emit "open" latest.get("open") // na: no such key
+emit "open" latest.get("open")
 ```
 
 ```csv
-time,open,close
-0,9,9
-1,10,11
-2,10,10
-3,10,12
-4,12,9
-5,10,14
-6,14,10
-7,11,15
+time,close
+0,9
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
@@ -61,14 +59,14 @@ time,open,close
 ```text
 index  close  open
 0      9      na
-1      11     na
-2      10     na
-3      12     na
-4      9      na
-5      14     na
-6      10     na
-7      15     na
+1      12     na
+2      12     na
+3      15     na
+4      12     na
+5      18     na
 ```
+
+**See also:** [`map.put`](./map.md#put), [`map.get`](./map.md#get)
 
 ### copy
 
@@ -86,7 +84,25 @@ map<K, V> map.copy<K: map-key, V: storable>(
 
 **Returns:** A new map with the same entries in the same order.
 
-Maps are values, so plain assignment already copies them. The copy is shallow: struct values still refer to the same structs.
+Maps are values, so plain assignment already copies them, and a function that changes a map it receives changes only its own copy. The copy is shallow: struct values still refer to the same structs.
+
+**Example:** Adding a key to the copy `b` leaves `a` with its one key.
+
+```tea
+a = map.new<string, int>()
+a.put("x", 1)
+b = a.copy()
+b.put("y", 2)
+emit "a" a.keys()
+emit "b" b.keys()
+```
+
+**Output:**
+
+```text
+index  a      b
+0      ["x"]  ["x","y"]
+```
 
 ## Reading
 
@@ -138,6 +154,24 @@ bool map.contains<K: map-key, V: storable>(
 
 **Returns:** `true` when the key is present, even if its value is `na`.
 
+**Example:** The key `"gap"` is present although its value is `na`, so `stored` is `true` while `value` is `na`.
+
+```tea
+levels = map.new<string, float>()
+levels.put("gap", na)
+emit "stored" levels.contains("gap")
+emit "value" levels.get("gap")
+```
+
+**Output:**
+
+```text
+index  stored  value
+0      true    na
+```
+
+**See also:** [`map.get`](./map.md#get)
+
 ### get
 
 Returns the value stored under a key.
@@ -158,6 +192,25 @@ V map.get<K: map-key, V: storable>(
 
 Keys match by value; colors match by their channels, so `#FF0000` and `#FF0000FF` are the same key.
 
+**Example:** `"z"` is not a key, so `missing` is `na` and `has_z` is `false`.
+
+```tea
+levels = map.new<string, float>()
+levels.put("a", 1.5)
+emit "a" levels.get("a")
+emit "missing" levels.get("z")
+emit "has_z" levels.contains("z")
+```
+
+**Output:**
+
+```text
+index  a    missing  has_z
+0      1.5  na       false
+```
+
+**See also:** [`map.contains`](./map.md#contains), [`map.put`](./map.md#put)
+
 ### keys
 
 Returns the keys of a map as a new array.
@@ -174,6 +227,8 @@ array<K> map.keys<K: map-key, V: storable>(
 
 **Returns:** A new array of the keys, in the order they were added.
 
+**See also:** [`map.values`](./map.md#values)
+
 ### values
 
 Returns the values of a map as a new array.
@@ -189,6 +244,8 @@ array<V> map.values<K: map-key, V: storable>(
 | `self`    | `series map<K, V>` | The map.    |
 
 **Returns:** A new array of the values, in the order their keys were added.
+
+**See also:** [`map.keys`](./map.md#keys)
 
 ## Changing
 
@@ -210,7 +267,29 @@ void map.put<K: map-key, V: storable>(
 | `key`     | `series K`         | The key to store under. Cannot be `na`.                              |
 | `value`   | `series V`         | The value to store.                                                  |
 
-Replacing a value keeps its key’s position; a new key goes last. A collection holds at most 100,000 elements; adding a key past that stops the run with an error.
+Replacing a value keeps its key’s position; a new key goes last. A collection holds at most 100,000 elements; adding a key past that stops the run with an error. A function that puts into a map it receives changes only its own copy.
+
+Each `put`, like every change to a collection, copies the whole collection into new storage. One bar may allocate at most 10,000 times and 16 MiB in all, where each copy counts 16 bytes plus 8 for each number, bool, string or color it holds; past either limit the run stops with `HEAP_LIMIT_EXCEEDED`. So a map from strings to numbers created empty in a bar fails on its 1,447th new key in that bar.
+
+**Example:** Replacing the value under `"b"` keeps `"b"` first; `"a"`, added after it, stays second.
+
+```tea
+counts = map.new<string, int>()
+counts.put("b", 1)
+counts.put("a", 2)
+counts.put("b", 3)
+emit "keys" counts.keys()
+emit "values" counts.values()
+```
+
+**Output:**
+
+```text
+index  keys       values
+0      ["b","a"]  [3,2]
+```
+
+**See also:** [`map.get`](./map.md#get), [`map.remove`](./map.md#remove)
 
 ### remove
 
@@ -231,6 +310,27 @@ V map.remove<K: map-key, V: storable>(
 **Returns:** The removed value, or the value type’s empty value (`na`, or `false` for `bool`) when the key was absent.
 
 A key that is added again after removal goes last.
+
+**Example:** Removing `"b"` returns its value, 1; put back, `"b"` now comes after `"a"`.
+
+```tea
+counts = map.new<string, int>()
+counts.put("b", 1)
+counts.put("a", 2)
+removed = counts.remove("b")
+counts.put("b", 3)
+emit "removed" removed
+emit "keys" counts.keys()
+```
+
+**Output:**
+
+```text
+index  removed  keys
+0      1        ["a","b"]
+```
+
+**See also:** [`map.put`](./map.md#put)
 
 ### clear
 

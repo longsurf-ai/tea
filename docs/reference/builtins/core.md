@@ -48,18 +48,20 @@ Declares the script’s title and whether a host draws it over the price chart.
 void indicator(const string title, const bool overlay = …)
 ```
 
-| Parameter | Type           | Description                                                                                                                                       |
-| --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `title`   | `const string` | The name a host shows for the script. It cannot be empty. Must be a compile-time constant. Cannot be `na`.                                        |
-| `overlay` | `const bool`   | `true` to draw the script’s outputs over the price chart; `false`, the default, to draw them in a separate pane. Must be a compile-time constant. |
+| Parameter | Type           | Description                                                                                                                                                                                                                                                                                                |
+| --------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`   | `const string` | The name a host shows for the script. It cannot be empty. Must be a compile-time constant. Cannot be `na`.                                                                                                                                                                                                 |
+| `overlay` | `const bool`   | `true` to draw the script’s outputs over the price chart; `false`, the default, to draw them in a separate pane. Pass it by name, as `overlay = true`: the second position belongs to `shorttitle`, which Tea does not accept yet, so `indicator("X", true)` is an error. Must be a compile-time constant. |
 
 It must be the script’s first statement and appear at most once, and a library cannot declare it. The header only informs the host; it never changes how the script runs.
 
-**Example:**
+**Example:** The header changes nothing in the output: `range` is `high - low` on every bar, from 2 on bar 0 to 5 on bar 5.
 
 ```tea
 indicator("Bar range", overlay = false)
-plot("range", high - low, "Range")
+emit "high" high
+emit "low" low
+emit "range" high - low
 ```
 
 ```csv
@@ -70,22 +72,18 @@ time,high,low
 3,13,9
 4,12,8
 5,15,10
-6,14,9
-7,16,11
 ```
 
 **Output:**
 
 ```text
-index  range
-0      {"id":"range","series":2,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-1      {"id":"range","series":3,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-2      {"id":"range","series":4,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-3      {"id":"range","series":4,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-4      {"id":"range","series":4,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-5      {"id":"range","series":5,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-6      {"id":"range","series":5,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-7      {"id":"range","series":5,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+index  high  low  range
+0      10    8    2
+1      12    9    3
+2      11    7    4
+3      13    9    4
+4      12    8    4
+5      15    10   5
 ```
 
 ## Missing values
@@ -106,38 +104,38 @@ bool na(series nullable value x)
 
 Every comparison involving a missing value is `false`, even `!=`, and `x == na` is a compile error, so test with `na(x)`. Arithmetic without a defined result, such as division by zero or the square root of a negative number, gives `na`. An `na` array, matrix or map is no collection at all, unlike an empty one, and an `na` struct refers to no struct.
 
-**Example:**
+**Example:** Bar 0 has no previous close, so `previous` is `na` and `missing` is `true` there; on every later bar `missing` is `false`.
 
 ```tea
 previous = close[1]
-emit "has_previous" not na(previous) // false on the first bar
+emit "close" close
+emit "previous" previous
+emit "missing" na(previous)
 ```
 
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
 
 ```text
-index  has_previous
-0      false
-1      true
-2      true
-3      true
-4      true
-5      true
-6      true
-7      true
+index  close  previous  missing
+0      9      na        true
+1      12     9         false
+2      12     12        false
+3      15     12        false
+4      12     15        false
+5      18     12        false
 ```
+
+**See also:** [`nz`](./core.md#nz)
 
 ### nz
 
@@ -149,45 +147,46 @@ float nz(series float source, series float replacement = …)
 color nz(series color source, series color replacement = …)
 ```
 
-| Parameter     | Type                                     | Description                                                                                                                 |
-| ------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `source`      | `series int, series float, series color` | The value to check.                                                                                                         |
-| `replacement` | `series int, series float, series color` | The value to use when `source` is `na`. Without it, the fallback is `0` for numbers and fully transparent black for colors. |
+| Parameter     | Type                                     | Description                                                                                                                               |
+| ------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`      | `series int, series float, series color` | The value to check.                                                                                                                       |
+| `replacement` | `series int, series float, series color` | The value to use when `source` is `na`. Without it, the fallback is `0` for numbers and fully transparent black (`#00000000`) for colors. |
 
 **Returns:** `source` when it is not `na`, otherwise the replacement.
 
-**Example:**
+**Example:** On bar 0, `change` is `na`: `filled` replaces it with 0, and `previous` falls back to that bar’s own close, 9.
 
 ```tea
 change = close - close[1]
-emit "change" nz(change) // 0 on the first bar
+emit "close" close
+emit "change" change
+emit "filled" nz(change)
+emit "previous" nz(close[1], close)
 ```
 
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
 
 ```text
-index  change
-0      0
-1      2
-2      -1
-3      2
-4      -3
-5      5
-6      -4
-7      5
+index  close  change  filled  previous
+0      9      na      0       9
+1      12     3       3       9
+2      12     0       0       12
+3      15     3       3       12
+4      12     -3      -3      15
+5      18     6       6       12
 ```
+
+**See also:** [`na`](./core.md#na)
 
 ## Conversions
 
@@ -205,6 +204,23 @@ int int(series int | float x)
 
 **Returns:** `x` truncated toward zero, so `int(-2.7)` is `-2`; `na` when `x` is `na`.
 
+**Example:** `int` drops the fraction toward zero, so `negative` is `-2`, while `math.round(-2.7)` is `-3`.
+
+```tea
+emit "positive" int(2.7)
+emit "negative" int(-2.7)
+emit "rounded" math.round(-2.7)
+```
+
+**Output:**
+
+```text
+index  positive  negative  rounded
+0      2         -2        -3
+```
+
+**See also:** [`math.round`](./math.md#round), [`math.floor`](./math.md#floor), [`float`](./core.md#float)
+
 ### float
 
 Converts a number to a `float`.
@@ -219,7 +235,23 @@ float float(series int | float x)
 
 **Returns:** `x` as a `float`; `na` when `x` is `na`.
 
-`float(na)` is a missing value of type `float`. Use it where a bare `na` has no type, such as a request expression.
+Dividing one `int` by another truncates, so convert one of them to keep the fraction. `float(na)` is a missing value of type `float`; use it where a bare `na` has no type, such as a request expression.
+
+**Example:** Both operands of `7 / 2` are `int`, so `ints` is truncated to 3; converting one to `float` keeps the fraction.
+
+```tea
+emit "ints" 7 / 2
+emit "floats" float(7) / 2
+```
+
+**Output:**
+
+```text
+index  ints  floats
+0      3     3.5
+```
+
+**See also:** [`int`](./core.md#int)
 
 ### tostring
 
@@ -235,39 +267,29 @@ string str.tostring(series scalar | enum | resource value)
 
 **Returns:** The text form of `value`; `"NaN"` when `value` is `na`.
 
-Numbers use the shortest form that reads back as the same number: `3.0` gives `"3"`, `0.1 + 0.2` gives `"0.30000000000000004"`, and very large or small numbers use exponent notation such as `"1e+21"`. There is no format argument; round with [`math.round`](./math.md#round) first to limit the decimals. A `bool` gives `"true"` or `"false"`, a color its hex code such as `"#FF5252"` (with two more digits when it is transparent), and an enum member its title, or its name when it has no title.
+Numbers use the shortest form that reads back as the same number: `3.0` gives `"3"`, `0.1 + 0.2` gives `"0.30000000000000004"`, and very large or small numbers use exponent notation such as `"1e+21"`. There is no format argument; round with [`math.round`](./math.md#round) first to limit the decimals. A `string` is returned unchanged, a `bool` gives `"true"` or `"false"`, a color its hex code such as `"#FF5252"` (with two more digits when it is transparent), and an enum member its title, or its name when it has no title.
 
-**Example:**
+**Example:** `3.0` prints as `3`, the sum keeps every digit until `math.round` limits it, a transparent color gets two more hex digits for its opacity, and `na` prints as `NaN`.
 
 ```tea
-emit "label" "Close: " + str.tostring(math.round(close, 2))
-```
-
-```csv
-time,close
-0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+emit "number" str.tostring(3.0)
+emit "sum" str.tostring(0.1 + 0.2)
+emit "rounded" str.tostring(math.round(0.1 + 0.2, 2))
+emit "flag" str.tostring(1 < 2)
+emit "color" str.tostring(color.new(color.red, 80))
+emit "missing" str.tostring(float(na))
 ```
 
 **Output:**
 
 ```text
-index  label
-0      Close: 9
-1      Close: 11
-2      Close: 10
-3      Close: 12
-4      Close: 9
-5      Close: 14
-6      Close: 10
-7      Close: 15
+index  number  sum                  rounded  flag  color      missing
+0      3       0.30000000000000004  0.3      true  #FF525233  NaN
 ```
+
+**Pine Script:** Tea has no `format` argument and does not convert arrays.
+
+**See also:** [`math.round`](./math.md#round)
 
 ## Script control
 
@@ -283,7 +305,9 @@ void runtime.error(series string message)
 | --------- | --------------- | ------------------ |
 | `message` | `series string` | The error message. |
 
-When a call runs, the run stops: no output is published for that bar or any later one, and the host receives the message. When the conditions around a call are all constants that make it run, it is a compile error at the call instead, so `ta.sma(close, 0)` is rejected where it is written. A call inside a loop, inside a `switch`, or after a statement that can leave the block early is only checked when it runs.
+When a call runs, the run stops: no output is published for that bar or any later one, and the host receives the message.
+
+A call that runs every time its script or function runs is a compile error instead: one with no `if` around it, or only `if`s whose constant conditions select it. Constant arguments count as constants inside the function they are passed to, so `ta.sma(close, 0)` is rejected where it is written, even inside an `if`. A call inside a loop, inside a `switch`, or after a `return` that may run first is only checked when it runs.
 
 This script stops on its first bar when the host sets `length` below 2:
 
@@ -293,3 +317,5 @@ if length < 2
     runtime.error("length must be at least 2")
 emit "average" ta.sma(close, length)
 ```
+
+**Pine Script:** A call that runs every time its script or function runs is rejected when the script compiles, instead of stopping the run.

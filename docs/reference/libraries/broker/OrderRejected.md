@@ -10,12 +10,14 @@ Event appended to the `broker.OrderRejected` output when the broker refuses a co
 type OrderRejected
 ```
 
-| Field                     | Description                                                                              |
-| ------------------------- | ---------------------------------------------------------------------------------------- |
-| `string commandId`        | Command id of the refused command.                                                       |
-| `broker.Side side`        | Side of the refused command or order.                                                    |
-| `int barIndex`            | Bar index of the refusal: the signal bar when submitting, the matching bar when filling. |
-| `broker.Rejection reason` | Why it was refused.                                                                      |
+| Field                     | Description                                                                                                     |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `string commandId`        | Command id of the refused command.                                                                              |
+| `broker.Side side`        | Side of the refused command or order; for a rebalance refused when it fills, the side of the fill it attempted. |
+| `int barIndex`            | Bar index of the refusal: the signal bar when submitting, the matching bar when filling.                        |
+| `broker.Rejection reason` | Why it was refused.                                                                                             |
 
 An accepted scheduled order can still be refused when it tries to fill; the
-event then carries that order's command id.
+event then carries that order's command id, and the order is removed rather
+than retried. [`broker.Rejection`](./Rejection.md) says which checks run at submission
+and which at the fill.

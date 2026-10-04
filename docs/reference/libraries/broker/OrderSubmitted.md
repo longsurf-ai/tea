@@ -13,3 +13,7 @@ type OrderSubmitted
 | Field                | Description         |
 | -------------------- | ------------------- |
 | `broker.Order order` | The accepted order. |
+
+Acceptance does not promise a fill: a scheduled order's size, the settings
+and the capital are checked on the bar it would fill, where it can still be
+rejected. Immediate execution appends this event only with its fill.

@@ -18,7 +18,7 @@ type Fill
 | `broker.Side side`                                          | Side of this fill.                                                                                                                                 |
 | `int barIndex`                                              | Bar index of the fill.                                                                                                                             |
 | `float referencePrice`                                      | Matched price before slippage, such as the open, the close, or a stop or target level.                                                             |
-| `float price`                                               | Execution price after adverse slippage.                                                                                                            |
+| `float price`                                               | Execution price: `referencePrice` after adverse slippage, and at least one tick for an exit with tick slippage.                                    |
 | `float quantity`                                            | Filled quantity, always positive.                                                                                                                  |
 | `float notional`                                            | `quantity * price`.                                                                                                                                |
 | `float fee`                                                 | Commission charged on this fill.                                                                                                                   |

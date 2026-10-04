@@ -15,11 +15,24 @@ rejects, including `na`: [`geometry.orient2d`](./geometry.md#orient2d) then retu
 [`geometry.segmentContact`](./geometry.md#segmentcontact) returns `false`, and the functions that
 return arrays return an empty one.
 
-[`geometry.orient2d`](./geometry.md#orient2d) and [`geometry.segmentContact`](./geometry.md#segmentcontact) are exact for
-Float64 arithmetic on the CPU, a guarantee that does not extend to GPU
-execution. Positions along the shapes, and the contacts of quadratic curves,
-are computed in Float64 within small rounding bounds. See
-[geometry](../../geometry.md) for the algorithms and numerical limits.
+Only the sign of [`geometry.orient2d`](./geometry.md#orient2d) and the yes-or-no answers built
+from signs and comparisons alone are exact: the result of
+[`geometry.segmentContact`](./geometry.md#segmentcontact), whether [`geometry.segmentContacts`](./geometry.md#segmentcontacts)
+finds a contact, and whether [`geometry.rectangleContacts`](./geometry.md#rectanglecontacts) finds a point
+for a segment. Exact means exact for the binary numbers a script stores, not
+for the decimals it writes: on the line from `(0, 100)` to `(100, 110)`,
+the point `(5, 100.5)` lies on the line, but `(3, 100.3)` and `(4, 100.4)`
+do not, because `100.3` and `100.4` are stored as nearby binary values.
+Everything else is ordinary floating-point arithmetic: the positions in a
+[`geometry.Contact`](./geometry.md#contact), the points that
+[`geometry.rectangleContacts`](./geometry.md#rectanglecontacts) returns, and every result for quadratic
+curves. The size of [`geometry.orient2d`](./geometry.md#orient2d) is within about one part in
+a million of the exact value, so the crossing of two segments, even nearly
+parallel ones, is placed within about two millionths of a segment's length.
+
+A script that calls a geometry function cannot be compiled for the GPU; it
+runs on the CPU. See [geometry](../../geometry.md) for the algorithms and numerical
+limits.
 
 Add `import geometry` to a script to use these as `geometry.name`.
 
@@ -48,12 +61,44 @@ geometry.coordinateSupported(float value)
 | --------- | ------- | -------------------- |
 | `value`   | `float` | The number to check. |
 
-**Returns:** `true` when `value` is a supported coordinate, otherwise `false`.
+**Returns:** `bool`: `true` when `value` is a supported coordinate, otherwise `false`.
 
 Accepts `0` and finite numbers whose magnitude is from `1e-70` through
 `1e70`, and rejects `na` and everything else; the range keeps the exact
 arithmetic free of overflow and underflow. Check inputs with it to skip
-evaluation when data is missing, such as `close[1]` on the first row.
+evaluation when data is missing, such as `close[1]` on the first bar.
+
+**Example:** The missing close at index 1, `1e-71` at index 3 (not `0` but too small)
+and `1e71` at index 4 (too large) are rejected.
+
+```tea
+import geometry
+
+emit "close" close
+emit "supported" geometry.coordinateSupported(close)
+```
+
+```csv
+time,close
+0,101.5
+1,
+2,0
+3,1e-71
+4,1e71
+5,-2.5
+```
+
+**Output:**
+
+```text
+index  close  supported
+0      101.5  true
+1      na     false
+2      0      true
+3      1e-71  false
+4      1e+71  false
+5      -2.5   true
+```
 
 ## Orientation
 
@@ -81,12 +126,48 @@ geometry.orient2d(
 | `cx`      | `float` | `x` of the point to classify, `c`. |
 | `cy`      | `float` | `y` of `c`.                        |
 
-**Returns:** A positive number, a negative number or `0`; `na` when a coordinate is unsupported.
+**Returns:** `float`: positive when the points turn clockwise, negative when they turn counterclockwise and `0` when they lie on one line; `na` when a coordinate is unsupported.
 
 The result is positive when `a`, `b`, `c` turn clockwise, so `c` lies to the
 right of the line from `a` through `b`; negative when they turn
-counterclockwise; and `0` when the points are collinear. The sign is exact,
-but the magnitude is not a reliable area, so use only the sign.
+counterclockwise; and `0` when the points lie on one line. This is the
+opposite sign of Shewchuk's `orient2d`, where counterclockwise is positive.
+
+The sign is exact for the binary values the coordinates are stored as. The
+magnitude is twice the area of the triangle `a`, `b`, `c`, within about one
+part in a million of the exact value.
+
+**Formula**
+
+$$
+\begin{aligned}
+D &= (\mathit{ay} - \mathit{cy})(\mathit{bx} - \mathit{cx})
+  - (\mathit{ax} - \mathit{cx})(\mathit{by} - \mathit{cy}) \\
+\operatorname{sign}(\mathrm{orient2d}) &= \operatorname{sign}(D)
+\end{aligned}
+$$
+
+**Example:** `(0, 1)` lies to the left of the line from `(0, 0)` through `(1, 0)`, so
+those points turn counterclockwise and the result is negative. `(1, 0)` lies
+to the right of the line from `(0, 0)` up through `(0, 1)`, so the result
+is positive. Points on one line give `0`.
+
+```tea
+import geometry
+
+emit "counterclockwise" geometry.orient2d(0.0, 0.0, 1.0, 0.0, 0.0, 1.0)
+emit "clockwise" geometry.orient2d(0.0, 0.0, 0.0, 1.0, 1.0, 0.0)
+emit "collinear" geometry.orient2d(0.0, 0.0, 1.0, 1.0, 2.0, 2.0)
+```
+
+**Output:**
+
+```text
+index  counterclockwise  clockwise  collinear
+0      -1                1          0
+```
+
+**See also:** [`geometry.segmentContact`](./geometry.md#segmentcontact)
 
 ## Intersections
 
@@ -118,21 +199,67 @@ geometry.segmentContact(
 | `qx`      | `float` | `x` of the second segment's end, `q`.   |
 | `qy`      | `float` | `y` of `q`.                             |
 
-**Returns:** `true` when the segments touch; `false` when they do not or a coordinate is unsupported.
+**Returns:** `bool`: `true` when the segments touch; `false` when they do not or a coordinate is unsupported.
 
 Both segments include their endpoints, so touching at an end counts, as does
 overlapping along one line; a segment whose ends are equal is a single point.
-The decision is exact. This tests whether the move from the previous close to
-the current one touches a line from `(0, 100)` to `(100, 110)`, with
-`bar_index` as `x`; on the first row `close[1]` is `na`, so the result is
-`false`:
+The answer is exact for the stored binary values, because it uses only the
+signs of [`geometry.orient2d`](./geometry.md#orient2d) and comparisons. In the formula,
+`orient2d(a, p, q)` stands for `geometry.orient2d(ax, ay, px, py, qx, qy)`.
+
+**Formula**
+
+$$
+\begin{aligned}
+\mathrm{touch} \iff{} & \operatorname{sign} \mathrm{orient2d}(a, p, q) \cdot
+  \operatorname{sign} \mathrm{orient2d}(b, p, q) \le 0 \\
+\land{} & \operatorname{sign} \mathrm{orient2d}(p, a, b) \cdot
+  \operatorname{sign} \mathrm{orient2d}(q, a, b) \le 0 \\
+\land{} & \text{if all four signs are } 0\text{: both the } x
+  \text{ ranges} \\
+& \text{and the } y \text{ ranges of the segments overlap}
+\end{aligned}
+$$
+
+**Example:** With `bar_index` as `x`, the line from `(0, 100)` to `(100, 110)` rises by
+`0.1` per bar. `crossed` tests the move from the previous close; it is
+`false` at index 0, where `close[1]` is `na`, and at index 2, where both
+closes are above the line. `onLine` tests the close alone, as a segment
+whose ends are equal: the line passes through `100.3` at index 3 and `100.4`
+at index 4, but those decimals are stored as nearby binary values that miss
+it, while `100.5` at index 5 is stored exactly.
 
 ```tea
 import geometry
 
-hit = geometry.segmentContact(0.0, 100.0, 100.0, 110.0, bar_index - 1, close[1], bar_index, close)
-emit "hit" hit
+emit "close" close
+emit "crossed" geometry.segmentContact(0.0, 100.0, 100.0, 110.0, bar_index - 1, close[1], bar_index, close)
+emit "onLine" geometry.segmentContact(0.0, 100.0, 100.0, 110.0, bar_index, close, bar_index, close)
 ```
+
+```csv
+time,close
+0,99
+1,101
+2,102
+3,100.3
+4,100.4
+5,100.5
+```
+
+**Output:**
+
+```text
+index  close  crossed  onLine
+0      99     false    false
+1      101    true     false
+2      102    false    false
+3      100.3  true     false
+4      100.4  true     false
+5      100.5  true     true
+```
+
+**See also:** [`geometry.segmentContacts`](./geometry.md#segmentcontacts), [`geometry.orient2d`](./geometry.md#orient2d)
 
 ### segmentContacts
 
@@ -162,16 +289,74 @@ geometry.segmentContacts(
 | `qx`      | `float` | `x` of the observation's end, `q`.   |
 | `qy`      | `float` | `y` of `q`.                          |
 
-**Returns:** An array of up to two [`geometry.Contact`](./geometry.md#contact) values; empty when the segments do not touch or a coordinate is unsupported.
+**Returns:** `array<geometry.Contact>`: up to two contacts; empty when the segments do not touch or a coordinate is unsupported.
 
 The segment from `a` to `b` is the primitive and the segment from `p` to `q`
 is the observation. A crossing or a single shared point gives one
 [`geometry.Contact`](./geometry.md#contact). Segments that overlap along one line give two,
 marking the ends of the shared stretch, with `overlap` set to `true` and
-`boundaryParameter` set to `na`. Whether the segments touch is decided
-exactly, as in [`geometry.segmentContact`](./geometry.md#segmentcontact); the positions are then
-computed in Float64. Each call returns a new array, and the order of its
-contacts is not defined.
+`boundaryParameter` set to `na`. Each call returns a new array, and the
+order of its contacts is not defined.
+
+Whether the segments touch is decided exactly, as in
+[`geometry.segmentContact`](./geometry.md#segmentcontact). The positions are then ordinary
+floating-point results. For segments that cross, not on one line, they
+follow the formula, where `orient2d(a, p, q)` stands for
+`geometry.orient2d(ax, ay, px, py, qx, qy)`. Because the magnitudes of
+[`geometry.orient2d`](./geometry.md#orient2d) are within about one part in a million of the
+exact values, a crossing is placed within about two millionths of a
+segment's length of the true point, even for nearly parallel segments.
+
+**Formula**
+
+$$
+\begin{aligned}
+\mathit{boundaryParameter} &= \min\left(1, \max\left(0,
+  \frac{\mathrm{orient2d}(a, p, q)}
+  {\mathrm{orient2d}(a, p, q) - \mathrm{orient2d}(b, p, q)}\right)\right) \\
+\mathit{observationParameter} &= \min\left(1, \max\left(0,
+  \frac{\mathrm{orient2d}(p, a, b)}
+  {\mathrm{orient2d}(p, a, b) - \mathrm{orient2d}(q, a, b)}\right)\right)
+\end{aligned}
+$$
+
+**Example:** A level at `100` runs from bar 0 to bar 10, and the observation is the move
+from the previous close. At index 1 the move crosses the level, at
+`x = 2/3`; at index 3 it ends on the level and at index 5 it starts on it.
+At index 4 it lies along the level, so its two contacts mark the ends of
+the overlap. Index 0, where `close[1]` is `na`, and index 2, above the
+level, give `[]`.
+
+```tea
+import geometry
+
+emit "close" close
+emit "contacts" geometry.segmentContacts(0.0, 100.0, 10.0, 100.0, bar_index - 1, close[1], bar_index, close)
+```
+
+```csv
+time,close
+0,98
+1,101
+2,103
+3,100
+4,100
+5,99
+```
+
+**Output:**
+
+```text
+index  close  contacts
+0      98     []
+1      101    [{"boundaryParameter":0.06666666666666667,"observationParameter":0.6666666666666666,"transverse":true,"overlap":false}]
+2      103    []
+3      100    [{"boundaryParameter":0.3,"observationParameter":1,"transverse":true,"overlap":false}]
+4      100    [{"boundaryParameter":"na","observationParameter":0,"transverse":false,"overlap":true},{"boundaryParameter":"na","observationParameter":1,"transverse":false,"overlap":true}]
+5      99     [{"boundaryParameter":0.4,"observationParameter":0,"transverse":true,"overlap":false}]
+```
+
+**See also:** [`geometry.Contact`](./geometry.md#contact), [`geometry.segmentContact`](./geometry.md#segmentcontact)
 
 ### quadraticContacts
 
@@ -205,7 +390,7 @@ geometry.quadraticContacts(
 | `qx`      | `float` | `x` of the observation's end, `q`.   |
 | `qy`      | `float` | `y` of `q`.                          |
 
-**Returns:** An array of up to two [`geometry.Contact`](./geometry.md#contact) values; empty when the shapes do not touch or a coordinate is unsupported.
+**Returns:** `array<geometry.Contact>`: up to two contacts; empty when the shapes do not touch or a coordinate is unsupported.
 
 The curve starts at `a`, bends toward the control point `b` and ends at `c`;
 the observation runs from `p` to `q`. Each crossing or tangent touch gives
@@ -213,10 +398,57 @@ one [`geometry.Contact`](./geometry.md#contact), and its `transverse` field tell
 When the whole curve lies along the observation's line, the contacts instead
 mark the ends of the shared stretch, or its single point, with
 `boundaryParameter` set to `na`: a curve can double back along the line, so
-a point there has no unique position on the curve. Contacts come from
-Float64 root finding, accepted within a rounding allowance of 32 machine
-epsilons rather than any price or pixel distance. Each call returns a new
-array, and the order of its contacts is not defined.
+a point there has no unique position on the curve.
+
+Any other contact approximately solves the formula, where each letter
+stands for its point, `u` is the contact's `boundaryParameter` and `v` its
+`observationParameter`. Contacts come from floating-point root finding with
+a rounding allowance of 32 machine epsilons, not any price or pixel
+distance. Rounding can drop a contact exactly at the observation's start,
+even with small integer coordinates. Elsewhere, a tangent touch gives one
+contact when the coordinates are small integers or binary fractions such as
+`0.25`; with decimals such as prices, a touch that is tangent in decimal
+arithmetic can give two close crossings or none instead. Each call returns
+a new array, and the order of its contacts is not defined.
+
+**Formula**
+
+$$
+\begin{aligned}
+B(u) &= (1 - u)^2\,a + 2u(1 - u)\,b + u^2\,c, \qquad 0 \le u \le 1 \\
+B(u) &= p + v\,(q - p), \qquad 0 \le v \le 1
+\end{aligned}
+$$
+
+**Example:** The curve rises from `(0, 100)` to a peak of `102` at `x = 2` and falls back
+to `(4, 100)`. The observation is the level of the close from `x = 0` to
+`x = 4`. At `101` it crosses the curve twice, at `102` it touches the peak,
+so `transverse` is `false`, and at `103` it misses.
+
+```tea
+import geometry
+
+emit "close" close
+emit "contacts" geometry.quadraticContacts(0.0, 100.0, 2.0, 104.0, 4.0, 100.0, 0.0, close, 4.0, close)
+```
+
+```csv
+time,close
+0,101
+1,102
+2,103
+```
+
+**Output:**
+
+```text
+index  close  contacts
+0      101    [{"boundaryParameter":0.8535533905932737,"observationParameter":0.8535533905932737,"transverse":true,"overlap":false},{"boundaryParameter":0.14644660940672624,"observationParameter":0.14644660940672624,"transverse":true,"overlap":false}]
+1      102    [{"boundaryParameter":0.5,"observationParameter":0.5,"transverse":false,"overlap":false}]
+2      103    []
+```
+
+**See also:** [`geometry.Contact`](./geometry.md#contact), [`geometry.segmentContacts`](./geometry.md#segmentcontacts)
 
 ### rectangleContacts
 
@@ -252,7 +484,7 @@ geometry.rectangleContacts(
 | `right`     | `float` | `x` of the rectangle's right edge.                                                                               |
 | `top`       | `float` | `y` of the rectangle's top edge.                                                                                 |
 
-**Returns:** An array holding one [`geometry.Point`](./geometry.md#point) where the shapes meet; empty when they do not, when `left` is greater than `right` or `bottom` greater than `top`, or when a coordinate is unsupported.
+**Returns:** `array<geometry.Point>`: one point where the shapes meet; empty when they do not, when `left` is greater than `right` or `bottom` greater than `top`, or when a coordinate is unsupported.
 
 The rectangle includes its interior, so a shape wholly inside it touches it.
 With `quadratic` set to `false` the shape is the segment from `a` to `c`;
@@ -261,6 +493,36 @@ otherwise it is the quadratic curve from `a` toward the control point `b` to
 contained endpoint when the shape lies wholly inside. That point proves
 contact; it is not necessarily the first contact along the shape. A
 rectangle of zero width or height is allowed.
+
+For a segment, whether a point is found is exact, as in
+[`geometry.segmentContact`](./geometry.md#segmentcontact); the point's coordinates are floating-point
+results. For a curve, contacts come from [`geometry.quadraticContacts`](./geometry.md#quadraticcontacts)
+and share its rounding.
+
+**Example:** The rectangle spans `x` and `y` from `0` to `2`. The segment `through`
+enters at `(0, 1)` and leaves at `(2, 1)`; the result is the point on the
+right edge, not the first contact along the segment. The segment `inside`
+lies wholly inside, so the result is its start, and `outside` passes above
+the rectangle. The curve `tangent` bends down from `(-1, 3)` to touch the
+top edge at `(1, 2)` and rises again to `(3, 3)`.
+
+```tea
+import geometry
+
+emit "through" geometry.rectangleContacts(-1.0, 1.0, 0.0, 0.0, 3.0, 1.0, false, 0.0, 0.0, 2.0, 2.0)
+emit "inside" geometry.rectangleContacts(0.5, 0.5, 0.0, 0.0, 1.5, 1.5, false, 0.0, 0.0, 2.0, 2.0)
+emit "outside" geometry.rectangleContacts(-1.0, 3.0, 0.0, 0.0, 3.0, 3.0, false, 0.0, 0.0, 2.0, 2.0)
+emit "tangent" geometry.rectangleContacts(-1.0, 3.0, 1.0, 1.0, 3.0, 3.0, true, 0.0, 0.0, 2.0, 2.0)
+```
+
+**Output:**
+
+```text
+index  through          inside               outside  tangent
+0      [{"x":2,"y":1}]  [{"x":0.5,"y":0.5}]  []       [{"x":1,"y":2}]
+```
+
+**See also:** [`geometry.segmentContacts`](./geometry.md#segmentcontacts), [`geometry.quadraticContacts`](./geometry.md#quadraticcontacts)
 
 ## Types
 

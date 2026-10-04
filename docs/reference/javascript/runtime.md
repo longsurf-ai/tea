@@ -34,7 +34,7 @@ bind it with [`Module.bind`](./runtime.md#module-module-bind), create a [`Contex
 | [`matrix`](#matrix)                             | Matrix construction shares the array element contract and checks dimensions.                                                                                                                                                                                                         |
 | [`na`](#na)                                     | Numeric NA is NaN, nullable NA is null, and booleans have no NA value.                                                                                                                                                                                                               |
 | [`nz`](#nz)                                     | Use the replacement only when the captured value is missing.                                                                                                                                                                                                                         |
-| [`outputSchema`](#outputschema)                 | Add Node-owned coordinates to the program's Arrow fields. Each call owns its coordinate fields; callers cannot change another schema's metadata.                                                                                                                                     |
+| [`outputSchema`](#outputschema)                 | Builds an output schema: the row fields `index`, `time`, `timed` and `provisional`, followed by `fields`.                                                                                                                                                                            |
 | [`rangeNext`](#rangenext)                       | Stop a range whose floating-point step can no longer advance its index.                                                                                                                                                                                                              |
 | [`resource`](#resource)                         | Capture an opaque resource identity, or its typed missing value. This does not allocate a drawing resource; a host or supported intrinsic owns it.                                                                                                                                   |
 | [`struct`](#struct-function)                    | Register generated class instances with the Context's managed Heap.                                                                                                                                                                                                                  |
@@ -233,6 +233,7 @@ function matrix<E extends Value<unknown>>(
     context: Context,
     ...shape:
       | []
+      | [rows: Value<number, "int">, columns: Value<number, "int">]
       | [rows: Value<number, "int">, columns: Value<number, "int">, initial: E]
   ): Value<MatrixValue<E> | null, "matrix">;
   empty: (context?: Context) => Value<MatrixValue<E> | null, "matrix">;
@@ -260,13 +261,17 @@ function nz<T, K extends string>(
 
 ### outputSchema
 
-Add Node-owned coordinates to the program's Arrow fields. Each call owns its coordinate fields; callers cannot change another schema's metadata.
+Builds an output schema: the row fields `index`, `time`, `timed` and `provisional`, followed by `fields`.
 
 ```ts
 function outputSchema(fields: readonly Field[]): Schema;
 ```
 
-**Example:** `outputSchema([price]).fields[0].name` is `index`.
+Each call creates new row fields, so changing their metadata in one schema
+never affects another.
+
+**Example:** `outputSchema([price]).fields[0].name` is `index`, and
+`fields[4]` is `price`.
 
 ### rangeNext
 

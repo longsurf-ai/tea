@@ -1626,17 +1626,19 @@ export type BrokerEmulator
 	 * \mathit{notional} / p & \text{notional set} \\
 	 * D(\mathit{cashBudget}) & \text{cashBudget set} \\
 	 * P / p & \text{equityPercent set} \\
-	 * D(P) & \text{equityPercent and commissionIncluded set} \\
-	 * D(B) \text{ for a buy},\ D(E) \text{ for a sell} & \text{no size set} \\
-	 * |Q| & \text{close, or closing fill of a reversal}
+	 * D(P) & \text{equityPercent, commissionIncluded set} \\
+	 * D(B) & \text{a buy with no size set} \\
+	 * D(E) & \text{a sell with no size set} \\
+	 * |Q| & \text{a close, or a reversal's closing fill}
 	 * \end{cases} \\[1ex]
-	 * &\text{an entry with a size needs } m = 0 \text{ or }
-	 * \begin{cases}
-	 * \mathit{cashBudget} \le A & \text{cashBudget set} \\
-	 * P \le A & \text{equityPercent and commissionIncluded set} \\
-	 * P \cdot m / 100 + \mathit{fee} \le A & \text{equityPercent set} \\
-	 * \mathit{notional} \cdot m / 100 + \mathit{fee} \le A & \text{notional set} \\
-	 * q \cdot p \cdot m / 100 + \mathit{fee} \le A & \text{otherwise}
+	 * &\text{an entry with a size needs } m = 0 \text{ or } C \le A
+	 * \text{, where} \\
+	 * C &= \begin{cases}
+	 * \mathit{cashBudget} & \text{cashBudget set} \\
+	 * P & \text{equityPercent, commissionIncluded set} \\
+	 * P \cdot m / 100 + \mathit{fee} & \text{equityPercent set} \\
+	 * \mathit{notional} \cdot m / 100 + \mathit{fee} & \text{notional set} \\
+	 * q \cdot p \cdot m / 100 + \mathit{fee} & \text{otherwise}
 	 * \end{cases} \\[1ex]
 	 * &\text{an entry without a size needs } A > 0 \\[1ex]
 	 * T &= \begin{cases}

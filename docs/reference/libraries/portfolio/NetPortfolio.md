@@ -10,39 +10,41 @@ Portfolio that holds one signed net position with an average entry price.
 type NetPortfolio
 ```
 
-| Field                                   | Description                                                                                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `float initialCash`                     | Starting cash; it must be positive, and `total_return` is measured against it.                               |
-| `int pyramiding`                        | Most same-direction entries one position may accumulate; at least `1`.                                       |
-| `float marginLong`                      | `100` requires a new long position's value plus fees to fit in cash; `0` turns the check off.                |
-| `float marginShort`                     | `100` requires a new short position's value plus fees to fit in equity; `0` turns the check off.             |
-| `float cashValue = 0.0`                 | Current cash balance.                                                                                        |
-| `float positionQuantityValue = 0.0`     | Signed position: positive when long, negative when short.                                                    |
-| `float entryPrice = na`                 | Average entry price of the open position; `na` when flat.                                                    |
-| `float entryNotional = 0.0`             | Value of the open position at its entry prices, excluding fees.                                              |
-| `float entryFee = 0.0`                  | Entry fees of the open position not yet charged to realized profit.                                          |
-| `int openEntryCountValue = 0`           | Entries in the open position, checked against `pyramiding`; rebalance fills do not count.                    |
-| `float realizedPnlValue = 0.0`          | Realized profit and loss, net of fees.                                                                       |
-| `float totalFeesValue = 0.0`            | Total commission paid.                                                                                       |
-| `float equityValue = 0.0`               | Equity at the latest `mark`.                                                                                 |
-| `float peakEquity = 0.0`                | Highest equity seen by `mark`.                                                                               |
-| `float maxDrawdownValue = 0.0`          | Largest drop from peak equity, as a fraction of the peak.                                                    |
-| `int fillCountValue = 0`                | Number of fills applied.                                                                                     |
-| `int roundTripCountValue = 0`           | Number of positions closed, including by reversal.                                                           |
-| `float activeTradePnlValue = 0.0`       | Profit realized so far by the open position, which decides whether it counts as a win when it closes.        |
-| `int winningTradeCountValue = 0`        | Closed positions with a profit.                                                                              |
-| `int losingTradeCountValue = 0`         | Closed positions with zero or negative profit.                                                               |
-| `float grossProfitValue = 0.0`          | Total profit of the winning positions.                                                                       |
-| `float grossLossValue = 0.0`            | Total loss of the losing positions, as a positive number.                                                    |
-| `bool targetPositionArithmetic = false` | Whether a rebalance fill opened the current position; it only changes the rounding order of realized profit. |
+| Field                                   | Description                                                                                                                                                                                                    |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `float initialCash`                     | Starting cash; it must be positive, and `total_return` is measured against it.                                                                                                                                 |
+| `int pyramiding`                        | Most entries one position may hold; at least `1`. A rebalance that opens or reverses the position counts as one entry; a rebalance that adds to it does not count and is not limited by it.                    |
+| `float marginLong`                      | `100` requires each long entry's value plus commission to fit in cash; `0` turns the check off.                                                                                                                |
+| `float marginShort`                     | `100` requires each short entry's value plus commission to fit in equity; `0` turns the check off.                                                                                                             |
+| `float cashValue = 0.0`                 | Current cash balance.                                                                                                                                                                                          |
+| `float positionQuantityValue = 0.0`     | Signed position: positive when long, negative when short.                                                                                                                                                      |
+| `float entryPrice = na`                 | Average entry price of the open position; `na` when flat.                                                                                                                                                      |
+| `float entryNotional = 0.0`             | Value of the open position at its entry prices, excluding commission.                                                                                                                                          |
+| `float entryFee = 0.0`                  | Entry commission of the open position not yet charged to realized profit.                                                                                                                                      |
+| `int openEntryCountValue = 0`           | Entries since the position opened, checked against `pyramiding`; reducing the position does not lower it. A rebalance that opens or reverses the position counts as one; a rebalance that adds to it does not. |
+| `float realizedPnlValue = 0.0`          | Realized profit and loss, net of commission.                                                                                                                                                                   |
+| `float totalFeesValue = 0.0`            | Total commission paid.                                                                                                                                                                                         |
+| `float equityValue = 0.0`               | Equity at the latest `mark`.                                                                                                                                                                                   |
+| `float peakEquity = 0.0`                | Highest of `initialCash` and the equity at each `mark`.                                                                                                                                                        |
+| `float maxDrawdownValue = 0.0`          | Largest drop from peak equity, as a fraction of the peak.                                                                                                                                                      |
+| `int fillCountValue = 0`                | Number of fills applied.                                                                                                                                                                                       |
+| `int roundTripCountValue = 0`           | Number of positions closed, including by reversal.                                                                                                                                                             |
+| `float activeTradePnlValue = 0.0`       | Profit realized so far by the open position, which decides whether it counts as a win when it closes.                                                                                                          |
+| `int winningTradeCountValue = 0`        | Closed positions with a profit above zero.                                                                                                                                                                     |
+| `int losingTradeCountValue = 0`         | Closed positions with zero or negative profit.                                                                                                                                                                 |
+| `float grossProfitValue = 0.0`          | Total profit of the winning positions.                                                                                                                                                                         |
+| `float grossLossValue = 0.0`            | Total loss of the losing positions, as a positive number.                                                                                                                                                      |
+| `bool targetPositionArithmetic = false` | Whether a rebalance fill opened the current position; it only changes the rounding order of realized profit.                                                                                                   |
 
 Create it with [`portfolio.new`](./new.md), which starts cash, equity and peak
-equity at `initialCash`, and pass it to a coordinator.
-Same-direction fills add to the position at a quantity-weighted average
-price; opposite fills reduce, close or reverse it. One round trip lasts from
-opening a position to closing it, however many fills that takes. The
-coordinator calls the methods that change the portfolio; strategies read
-results through the coordinator.
+equity at `initialCash`, and pass it to a coordinator. Fills on the
+position's side add to it at a quantity-weighted average price; opposite
+fills reduce, close or reverse it, as
+[`portfolio.NetPortfolio.apply_net`](./NetPortfolio.md#apply_net) shows. One round trip lasts from
+opening a position to closing or reversing it, however many fills that
+takes, and counts as a winning trade when the profit realized by all its
+closing fills is above zero. The coordinator calls the methods that change
+the portfolio; strategies read results through the coordinator.
 
 ## Methods
 
@@ -54,7 +56,10 @@ Returns the [`broker.Account`](../broker/Account.md) view the broker checks orde
 broker.Account account() const
 ```
 
-Its `configurationValid` is `false` unless `initialCash` is positive, `pyramiding` is at least `1`, and each margin is `0` or `100`. Called by the trade coordinators.
+It reports the cash as `buyingPower`, the signed position and the entry
+count. Its `configurationValid` is `false` unless `initialCash` is
+positive, `pyramiding` is at least `1`, and each margin is `0` or `100`.
+Called by the trade coordinators.
 
 ### is_flat
 
@@ -112,9 +117,62 @@ Returns all metrics as one [`portfolio.PortfolioSnapshot`](./PortfolioSnapshot.m
 portfolio.PortfolioSnapshot snapshot() const
 ```
 
+Cash, position and the counts are current; equity and the measures
+built on it are from the latest `mark`.
+
+**Example:** A snapshot read right after `begin_bar` already holds the fill at that
+open, but its equity is still the one marked at the previous close.
+`end_bar` marks the position at the close, so `equity` at index 1 is
+500 in cash plus 5 units at 110.
+
+```tea
+import broker
+import portfolio
+import trade
+
+var strat = trade.nextOpen(
+    broker.new(),
+    portfolio.new(initialCash = 1000.0)
+)
+strat.begin_bar(open, bar_index)
+atOpen = strat.snapshot()
+if bar_index == 0
+    strat.entry("Long", trade.Direction.long, qty = 5.0)
+strat.end_bar(close, false)
+atClose = strat.snapshot()
+emit "open" open
+emit "close" close
+emit "cash" atOpen.cash
+emit "position" atOpen.positionQuantity
+emit "equityAtOpen" atOpen.equity
+emit "equity" atClose.equity
+```
+
+```csv
+time,open,close
+0,100,100
+1,100,110
+2,110,120
+3,120,120
+4,120,130
+5,130,130
+```
+
+**Output:**
+
+```text
+index  open  close  cash  position  equityAtOpen  equity
+0      100   100    1000  0         1000          1000
+1      100   110    500   5         1000          1050
+2      110   120    500   5         1050          1100
+3      120   120    500   5         1100          1100
+4      120   130    500   5         1100          1150
+5      130   130    500   5         1150          1150
+```
+
 ### apply_net
 
-Applies one fill to cash, position, entry price, realized profit and statistics.
+Applies one fill to cash, position, average entry price, realized profit and statistics.
 
 ```tea
 int apply_net(broker.Fill execution)
@@ -124,9 +182,52 @@ int apply_net(broker.Fill execution)
 | ----------- | ------------- | -------------------------- |
 | `execution` | `broker.Fill` | the fill to apply, or `na` |
 
-**Returns:** the number of fills applied so far.
+**Returns:** `int`: the number of fills applied so far.
 
-It ignores `na` and fills whose quantity or price is not positive or whose fee is negative. Realized profit on a closing fill is net of the closing fee and a proportional share of the entry fees. Called by the trade coordinators; strategies normally use the coordinator instead.
+In the formula, the fill has quantity `q`, price `x` and fee `f`, and
+`s` is `1` for a buy and `-1` for a sell. `C`, `Q`, `avg`, `R` and `F`
+are the cash, the signed position, its average entry price, realized
+profit, and the position's entry commission not yet in `R`; primes mark
+their values after the fill, and `c` is the quantity the fill closes. A
+fill that closes some quantity realizes its price change and charges it
+that quantity's share of the entry commission and of its own fee; a fill
+that reverses the position opens the new one at its price with the rest
+of its fee.
+
+When the fill closes or reverses the position, `round_trip_count` grows
+by one, and the profit the position realized over all its closing fills
+goes to the gross profit and the winning trades when it is above zero,
+or to the gross loss and the losing trades otherwise. Every applied fill
+adds its fee to `total_fees` and one to `fill_count`. It ignores `na`
+and fills whose quantity or price is not positive or whose fee is
+negative. Called by the trade coordinators; strategies use the
+coordinator instead.
+
+**Formula**
+
+$$
+\begin{aligned}
+C' &= C - s \cdot q \cdot x - f \\
+Q' &= \begin{cases}
+0 & |Q + s \cdot q| \le 10^{-7} \\ Q + s \cdot q & \text{otherwise}
+\end{cases} \\
+c &= \begin{cases}
+\min(|Q|,\ q) & s \cdot Q < 0 \\ 0 & \text{otherwise}
+\end{cases} \\
+R' &= R + c \cdot (x - \mathit{avg}) \cdot \operatorname{sgn}(Q) -
+\frac{c}{|Q|} \cdot F - \frac{c}{q} \cdot f \quad \text{when } c > 0 \\
+(\mathit{avg}', F') &= \begin{cases}
+\left( \dfrac{|Q| \cdot \mathit{avg} + q \cdot x}{|Q| + q},\ F + f \right)
+& s \cdot Q > 0 \\
+\left( \mathit{avg},\ F - \dfrac{c}{|Q|} \cdot F \right)
+& s \cdot Q < 0,\ Q \cdot Q' > 0 \\
+(\text{na},\ 0) & Q' = 0 \\
+\left( x,\ f - \dfrac{c}{q} \cdot f \right) & \text{otherwise}
+\end{cases}
+\end{aligned}
+$$
+
+**See also:** [`portfolio.NetPortfolio.mark`](./NetPortfolio.md#mark)
 
 ### mark
 
@@ -140,9 +241,27 @@ float mark(float price)
 | --------- | ------- | ------------------------------ |
 | `price`   | `float` | price to value the position at |
 
-**Returns:** the new equity.
+**Returns:** `float`: the new equity.
 
-Called by the coordinators' `mark` and `end_bar`.
+In the formula, `p` is `price`, `E` the equity, `P` the peak equity and
+`D` the maximum drawdown; `C`, `Q`, `avg`, `R` and `F` are as in
+[`portfolio.NetPortfolio.apply_net`](./NetPortfolio.md#apply_net). `U` is the open position's
+unrealized profit: its price change since entry, less the entry
+commission not yet in realized profit. Called by the coordinators'
+`mark` and `end_bar`.
+
+**Formula**
+
+$$
+\begin{aligned}
+E &= C + Q \cdot p = \mathit{initialCash} + R + U,
+\quad U = \begin{cases}
+Q \cdot (p - \mathit{avg}) - F & Q \ne 0 \\ 0 & Q = 0
+\end{cases} \\
+P &= \max(P,\ E) \\
+D &= \max\left(D,\ \frac{P - E}{P}\right)
+\end{aligned}
+$$
 
 ### cash
 
@@ -162,7 +281,7 @@ float equity() const
 
 ### realized_pnl
 
-Returns realized profit and loss, net of fees.
+Returns realized profit and loss, net of commission.
 
 ```tea
 float realized_pnl() const
@@ -194,7 +313,7 @@ int round_trip_count() const
 
 ### win_rate
 
-Returns the fraction of closed positions with a profit, from `0` to `1`; `0` before the first close.
+Returns the fraction of closed positions with a profit above zero, from `0` to `1`; `0` before the first close.
 
 ```tea
 float win_rate() const
@@ -210,7 +329,7 @@ float profit_factor() const
 
 ### max_drawdown
 
-Returns the largest drop from peak equity, as a fraction of the peak.
+Returns the largest drop from peak equity at any `mark`, as a fraction of the peak.
 
 ```tea
 float max_drawdown() const

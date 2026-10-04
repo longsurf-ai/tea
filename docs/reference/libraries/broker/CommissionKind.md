@@ -10,8 +10,8 @@ How a broker charges commission; see [`broker.Commission`](./Commission.md).
 enum CommissionKind
 ```
 
-| Member            | Description                                                          |
-| ----------------- | -------------------------------------------------------------------- |
-| `rate`            | `value` is a fraction of each fill's notional: `0.001` charges 0.1%. |
-| `cashPerContract` | `value` is cash per unit of filled quantity.                         |
-| `cashPerOrder`    | `value` is cash per order; a reversal's two fills pay it once.       |
+| Member            | Description                                                                   |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `rate`            | `value` is a fraction of each fill's notional: `0.001` charges 0.1%.          |
+| `cashPerContract` | `value` is cash per unit of filled quantity.                                  |
+| `cashPerOrder`    | `value` is cash per order; the two fills of a scheduled reversal pay it once. |

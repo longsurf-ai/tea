@@ -14,8 +14,67 @@ trade.targetPercentOfEquity(float percent)
 | --------- | ------- | -------------------------------------------------------------------------------------------- |
 | `percent` | `float` | Target position value as a percentage of equity, from `-100` to `100`; negative means short. |
 
-**Returns:** A [`broker.PositionTarget`](../broker/PositionTarget.md) for a coordinator's `rebalance`.
+**Returns:** `broker.PositionTarget`: a target for a coordinator's `rebalance`.
 
-The broker rejects a target beyond `100` percent in either direction when it
-is submitted, and rejects the order when equity at the fill price is not
-positive.
+When the rebalance fills, the broker values equity at the matched price,
+before slippage, converts the percentage to a quantity at that same price,
+and trades the difference as [`trade.targetQuantity`](./targetQuantity.md) does, including its
+cap on buys. The fill pays the execution price, so with a slippage rate s a
+buy from flat costs (1 + s) times the target value: a 50% target with 1%
+slippage costs 50.5% of equity. A percentage beyond `100` in either direction
+makes `rebalance` return `na`, and the broker rejects the order with
+`invalidAccountState` when the matched price or the equity is not positive.
+
+In the formula, Q is the position before the fill, r the matched price and T
+the target quantity.
+
+**Formula**
+
+$$
+\begin{aligned}
+E &= \mathit{cash} + Q \cdot r \\
+T &= \frac{\mathit{percent}}{100} \cdot \frac{E}{r} \\
+\Delta &= T - Q
+\end{aligned}
+$$
+
+**Example:** With 1% slippage, a 50% target of the 1000 equity is converted at bar 1's
+open of 100 into 5 units, which fill at 101 and cost 505, 50.5% of equity.
+
+```tea
+import broker
+import portfolio
+import trade
+
+var strat = trade.nextOpen(
+    broker.new(slippage = broker.slippagePercent(1.0)),
+    portfolio.new(initialCash = 1000.0))
+filled = strat.begin_bar(open, bar_index)
+if bar_index == 0
+    strat.rebalance("Half", trade.targetPercentOfEquity(50.0))
+strat.end_bar(close, false)
+emit "open" open
+emit "fill qty" na(filled) ? na : filled.quantity
+emit "fill price" na(filled) ? na : filled.price
+emit "cost" na(filled) ? na : filled.notional
+```
+
+```csv
+time,open,close
+0,100,100
+1,100,100
+2,100,100
+3,100,100
+```
+
+**Output:**
+
+```text
+index  open  fill qty  fill price  cost
+0      100   na        na          na
+1      100   5         101         505
+2      100   na        na          na
+3      100   na        na          na
+```
+
+**See also:** [`trade.targetQuantity`](./targetQuantity.md), [`trade.NextOpenTrade.rebalance`](./NextOpenTrade.md#rebalance)

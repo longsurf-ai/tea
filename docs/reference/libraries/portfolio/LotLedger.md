@@ -10,7 +10,8 @@ Per-lot accounting that [`trade.lots`](../trade/lots.md) requires.
 interface LotLedger
 ```
 
-[`portfolio.LotPortfolio`](./LotPortfolio.md) satisfies it.
+[`portfolio.LotPortfolio`](./LotPortfolio.md) satisfies it. Passing [`trade.lots`](../trade/lots.md) a
+portfolio without these methods is a compile error.
 
 ## Methods
 

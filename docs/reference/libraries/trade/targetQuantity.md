@@ -14,4 +14,81 @@ trade.targetQuantity(float quantity)
 | ---------- | ------- | --------------------------------------------------------------------- |
 | `quantity` | `float` | Target position: positive for long, negative for short, `0` for flat. |
 
-**Returns:** A [`broker.PositionTarget`](../broker/PositionTarget.md) for a coordinator's `rebalance`.
+**Returns:** `broker.PositionTarget`: a target for a coordinator's `rebalance`.
+
+When the rebalance fills, the broker trades the difference between `quantity`
+and the position at that moment, at the execution price, and cancels the
+order when the difference is at most 0.0000001. The result is not always
+exact. Unless the portfolio's `marginLong` is `0`, a buy from a flat or long
+position is capped, without a rejection, at the quantity whose notional plus
+commission spends the cash; when the cash buys nothing, the broker rejects
+the order with `invalidAccountState`. A sell that opens or adds to a short,
+and a fill that crosses zero, must pass a capital check unless the
+portfolio's margin for the new side is `0`, or the broker rejects it with
+`invalidAccountState`: the opened quantity times the execution price, plus
+the fee, plus, when crossing zero, the slippage paid on closing the old
+position, must be at most the equity at the matched price.
+
+In the formula, Q is the position before the fill, q the quantity traded, x
+the execution price and c the commission setting.
+
+**Formula**
+
+$$
+\begin{aligned}
+\Delta &= \mathit{quantity} - Q \\
+q &= \begin{cases}
+\min\bigl(|\Delta|,\ \max(0,\ q_{\text{cash}})\bigr)
+  & \Delta > 0,\ Q \ge 0,\ \mathit{marginLong} \ne 0 \\
+|\Delta| & \text{otherwise}
+\end{cases} \\
+q_{\text{cash}} &= \begin{cases}
+\mathit{cash} / \bigl(x\,(1 + c)\bigr) & \text{commission rate } c \\
+\mathit{cash} / (x + c) & c \text{ per contract} \\
+(\mathit{cash} - c) / x & c \text{ per order}
+\end{cases}
+\end{aligned}
+$$
+
+**Example:** A target of 1000 units fills only 10 at bar 1, because the 1000 of cash buys
+no more; no rejection is reported. A target of 4 then sells 6. The same
+target again needs no change, so bar 3 cancels it without a fill.
+
+```tea
+import broker
+import portfolio
+import trade
+
+var strat = trade.nextOpen(broker.new(),
+    portfolio.new(initialCash = 1000.0))
+filled = strat.begin_bar(open, bar_index)
+if bar_index == 0
+    strat.rebalance("Target", trade.targetQuantity(1000.0))
+if bar_index == 1 or bar_index == 2
+    strat.rebalance("Target", trade.targetQuantity(4.0))
+strat.end_bar(close, false)
+emit "fill qty" na(filled) ? na : filled.quantity
+emit "position" strat.position_quantity()
+emit "cash" strat.cash()
+emit "pending" strat.has_pending() ? 1 : 0
+```
+
+```csv
+time,open,close
+0,100,100
+1,100,100
+2,100,100
+3,100,100
+```
+
+**Output:**
+
+```text
+index  fill qty  position  cash  pending
+0      na        0         1000  1
+1      10        10        0     1
+2      6         4         600   1
+3      na        4         600   0
+```
+
+**See also:** [`trade.targetPercentOfEquity`](./targetPercentOfEquity.md), [`trade.NextOpenTrade.rebalance`](./NextOpenTrade.md#rebalance)

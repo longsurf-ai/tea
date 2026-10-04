@@ -10,9 +10,9 @@ What a command asks the broker to do.
 enum CommandKind
 ```
 
-| Member      | Description                                                                                                                                                   |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `entry`     | Opens or adds to a position on the command's side; a scheduled entry against an open opposite position first closes it, then opens the new side (a reversal). |
-| `close`     | Closes the whole position, or with immediate execution, the lot named by `tradeId`.                                                                           |
-| `exit`      | Stop, target or trailing exit attached to an entry; it closes the whole position.                                                                             |
-| `rebalance` | Moves the net position to a [`broker.PositionTarget`](./PositionTarget.md).                                                                                   |
+| Member      | Description                                                                                                                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entry`     | Opens or adds to a position on the command's side; a scheduled entry against an open opposite position first closes it, then opens the new side (a reversal).                                                                   |
+| `close`     | Closes the whole position, or with immediate execution, the lot named by `tradeId`.                                                                                                                                             |
+| `exit`      | Stop, target or trailing exit attached to an entry; it closes the whole position.                                                                                                                                               |
+| `rebalance` | Moves the net position to a [`broker.PositionTarget`](./PositionTarget.md) with one fill; when that fill opens or reverses the position, the rebalance's command id becomes the entry id that later entries and exits must use. |

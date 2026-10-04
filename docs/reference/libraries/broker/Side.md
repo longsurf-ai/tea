@@ -10,7 +10,7 @@ Side of an order or fill.
 enum Side
 ```
 
-| Member | Description                                                                 |
-| ------ | --------------------------------------------------------------------------- |
-| `buy`  | Increases the signed position: opens or adds to a long, or reduces a short. |
-| `sell` | Decreases the signed position: opens or adds to a short, or reduces a long. |
+| Member | Description                                                                             |
+| ------ | --------------------------------------------------------------------------------------- |
+| `buy`  | Increases the signed position: opens or adds to a long, or reduces or reverses a short. |
+| `sell` | Decreases the signed position: opens or adds to a short, or reduces or reverses a long. |

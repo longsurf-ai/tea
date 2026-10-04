@@ -15,14 +15,153 @@ portfolio.new(
 )
 ```
 
-| Parameter     | Type    | Default     | Description                                                                                                                |
-| ------------- | ------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `initialCash` | `float` | `1000000.0` | Starting cash; must be positive.                                                                                           |
-| `pyramiding`  | `int`   | `1`         | Most same-direction entries one position may accumulate; at least `1`.                                                     |
-| `marginLong`  | `float` | `100.0`     | `100` requires a new long position's value plus fees to fit in cash; `0` turns the check off. Other values are invalid.    |
-| `marginShort` | `float` | `100.0`     | `100` requires a new short position's value plus fees to fit in equity; `0` turns the check off. Other values are invalid. |
+| Parameter     | Type    | Default     | Description                                                                                          |
+| ------------- | ------- | ----------- | ---------------------------------------------------------------------------------------------------- |
+| `initialCash` | `float` | `1000000.0` | Starting cash; must be positive.                                                                     |
+| `pyramiding`  | `int`   | `1`         | Most entries one position may hold; at least `1`.                                                    |
+| `marginLong`  | `float` | `100.0`     | `100` checks each long entry against the cash; `0` turns the check off. Other values are invalid.    |
+| `marginShort` | `float` | `100.0`     | `100` checks each short entry against the equity; `0` turns the check off. Other values are invalid. |
 
-**Returns:** A [`portfolio.NetPortfolio`](./NetPortfolio.md) whose cash and equity start at `initialCash`.
+**Returns:** `portfolio.NetPortfolio`: a portfolio with no position, whose cash and equity are `initialCash`.
 
+Cash, equity and peak equity start at `initialCash`. Fills on the
+position's side add to it at a quantity-weighted average price; opposite
+fills reduce, close or reverse it.
+
+An entry that would give the position more than `pyramiding` entries is
+rejected when it would fill; reducing the position does not free an entry.
+An entry that adds to a position must use the command id of the order
+that opened it: an entry on the position's side with another id is
+rejected when submitted, with `entryIdMismatch`. A rebalance that opens or
+reverses the position counts as its first entry, and its command id
+becomes the position's entry id. A rebalance that adds to the position
+does not count, is not limited by `pyramiding` and keeps the entry id.
+
+With a margin of `100`, the broker checks each entry before it fills, as
+the formula shows: the entry's value plus commission must fit in the cash
+for a buy, or in the equity for a sell. `q`, `x` and `f` are the entry's
+quantity, fill price and commission, `C` the cash, `Q` the signed position
+and `r` the matched price before slippage. A margin of `0` turns the check
+off. Closing fills are never checked; [`broker.BrokerEmulator.execute`](../broker/BrokerEmulator.md#execute)
+gives the full rule, including entries without a size and rebalances.
 Invalid settings do not stop the script; instead the broker rejects every
 order with `invalidConfiguration` when it would fill.
+
+**Formula**
+
+$$
+q \cdot x + f \le \begin{cases}
+C & \text{buy} \\ C + Q \cdot r & \text{sell}
+\end{cases}
+$$
+
+**Example:** With `pyramiding = 2`, the entries filled at the opens of index 1 and 2
+build one position of 4 at an average price of 110. Each fill takes its
+value and its 1% commission out of cash, and equity adds the position
+valued at the close. The `"Exit"` order sells all 4 at the open of index 4,
+140, which leaves 1110 in cash: 120 of price gain less 10 of commission.
+
+```tea
+import broker
+import portfolio
+import trade
+
+var strat = trade.nextOpen(
+    broker.new(commission = broker.commissionRate(0.01)),
+    portfolio.new(initialCash = 1000.0, pyramiding = 2)
+)
+strat.begin_bar(open, bar_index)
+if bar_index <= 1
+    strat.entry("Long", trade.Direction.long, qty = 2.0)
+if bar_index == 3
+    strat.close("Exit")
+strat.end_bar(close, false)
+emit "open" open
+emit "close" close
+emit "cash" strat.cash()
+emit "position" strat.position_quantity()
+emit "average" strat.position_avg_price()
+emit "equity" strat.snapshot().equity
+```
+
+```csv
+time,open,close
+0,100,100
+1,100,110
+2,120,120
+3,120,130
+4,140,140
+5,140,140
+```
+
+**Output:**
+
+```text
+index  open  close  cash   position  average  equity
+0      100   100    1000   0         na       1000
+1      100   110    798    2         100      1018
+2      120   120    555.6  4         110      1035.6
+3      120   130    555.6  4         110      1075.6
+4      140   140    1110   0         na       1110
+5      140   140    1110   0         na       1110
+```
+
+**Example:** The rebalance that opens the position at index 1 counts as its first
+entry, and the one that adds to it at index 2 does not, so `entries` is
+still `1`. The entry named `"Long"` is rejected when submitted, because
+the position's entry id is `"Target"`; the entry named `"Target"` adds one
+more unit at index 4 as the second entry.
+
+```tea
+import broker
+import portfolio
+import trade
+
+var strat = trade.nextOpen(
+    broker.new(),
+    portfolio.new(initialCash = 1000.0, pyramiding = 2)
+)
+strat.begin_bar(open, bar_index)
+string submitted = ""
+if bar_index == 0
+    strat.rebalance("Target", trade.targetQuantity(2.0))
+if bar_index == 1
+    strat.rebalance("Target", trade.targetQuantity(4.0))
+if bar_index == 2
+    order = strat.entry("Long", trade.Direction.long, qty = 1.0)
+    submitted := na(order) ? "Long rejected" : "Long accepted"
+if bar_index == 3
+    order = strat.entry("Target", trade.Direction.long, qty = 1.0)
+    submitted := na(order) ? "Target rejected" : "Target accepted"
+strat.end_bar(close, false)
+emit "close" close
+emit "cash" strat.cash()
+emit "position" strat.position_quantity()
+emit "equity" strat.snapshot().equity
+emit "entries" strat.snapshot().openTradeCount
+emit "submitted" submitted
+```
+
+```csv
+time,open,close
+0,100,100
+1,100,100
+2,100,100
+3,100,100
+4,100,100
+5,100,100
+```
+
+**Output:**
+
+```text
+index  close  cash  position  equity  entries  submitted
+0      100    1000  0         1000    0
+1      100    800   2         1000    1
+2      100    600   4         1000    1        Long rejected
+3      100    600   4         1000    1        Target accepted
+4      100    500   5         1000    2
+5      100    500   5         1000    2
+```
+
+**See also:** [`portfolio.NetPortfolio`](./NetPortfolio.md), [`portfolio.lots`](./lots.md)

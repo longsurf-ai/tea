@@ -153,14 +153,15 @@ export sma(float source, int length) =>
  * or an input.
  * @returns `float`: the average.
  * @formula
- * \mathrm{ema}_t = \begin{cases}
+ * \begin{aligned}
+ * \mathrm{ema}_t &= \begin{cases}
  * \mathrm{ema}_{t-1} & \text{if } \mathit{source}_t = \text{na} \\
  * \mathit{source}_t & \text{if } \mathrm{ema}_{t-1} = \text{na} \\
  * \alpha \cdot \mathit{source}_t + (1 - \alpha) \cdot \mathrm{ema}_{t-1}
  * & \text{otherwise}
- * \end{cases}
- * \quad\text{where}\quad
- * \alpha = \frac{2}{\mathit{length} + 1}
+ * \end{cases} \\
+ * \text{where}\quad \alpha &= \frac{2}{\mathit{length} + 1}
+ * \end{aligned}
  * @warmup `na` until the first bar where `source` is not `na`. After that it
  * is never `na`: a bar where `source` is `na` keeps the previous result.
  * @example
@@ -282,12 +283,13 @@ export rma(float source, simple int length) =>
  * @param length Number of bars in the window, at least 1.
  * @returns `float`: the weighted mean of the window.
  * @formula
- * \mathrm{wma}_t = \frac
+ * \begin{aligned}
+ * \mathrm{wma}_t &= \frac
  * {\sum_{i \in K_t} (\mathit{length} - i) \cdot \mathit{source}_{t-i}}
- * {\sum_{i \in K_t} (\mathit{length} - i)}
- * \quad\text{where}\quad
- * K_t = \{\, i : 0 \le i < \mathit{length},
+ * {\sum_{i \in K_t} (\mathit{length} - i)} \\
+ * \text{where}\quad K_t &= \{\, i : 0 \le i < \mathit{length},
  * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
  * @warmup `na` on the first `length - 1` bars, and when every value in the
  * window is `na`.
  * @example
@@ -678,11 +680,12 @@ export linreg(float source, int length, simple int offset) =>
  * @param length Number of bars in the window, at least 1.
  * @returns `float`: the center of gravity.
  * @formula
- * \mathrm{cog}_t = -\frac{\sum_{i \in K_t} (i + 1) \cdot \mathit{source}_{t-i}}
- * {\sum_{i \in K_t} \mathit{source}_{t-i}}
- * \quad\text{where}\quad
- * K_t = \{\, i : 0 \le i < \mathit{length},\
- * \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \begin{aligned}
+ * \mathrm{cog}_t &= -\frac{\sum_{i \in K_t} (i + 1) \cdot \mathit{source}_{t-i}}
+ * {\sum_{i \in K_t} \mathit{source}_{t-i}} \\
+ * \text{where}\quad K_t &= \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
  * @warmup `na` on the first `length - 1` bars, when every value in the window
  * is `na`, and when the known values sum to `0`.
  * @example
@@ -1042,10 +1045,11 @@ export tsi(float source, simple int short_length, simple int long_length) =>
  * @param length Number of bars in the window, at least 1.
  * @returns `float`: the position as a percentage of the range.
  * @formula
- * \mathrm{stoch}_t = 100 \cdot \frac{\mathit{source}_t - L_t}{H_t - L_t}
- * \quad\text{where}\quad
- * H_t = \mathrm{highest}(\mathit{h}, \mathit{length})_t,\
- * L_t = \mathrm{lowest}(\mathit{l}, \mathit{length})_t
+ * \begin{aligned}
+ * \mathrm{stoch}_t &= 100 \cdot \frac{\mathit{source}_t - L_t}{H_t - L_t} \\
+ * \text{where}\quad H_t &= \mathrm{highest}(\mathit{h}, \mathit{length})_t \\
+ * L_t &= \mathrm{lowest}(\mathit{l}, \mathit{length})_t
+ * \end{aligned}
  * @warmup `na` on the first `length - 1` bars, when `source` is `na`, when a
  * window has no known value, and when the range is `0`. Other `na` values are
  * left out of the windows.
@@ -1150,10 +1154,11 @@ export cci(float source, int length) =>
  * @param length Number of bars in the window, at least 1.
  * @returns `float`: the position as a percentage of the range.
  * @formula
- * \%R_t = 100 \cdot \frac{\mathit{close}_t - H_t}{H_t - L_t}
- * \quad\text{where}\quad
- * H_t = \mathrm{highest}(\mathit{high}, \mathit{length})_t,\
- * L_t = \mathrm{lowest}(\mathit{low}, \mathit{length})_t
+ * \begin{aligned}
+ * \%R_t &= 100 \cdot \frac{\mathit{close}_t - H_t}{H_t - L_t} \\
+ * \text{where}\quad H_t &= \mathrm{highest}(\mathit{high}, \mathit{length})_t \\
+ * L_t &= \mathrm{lowest}(\mathit{low}, \mathit{length})_t
+ * \end{aligned}
  * @warmup `na` on the first `length - 1` bars, when {@link close} is `na`,
  * when a window has no known value, and when the range is `0`. Other `na`
  * values are left out of the windows.
@@ -1354,8 +1359,8 @@ export macd(float source, simple int fastlen, simple int slowlen, simple int sig
  * d_t = \mathit{low}_{t-1} - \mathit{low}_t, \qquad
  * r_t = \mathrm{tr}(\text{false})_t \\
  * p_t &= \begin{cases} u_t & u_t > d_t \text{ and } u_t > 0 \\
- * 0 & \text{otherwise} \end{cases}, \qquad
- * m_t = \begin{cases} d_t & d_t > u_t \text{ and } d_t > 0 \\
+ * 0 & \text{otherwise} \end{cases} \\
+ * m_t &= \begin{cases} d_t & d_t > u_t \text{ and } d_t > 0 \\
  * 0 & \text{otherwise} \end{cases} \\
  * (\hat{p}_t, \hat{m}_t, \hat{r}_t) &= \begin{cases}
  * (p_t, m_t, r_t) & u_t, d_t, r_t \ne \text{na} \\
@@ -1367,10 +1372,10 @@ export macd(float source, simple int fastlen, simple int slowlen, simple int sig
  * {\mathrm{rma}(\hat{r}, \mathit{diLength})_t} \\
  * \mathrm{DI}^{\pm}_t &= \begin{cases} q^{\pm}_t & q^{\pm}_t \ne \text{na} \\
  * \mathrm{DI}^{\pm}_{t-1} & \text{otherwise} \end{cases} \\
- * \mathrm{ADX}_t &= 100 \cdot \mathrm{rma}(x, \mathit{adxSmoothing})_t,
- * \qquad x_t = \frac{|\mathrm{DI}^{+}_t - \mathrm{DI}^{-}_t|}
+ * x_t &= \frac{|\mathrm{DI}^{+}_t - \mathrm{DI}^{-}_t|}
  * {\mathrm{DI}^{+}_t + \mathrm{DI}^{-}_t},
- * \text{ or } 0 \text{ when both are } 0
+ * \text{ or } 0 \text{ when both are } 0 \\
+ * \mathrm{ADX}_t &= 100 \cdot \mathrm{rma}(x, \mathit{adxSmoothing})_t
  * \end{aligned}
  * @warmup +DI and -DI are `na` until `diLength` bars have counted and a
  * counted bar has a true range other than `0`, so always on the first
@@ -1449,15 +1454,16 @@ export dmi(simple int diLength, simple int adxSmoothing) =>
  * the script starts, such as a constant or an input.
  * @returns `float`: the true range.
  * @formula
- * \mathrm{tr}_t = \begin{cases}
- * \max(\mathit{high}_t - \mathit{low}_t,\
- *   |\mathit{high}_t - \mathit{close}_{t-1}|,\
- *   |\mathit{low}_t - \mathit{close}_{t-1}|)
- *   & \mathit{close}_{t-1} \ne \text{na} \\
+ * \begin{aligned}
+ * \mathrm{tr}_t &= \begin{cases}
+ * \max(\mathit{high}_t - \mathit{low}_t,\ |\mathit{high}_t - c|,\
+ * |\mathit{low}_t - c|) & c \ne \text{na} \\
  * \mathit{high}_t - \mathit{low}_t
- *   & \mathit{close}_{t-1} = \text{na},\ \mathit{handle\_na} = \text{true} \\
+ * & c = \text{na} \text{ and } \mathit{handle\_na} \\
  * \text{na} & \text{otherwise}
- * \end{cases}
+ * \end{cases} \\
+ * \text{where}\quad c &= \mathit{close}_{t-1}
+ * \end{aligned}
  * @warmup No warm-up when `handle_na` is `true`. When it is `false`, `na` on
  * the first bar and on the bar after each missing close. A missing high or low
  * gives `na` either way.
@@ -1971,12 +1977,12 @@ export kc(float series, simple int length, simple float mult, simple bool useTru
  * starts, such as a constant or an input.
  * @returns `float`: the width as a fraction of the middle line.
  * @formula
- * \mathrm{kcw}_t = \frac{\mathit{upper}_t - \mathit{lower}_t}
- *   {\mathit{middle}_t}
- * \quad\text{where}\quad
- * [\mathit{middle}, \mathit{upper}, \mathit{lower}]
- *   = \mathrm{kc}(\mathit{series}, \mathit{length}, \mathit{mult},
- *   \mathit{useTrueRange})
+ * \begin{aligned}
+ * \mathrm{kcw}_t &= \frac{\mathit{upper}_t - \mathit{lower}_t}{\mathit{middle}_t} \\
+ * \text{where}\quad [\mathit{middle}, \mathit{upper}, \mathit{lower}]
+ * &= \mathrm{kc}(\mathit{series}, \mathit{length}, \mathit{mult},
+ * \mathit{useTrueRange})
+ * \end{aligned}
  * @warmup `na` where {@link ta.kc} gives `na` bands, as on the first bar when
  * `useTrueRange` is `true`, and where the middle line is `0`.
  * @example
@@ -2154,7 +2160,8 @@ export supertrend(float factor, simple int atrPeriod) =>
  * @formula
  * \begin{aligned}
  * S^{*}_t &= S_p + a_p \cdot (E_p - S_p) \\[4pt]
- * \text{uptrend:}\quad S_t &= \begin{cases}
+ * &\text{in an uptrend:} \\
+ * S_t &= \begin{cases}
  *   \max(E_p, \mathit{high}_t, \mathit{high}_p, \mathit{high}_q)
  *     & S^{*}_t > \mathit{low}_t \text{ (turns down)} \\
  *   \min(S^{*}_t, \mathit{low}_p, \mathit{low}_q) & \text{otherwise}
@@ -2165,7 +2172,8 @@ export supertrend(float factor, simple int atrPeriod) =>
  *     & \mathit{high}_t > E_p \\
  *   (E_p, a_p) & \text{otherwise}
  * \end{cases} \\[4pt]
- * \text{downtrend:}\quad S_t &= \begin{cases}
+ * &\text{in a downtrend:} \\
+ * S_t &= \begin{cases}
  *   \min(E_p, \mathit{low}_t, \mathit{low}_p, \mathit{low}_q)
  *     & S^{*}_t < \mathit{high}_t \text{ (turns up)} \\
  *   \max(S^{*}_t, \mathit{high}_p, \mathit{high}_q) & \text{otherwise}
@@ -2176,16 +2184,16 @@ export supertrend(float factor, simple int atrPeriod) =>
  *     & \mathit{low}_t < E_p \\
  *   (E_p, a_p) & \text{otherwise}
  * \end{cases} \\[4pt]
- * \text{where the trend starts:}\quad (S_p, E_p, a_p) &= \begin{cases}
+ * &\text{where the trend starts, without the terms for bar } q\text{:} \\
+ * (S_p, E_p, a_p) &= \begin{cases}
  *   (\mathit{low}_p, \mathit{high}_t, \mathit{start}) \text{, uptrend}
  *     & \mathit{close}_t > \mathit{close}_p \\
  *   (\mathit{high}_p, \mathit{low}_t, \mathit{start}) \text{, downtrend}
  *     & \text{otherwise}
- * \end{cases} \\
- * & \text{and the terms for bar } q \text{ are left out} \\[4pt]
- * \text{where}\quad & p, q \text{: the latest and second-latest earlier bars
- *   that count} \\
- * & S_t = S_{t-1} \text{ on a bar with a missing high, low or close}
+ * \end{cases} \\[4pt]
+ * &\text{where } p, q \text{ are the latest and second-latest earlier bars
+ *   that count,} \\
+ * &\text{and } S_t = S_{t-1} \text{ on a bar with a missing high, low or close}
  * \end{aligned}
  * @warmup `na` until the second bar on which the call runs with a known high,
  * low and close: only on the first bar for a call that runs on every bar with
@@ -2454,13 +2462,13 @@ export cross(float source1, float source2) =>
  * @returns `bool`: `true` when `source` is greater than every known previous
  * value in the window, otherwise `false`.
  * @formula
- * \mathrm{rising}_t =
- * (\mathit{source}_t \ne \text{na})
- * \land (K_t \ne \varnothing)
- * \land \Big(\mathit{source}_t > \max_{i \in K_t} \mathit{source}_{t-i}\Big)
- * \quad\text{where}\quad
- * K_t = \{\, i : 1 \le i \le \mathit{length},
+ * \begin{aligned}
+ * \mathrm{rising}_t &= (\mathit{source}_t \ne \text{na})
+ * \land (K_t \ne \varnothing) \\
+ * &\quad \land \Big(\mathit{source}_t > \max_{i \in K_t} \mathit{source}_{t-i}\Big) \\
+ * \text{where}\quad K_t &= \{\, i : 1 \le i \le \mathit{length},
  * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
  * @warmup `false` on the first `length` bars. After that, `false` when
  * `source` is `na` or every previous value in the window is `na`.
  * @example
@@ -2513,13 +2521,13 @@ export rising(float source, int length) =>
  * @returns `bool`: `true` when `source` is less than every known previous
  * value in the window, otherwise `false`.
  * @formula
- * \mathrm{falling}_t =
- * (\mathit{source}_t \ne \text{na})
- * \land (K_t \ne \varnothing)
- * \land \Big(\mathit{source}_t < \min_{i \in K_t} \mathit{source}_{t-i}\Big)
- * \quad\text{where}\quad
- * K_t = \{\, i : 1 \le i \le \mathit{length},
+ * \begin{aligned}
+ * \mathrm{falling}_t &= (\mathit{source}_t \ne \text{na})
+ * \land (K_t \ne \varnothing) \\
+ * &\quad \land \Big(\mathit{source}_t < \min_{i \in K_t} \mathit{source}_{t-i}\Big) \\
+ * \text{where}\quad K_t &= \{\, i : 1 \le i \le \mathit{length},
  * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
  * @warmup `false` on the first `length` bars. After that, `false` when
  * `source` is `na` or every previous value in the window is `na`.
  * @example
@@ -2723,12 +2731,12 @@ export lowest(float source, int length) =>
  * @param length Number of bars in the window, at least 1.
  * @returns `int`: the offset, from `1 - length` to `0`.
  * @formula
- * \mathrm{highestbars}_t =
- * -\min \Big\{\, i \in K_t :
- * \mathit{source}_{t-i} = \max_{j \in K_t} \mathit{source}_{t-j} \,\Big\}
- * \quad\text{where}\quad
- * K_t = \{\, i : 0 \le i < \mathit{length},
+ * \begin{aligned}
+ * \mathrm{highestbars}_t &= -\min \Big\{\, i \in K_t :
+ * \mathit{source}_{t-i} = \max_{j \in K_t} \mathit{source}_{t-j} \,\Big\} \\
+ * \text{where}\quad K_t &= \{\, i : 0 \le i < \mathit{length},
  * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
  * @warmup `na` on the first `length - 1` bars, and when every value in the
  * window is `na`.
  * @example
@@ -2782,12 +2790,12 @@ export highestbars(float source, int length) =>
  * @param length Number of bars in the window, at least 1.
  * @returns `int`: the offset, from `1 - length` to `0`.
  * @formula
- * \mathrm{lowestbars}_t =
- * -\min \Big\{\, i \in K_t :
- * \mathit{source}_{t-i} = \min_{j \in K_t} \mathit{source}_{t-j} \,\Big\}
- * \quad\text{where}\quad
- * K_t = \{\, i : 0 \le i < \mathit{length},
+ * \begin{aligned}
+ * \mathrm{lowestbars}_t &= -\min \Big\{\, i \in K_t :
+ * \mathit{source}_{t-i} = \min_{j \in K_t} \mathit{source}_{t-j} \,\Big\} \\
+ * \text{where}\quad K_t &= \{\, i : 0 \le i < \mathit{length},
  * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
  * @warmup `na` on the first `length - 1` bars, and when every value in the
  * window is `na`.
  * @example
@@ -3235,14 +3243,15 @@ export correlation(float source1, float source2, int length) =>
  * @param length Number of previous values to compare with, at least 1.
  * @returns `float`: a percentage from `0` to `100`, in steps of `100 / length`.
  * @formula
- * \mathrm{percentrank}_t =
- * \begin{cases}
+ * \begin{aligned}
+ * \mathrm{percentrank}_t &= \begin{cases}
  * \text{na} & \text{if } \mathit{source}_{t-i} = \text{na}
  * \text{ for some } 0 \le i \le \mathit{length} \\
- * \dfrac{100}{\mathit{length}} \cdot
- * \bigl|\{\, i : 1 \le i \le \mathit{length},
- * \ \mathit{source}_{t-i} \le \mathit{source}_t \,\}\bigr| & \text{otherwise}
- * \end{cases}
+ * \dfrac{100}{\mathit{length}} \cdot |C_t| & \text{otherwise}
+ * \end{cases} \\
+ * \text{where}\quad C_t &= \{\, i : 1 \le i \le \mathit{length},
+ * \ \mathit{source}_{t-i} \le \mathit{source}_t \,\}
+ * \end{aligned}
  * @warmup `na` on the first `length` bars. An `na` value of `source` makes the
  * result `na` on its own bar and on the `length` bars after it.
  * @example
@@ -3626,15 +3635,16 @@ volumeIndex(bool negative) =>
  * script, wherever the script reads it.
  *
  * @formula
- * \mathrm{nvi}_t = \begin{cases}
+ * \begin{aligned}
+ * \mathrm{nvi}_t &= \begin{cases}
  * \mathrm{nvi}_{t-1} + \dfrac{\mathit{close}_t - \mathit{close}_{t-1}}
- * {\mathit{close}_{t-1}} \cdot \mathrm{nvi}_{t-1}
- * & \text{if } \mathit{volume}_t < \operatorname{nz}(\mathit{volume}_{t-1})
- * \text{ and } \mathit{close}_t, \mathit{close}_{t-1}
- * \notin \{0, \text{na}\} \\
+ * {\mathit{close}_{t-1}} \cdot \mathrm{nvi}_{t-1} & \text{if } c_t \\
  * \mathrm{nvi}_{t-1} & \text{otherwise}
- * \end{cases}
- * \quad\text{where}\quad \mathrm{nvi} = 1 \text{ before the first bar}
+ * \end{cases} \\
+ * \text{where}\quad c_t &= \big(\mathit{volume}_t < \operatorname{nz}(\mathit{volume}_{t-1})\big)
+ * \land \big(\mathit{close}_t, \mathit{close}_{t-1} \notin \{0, \text{na}\}\big) \\
+ * \mathrm{nvi} &= 1 \text{ before the first bar}
+ * \end{aligned}
  * @warmup Never `na`: it is `1` on the first bar. A bar leaves it unchanged
  * when `close` or the previous close is `na` or `0`, or when `volume` is `na`.
  * A previous `volume` that is `na` counts as `0`.
@@ -3676,15 +3686,16 @@ export nvi = volumeIndex(true)
  * script, wherever the script reads it.
  *
  * @formula
- * \mathrm{pvi}_t = \begin{cases}
+ * \begin{aligned}
+ * \mathrm{pvi}_t &= \begin{cases}
  * \mathrm{pvi}_{t-1} + \dfrac{\mathit{close}_t - \mathit{close}_{t-1}}
- * {\mathit{close}_{t-1}} \cdot \mathrm{pvi}_{t-1}
- * & \text{if } \mathit{volume}_t > \operatorname{nz}(\mathit{volume}_{t-1})
- * \text{ and } \mathit{close}_t, \mathit{close}_{t-1}
- * \notin \{0, \text{na}\} \\
+ * {\mathit{close}_{t-1}} \cdot \mathrm{pvi}_{t-1} & \text{if } c_t \\
  * \mathrm{pvi}_{t-1} & \text{otherwise}
- * \end{cases}
- * \quad\text{where}\quad \mathrm{pvi} = 1 \text{ before the first bar}
+ * \end{cases} \\
+ * \text{where}\quad c_t &= \big(\mathit{volume}_t > \operatorname{nz}(\mathit{volume}_{t-1})\big)
+ * \land \big(\mathit{close}_t, \mathit{close}_{t-1} \notin \{0, \text{na}\}\big) \\
+ * \mathrm{pvi} &= 1 \text{ before the first bar}
+ * \end{aligned}
  * @warmup Never `na`: it is `1` on the first bar. A bar leaves it unchanged
  * when `close` or the previous close is `na` or `0`, or when `volume` is `na`.
  * A previous `volume` that is `na` counts as `0`.

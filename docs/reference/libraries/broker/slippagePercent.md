@@ -14,7 +14,45 @@ broker.slippagePercent(float percent = 0.0)
 | --------- | ------- | ------- | ------------------------------ |
 | `percent` | `float` | `0.0`   | slippage as a percent of price |
 
-**Returns:** a `rate` [`broker.Slippage`](./Slippage.md) holding `percent / 100`.
+**Returns:** `broker.Slippage`: a `rate` slippage holding `percent / 100`.
 
 `0.1` moves each fill 0.1% against the order; the same as
 `slippageRate(percent / 100)`.
+
+**Example:** `slippagePercent(1.0)` holds the rate 0.01, so a buy at the open of 110 on
+index 1 fills at 111.1, as with `slippageRate(0.01)`.
+
+```tea
+import broker
+import portfolio
+import trade
+
+setting = broker.slippagePercent(1.0)
+var strat = trade.nextOpen(
+    broker.new(slippage = setting),
+    portfolio.new(initialCash = 10000.0)
+)
+filled = strat.begin_bar(open, bar_index)
+if bar_index == 0
+    strat.entry("Long", trade.Direction.long, qty = 10.0)
+strat.end_bar(close, false)
+emit "open" open
+emit "rate" setting.value
+emit "price" filled.price
+```
+
+```csv
+time,open,close
+0,100,100
+1,110,112
+```
+
+**Output:**
+
+```text
+index  open  rate  price
+0      100   0.01  na
+1      110   0.01  111.1
+```
+
+**See also:** [`broker.slippageRate`](./slippageRate.md)

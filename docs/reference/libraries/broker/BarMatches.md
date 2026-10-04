@@ -14,4 +14,4 @@ type BarMatches
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `broker.Fill pending`            | Latest fill of the pending command on this bar, or `na`; after a completed reversal, the opening fill.                        |
 | `broker.Fill exit`               | Fill of the attached exit on this bar, or `na`; always `na` from the path coordinator, which matches exits in `continue_bar`. |
-| `broker.Fill reversalClose = na` | Closing fill of a reversal completed on this bar, or `na`.                                                                    |
+| `broker.Fill reversalClose = na` | Closing fill of a reversal whose two fills both happened at the start of this bar, or `na`.                                   |

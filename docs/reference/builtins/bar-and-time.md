@@ -30,6 +30,37 @@ series int bar_index
 
 It grows by one each time a bar is finalized; repeated updates of a live bar keep the same number. Inside a request expression it counts the requested data’s bars.
 
+**Example:** The first bar is number 0, and each later bar is one more.
+
+```tea
+emit "close" close
+emit "bar_index" bar_index
+```
+
+```csv
+time,close
+0,9
+1,12
+2,12
+3,15
+4,12
+5,18
+```
+
+**Output:**
+
+```text
+index  close  bar_index
+0      9      0
+1      12     1
+2      12     2
+3      15     3
+4      12     4
+5      18     5
+```
+
+**See also:** [`barstate.isfirst`](./bar-and-time.md#isfirst)
+
 ### time
 
 The current bar’s time, in milliseconds since the Unix epoch.
@@ -40,6 +71,37 @@ series int time
 
 It is the `time` field of the current input row, the time at which the bar opens. Reading it requires the bound data stream to carry that field; without it, the run stops with an error. Inside a request expression it is the requested data’s bar time.
 
+**Example:** The bars open one minute, 60,000 milliseconds, apart, so `minute` counts up from 0.
+
+```tea
+emit "bar_time" time
+emit "minute" time / 60000
+```
+
+```csv
+time
+0
+60000
+120000
+180000
+240000
+300000
+```
+
+**Output:**
+
+```text
+index  bar_time  minute
+0      0         0
+1      60000     1
+2      120000    2
+3      180000    3
+4      240000    4
+5      300000    5
+```
+
+**See also:** [`input.time`](./input.md#time), [`timenow`](./bar-and-time.md#timenow)
+
 ### timenow
 
 The current clock time, in milliseconds since the Unix epoch.
@@ -49,6 +111,8 @@ series int timenow
 ```
 
 The host’s clock is read once for each execution, so repeated updates of a live bar can see different values. A host may supply a fixed clock instead, for reproducible runs. Inside a request expression it is read when the requested data’s bar executes.
+
+**See also:** [`time`](./bar-and-time.md#time)
 
 ## Bar state
 
@@ -61,6 +125,37 @@ series bool barstate.isfirst
 ```
 
 Inside a request expression it refers to the requested data’s first bar.
+
+**Example:** `first` is `true` only on bar 0.
+
+```tea
+emit "close" close
+emit "first" barstate.isfirst
+```
+
+```csv
+time,close
+0,9
+1,12
+2,12
+3,15
+4,12
+5,18
+```
+
+**Output:**
+
+```text
+index  close  first
+0      9      true
+1      12     false
+2      12     false
+3      15     false
+4      12     false
+5      18     false
+```
+
+**See also:** [`bar_index`](./bar-and-time.md#bar_index)
 
 ### ishistory
 
@@ -82,6 +177,8 @@ series bool barstate.isrealtime
 
 The host reports it for each execution. It is `false` unless the host marks the data as live, so runs over stored data report `false`. Inside a request expression it is read when the requested data’s bar executes.
 
+**See also:** [`barstate.ishistory`](./bar-and-time.md#ishistory)
+
 ### isconfirmed
 
 Whether the current update is the bar’s final one.
@@ -92,21 +189,39 @@ series bool barstate.isconfirmed
 
 It is `false` on provisional updates of a live bar and `true` on its final update. Rows that are not marked provisional are final, so historical bars are always confirmed. Inside a request expression it describes the requested data’s update. Use it to act only on completed bars.
 
-**Example:**
+**Example:** No row of a CSV run is provisional, so every bar is confirmed and `completed_bars` counts every bar.
 
 ```tea
 var int completed = 0
 if barstate.isconfirmed
     completed := completed + 1
+emit "close" close
 emit "completed_bars" completed
+```
+
+```csv
+time,close
+0,9
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
 
 ```text
-index  completed_bars
-0      1
+index  close  completed_bars
+0      9      1
+1      12     2
+2      12     3
+3      15     4
+4      12     5
+5      18     6
 ```
+
+**See also:** [`barstate.isnew`](./bar-and-time.md#isnew)
 
 ### isnew
 
@@ -117,3 +232,5 @@ series bool barstate.isnew
 ```
 
 It is `true` for the first execution of each bar and `false` when a live bar is updated again. Historical bars run once, so they are always new. Inside a request expression it describes the requested data’s bar.
+
+**See also:** [`barstate.isconfirmed`](./bar-and-time.md#isconfirmed)

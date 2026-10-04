@@ -42,6 +42,39 @@ float math.abs(series float number)
 
 **Returns:** `number` without its sign, with the same type; `na` when it is `na`.
 
+**Example:** `size` is `change` without its sign, so bar 4’s `-3` becomes 3; both are `na` on bar 0.
+
+```tea
+change = close - close[1]
+emit "close" close
+emit "change" change
+emit "size" math.abs(change)
+```
+
+```csv
+time,close
+0,9
+1,12
+2,12
+3,15
+4,12
+5,18
+```
+
+**Output:**
+
+```text
+index  close  change  size
+0      9      na      na
+1      12     3       3
+2      12     0       0
+3      15     3       3
+4      12     -3      3
+5      18     6       6
+```
+
+**See also:** [`math.sign`](./math.md#sign)
+
 ### sign
 
 Returns the sign of a number as -1, 0 or 1.
@@ -57,6 +90,37 @@ float math.sign(series float number)
 
 **Returns:** `-1` for a negative number, `1` for a positive one and `0` for zero, with the type of `number`; `na` when it is `na`.
 
+**Example:** `direction` is 1 where the close rose, -1 on bar 4, where it fell, and 0 on bar 2, where it did not change.
+
+```tea
+emit "close" close
+emit "direction" math.sign(close - close[1])
+```
+
+```csv
+time,close
+0,9
+1,12
+2,12
+3,15
+4,12
+5,18
+```
+
+**Output:**
+
+```text
+index  close  direction
+0      9      na
+1      12     1
+2      12     0
+3      15     1
+4      12     -1
+5      18     1
+```
+
+**See also:** [`math.abs`](./math.md#abs)
+
 ### avg
 
 Returns the average of its arguments.
@@ -70,6 +134,44 @@ float math.avg(series int | float ...number)
 | `number`  | `series int \| float` | The numbers to average; at least one. |
 
 **Returns:** Their arithmetic mean; `na` when any argument is `na`.
+
+**Formula**
+
+$$
+\operatorname{avg}(x_1, \dots, x_n) = \frac{x_1 + \dots + x_n}{n}
+$$
+
+**Example:** `middle` is halfway between each bar’s open and close, such as 9.5 on bar 0.
+
+```tea
+emit "open" open
+emit "close" close
+emit "middle" math.avg(open, close)
+```
+
+```csv
+time,open,close
+0,10,9
+1,9,12
+2,12,12
+3,12,15
+4,15,12
+5,12,18
+```
+
+**Output:**
+
+```text
+index  open  close  middle
+0      10    9      9.5
+1      9     12     10.5
+2      12    12     12
+3      12    15     13.5
+4      15    12     13.5
+5      12    18     15
+```
+
+**See also:** [`math.max`](./math.md#max), [`math.min`](./math.md#min), [`ta.sma`](./ta/sma.md)
 
 ### max
 
@@ -91,6 +193,38 @@ float math.max(
 
 **Returns:** The largest argument, as an `int` when every argument is an `int` and as a `float` otherwise; `na` when any argument is `na`.
 
+**Example:** `top` is the higher of each bar’s open and close: the open on bars 0 and 4, where the price fell, and the close elsewhere.
+
+```tea
+emit "open" open
+emit "close" close
+emit "top" math.max(open, close)
+```
+
+```csv
+time,open,close
+0,10,9
+1,9,12
+2,12,12
+3,12,15
+4,15,12
+5,12,18
+```
+
+**Output:**
+
+```text
+index  open  close  top
+0      10    9      10
+1      9     12     12
+2      12    12     12
+3      12    15     15
+4      15    12     15
+5      12    18     18
+```
+
+**See also:** [`math.min`](./math.md#min)
+
 ### min
 
 Returns the smallest of its arguments.
@@ -111,6 +245,38 @@ float math.min(
 
 **Returns:** The smallest argument, as an `int` when every argument is an `int` and as a `float` otherwise; `na` when any argument is `na`.
 
+**Example:** `bottom` is the lower of each bar’s open and close: the close on bars 0 and 4, where the price fell, and the open elsewhere.
+
+```tea
+emit "open" open
+emit "close" close
+emit "bottom" math.min(open, close)
+```
+
+```csv
+time,open,close
+0,10,9
+1,9,12
+2,12,12
+3,12,15
+4,15,12
+5,12,18
+```
+
+**Output:**
+
+```text
+index  open  close  bottom
+0      10    9      9
+1      9     12     9
+2      12    12     12
+3      12    15     12
+4      15    12     12
+5      12    18     12
+```
+
+**See also:** [`math.max`](./math.md#max)
+
 ## Rounding
 
 ### floor
@@ -127,6 +293,22 @@ int math.floor(series int | float number)
 
 **Returns:** The largest integer that is not greater than `number`; `na` when it is `na`.
 
+**Example:** Rounding down goes toward negative infinity, so `negative` is `-3`, while `int(-2.7)` is `-2`.
+
+```tea
+emit "positive" math.floor(2.7)
+emit "negative" math.floor(-2.7)
+```
+
+**Output:**
+
+```text
+index  positive  negative
+0      2         -3
+```
+
+**See also:** [`math.ceil`](./math.md#ceil), [`math.round`](./math.md#round), [`int`](./core.md#int)
+
 ### ceil
 
 Rounds a number up to an integer.
@@ -140,6 +322,22 @@ int math.ceil(series int | float number)
 | `number`  | `series int \| float` | The number to round. |
 
 **Returns:** The smallest integer that is not less than `number`; `na` when it is `na`.
+
+**Example:** Rounding up goes toward positive infinity, so `positive` is 3 and `negative` is `-2`.
+
+```tea
+emit "positive" math.ceil(2.2)
+emit "negative" math.ceil(-2.7)
+```
+
+**Output:**
+
+```text
+index  positive  negative
+0      3         -2
+```
+
+**See also:** [`math.floor`](./math.md#floor), [`math.round`](./math.md#round)
 
 ### round
 
@@ -161,40 +359,36 @@ float math.round(
 
 **Returns:** An `int` without `precision` and a `float` with it; `na` when an argument is `na`.
 
-Halves round up, toward positive infinity: `math.round(2.5)` is `3` and `math.round(-2.5)` is `-2`. Decimal rounding works on binary floating-point values, so `math.round(1.005, 2)` is `1.0`, not `1.01`, because `1.005` is stored as slightly less than written.
+Halves round up, toward positive infinity: `math.round(2.5)` is `3` and `math.round(-2.5)` is `-2`. With `precision`, the product of `number` and 10 to the power `precision` is computed in binary floating point before it is rounded, so the result can differ from decimal arithmetic: `math.round(2.675, 2)` is `2.68`, because `2.675 * 100` gives exactly `267.5`, but `math.round(1.005, 2)` is `1`, because `1.005 * 100` gives slightly less than `100.5`. The result is `na` when that product, or 10 to the power `precision`, is too large to represent, as for any `precision` above 308. It is also `na` for a `precision` below -323, where 10 to the power `precision` is too small to represent.
 
-**Example:**
+**Formula**
+
+$$
+\begin{aligned}
+\operatorname{round}(\mathit{number}) &= \left\lfloor \mathit{number} + \tfrac{1}{2} \right\rfloor \\
+\operatorname{round}(\mathit{number}, \mathit{precision}) &= \left\lfloor \mathit{number} \cdot 10^{\mathit{precision}} + \tfrac{1}{2} \right\rfloor / 10^{\mathit{precision}}
+\end{aligned}
+$$
+
+**Example:** Halves round up, so `negative_half` is `-2`; `cents` is 2.68 because `2.675 * 100` computes to exactly 267.5, but `below_half` is 1 because `1.005 * 100` computes to just under 100.5. 10 to the power 400 is too large, so `overflow` is `na`.
 
 ```tea
-emit "whole" math.round(close)
-emit "cents" math.round(close, 2)
-```
-
-```csv
-time,close
-0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+emit "half" math.round(2.5)
+emit "negative_half" math.round(-2.5)
+emit "cents" math.round(2.675, 2)
+emit "below_half" math.round(1.005, 2)
+emit "hundreds" math.round(1234.5, -2)
+emit "overflow" math.round(2.5, 400)
 ```
 
 **Output:**
 
 ```text
-index  whole  cents
-0      9      9
-1      11     11
-2      10     10
-3      12     12
-4      9      9
-5      14     14
-6      10     10
-7      15     15
+index  half  negative_half  cents  below_half  hundreds  overflow
+0      3     -2             2.68   1           1200      na
 ```
+
+**See also:** [`math.floor`](./math.md#floor), [`math.ceil`](./math.md#ceil), [`str.tostring`](./core.md#tostring)
 
 ## Powers and logarithms
 
@@ -211,6 +405,22 @@ float math.sqrt(series int | float number)
 | `number`  | `series int \| float` | The number. |
 
 **Returns:** The square root; `na` when `number` is negative or `na`.
+
+**Example:** A negative number has no real square root, so `negative` is `na`.
+
+```tea
+emit "root" math.sqrt(16)
+emit "negative" math.sqrt(-4)
+```
+
+**Output:**
+
+```text
+index  root  negative
+0      4     na
+```
+
+**See also:** [`math.pow`](./math.md#pow)
 
 ### pow
 
@@ -230,6 +440,24 @@ float math.pow(
 
 **Returns:** `base` raised to `exponent`; `na` when an argument is `na` or the result is not a finite real number, such as a negative base with a fractional exponent.
 
+**Example:** An exponent of `1.0 / 3` takes a cube root. A negative base with a fractional exponent has no real result, and an `na` base gives `na` even with the exponent 0.
+
+```tea
+emit "power" math.pow(2, 10)
+emit "cube_root" math.pow(27, 1.0 / 3)
+emit "negative_base" math.pow(-8, 1.0 / 3)
+emit "missing" math.pow(float(na), 0)
+```
+
+**Output:**
+
+```text
+index  power  cube_root  negative_base  missing
+0      1024   3          na             na
+```
+
+**See also:** [`math.sqrt`](./math.md#sqrt), [`math.exp`](./math.md#exp)
+
 ### log
 
 Returns the natural logarithm of a number.
@@ -243,6 +471,22 @@ float math.log(series int | float number)
 | `number`  | `series int \| float` | The number. |
 
 **Returns:** The base-e logarithm; `na` when `number` is zero, negative or `na`.
+
+**Example:** The natural logarithm of `math.e` is 1; zero has no logarithm, so `zero` is `na`.
+
+```tea
+emit "one" math.log(math.e)
+emit "zero" math.log(0)
+```
+
+**Output:**
+
+```text
+index  one  zero
+0      1    na
+```
+
+**See also:** [`math.log10`](./math.md#log10), [`math.exp`](./math.md#exp)
 
 ### log10
 
@@ -258,6 +502,22 @@ float math.log10(series int | float number)
 
 **Returns:** The base-10 logarithm; `na` when `number` is zero, negative or `na`.
 
+**Example:** `thousand` is 3, since 10 to the power 3 is 1000; a negative number has no logarithm, so `negative` is `na`.
+
+```tea
+emit "thousand" math.log10(1000)
+emit "negative" math.log10(-1)
+```
+
+**Output:**
+
+```text
+index  thousand  negative
+0      3         na
+```
+
+**See also:** [`math.log`](./math.md#log)
+
 ### exp
 
 Returns e raised to a power.
@@ -271,6 +531,22 @@ float math.exp(series int | float number)
 | `number`  | `series int \| float` | The power.  |
 
 **Returns:** e to the power `number`; `na` when `number` is `na` or the result is too large to represent.
+
+**Example:** `one` is e itself; e to the power 1000 is too large to represent, so `large` is `na`.
+
+```tea
+emit "one" math.exp(1)
+emit "large" math.exp(1000)
+```
+
+**Output:**
+
+```text
+index  one                large
+0      2.718281828459045  na
+```
+
+**See also:** [`math.log`](./math.md#log), [`math.e`](./math.md#e)
 
 ## Constants
 
@@ -289,3 +565,5 @@ Euler’s number, the base of the natural logarithm.
 ```tea
 const float math.e = 2.718281828459045
 ```
+
+**See also:** [`math.exp`](./math.md#exp), [`math.log`](./math.md#log)

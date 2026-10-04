@@ -14,3 +14,59 @@ type Commission
 | ---------------------------- | ------------------------------------------------------------------- |
 | `broker.CommissionKind kind` | How `value` is charged.                                             |
 | `float value`                | Rate or cash amount, depending on `kind`; must be zero or positive. |
+
+The broker charges it on each fill, except that a cash-per-order fee is
+charged once per order; a rate applies to the notional at the execution
+price, after slippage. The formula is on
+[`broker.BrokerEmulator.commission_for`](./BrokerEmulator.md#commission_for).
+
+**Example:** The three kinds on the same buy of 10 units at the open of 110 on index 1:
+a rate of 0.1% charges 1.1, 2.5 per unit charges 25, and 7 per order
+charges 7.
+
+```tea
+import broker
+import portfolio
+import trade
+
+var byRate = trade.nextOpen(
+    broker.new(commission = broker.commissionRate(0.001)),
+    portfolio.new(initialCash = 10000.0)
+)
+var byUnit = trade.nextOpen(
+    broker.new(commission = broker.commissionCashPerContract(2.5)),
+    portfolio.new(initialCash = 10000.0)
+)
+var byOrder = trade.nextOpen(
+    broker.new(commission = broker.commissionCashPerOrder(7.0)),
+    portfolio.new(initialCash = 10000.0)
+)
+a = byRate.begin_bar(open, bar_index)
+b = byUnit.begin_bar(open, bar_index)
+c = byOrder.begin_bar(open, bar_index)
+if bar_index == 0
+    byRate.entry("Long", trade.Direction.long, qty = 10.0)
+    byUnit.entry("Long", trade.Direction.long, qty = 10.0)
+    byOrder.entry("Long", trade.Direction.long, qty = 10.0)
+byRate.end_bar(close, false)
+byUnit.end_bar(close, false)
+byOrder.end_bar(close, false)
+emit "open" open
+emit "rate" a.fee
+emit "perContract" b.fee
+emit "perOrder" c.fee
+```
+
+```csv
+time,open,close
+0,100,100
+1,110,112
+```
+
+**Output:**
+
+```text
+index  open  rate  perContract  perOrder
+0      100   na    na           na
+1      110   1.1   25           7
+```

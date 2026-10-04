@@ -9,29 +9,50 @@ Each call writes one named output that a host can draw. See [outputs and events]
 
 Functions that describe plots, shapes, colors and alerts as named outputs.
 
-Each call records its arguments in a description value and writes it to the
-output named by its first argument, `id`. Tea draws and sends nothing: the
-host decides how to draw or deliver each output, so options such as
-`linewidth` or `display` are hints recorded exactly as passed. Only the
-script itself can call these functions, not a library file.
+Each plotting call records its arguments in a description value and writes
+it to the output named by its first argument, `id`; each alert call appends
+an event to the list named by `id`. Tea draws and sends nothing: the host
+decides how to draw or deliver each output. Tea does not check the options
+either: a style, line style, location, size, display or format name is
+recorded as written, so a misspelled one is not an error, and numbers such
+as `linewidth` are recorded even when negative. Only the script itself can
+call these functions, not a library file.
+
+A host recognizes each output by its type id: `visual.Plot` for
+[`plot`](./plots.md#plot), `visual.Hline` for [`hline`](./plots.md#hline), `visual.Fill` for
+[`fill`](./plots.md#fill), `visual.Shape` for [`plotshape`](./plots.md#plotshape), `visual.Character` for
+[`plotchar`](./plots.md#plotchar), `visual.Background` for [`bgcolor`](./plots.md#bgcolor) and
+`visual.BarColor` for [`barcolor`](./plots.md#barcolor). An alert output is a list of
+`visual.Alert` events for [`alertcondition`](./alerts.md#alertcondition), or of
+`visual.AlertEvent<T>` events for [`alert`](./alerts.md#alert), where `T` is the type of
+the alert's payload.
 
 An `id` is a constant string, unique among the script's outputs; only alert
 calls may share one. It cannot be empty or one of `index`, `time`, `timed`
 and `provisional`. Apart from the alerts, a call may run at most once per
-row, so not inside a loop, and on a row where it does not run, such as
-inside an `if` whose condition is false, its output holds no value.
+bar, so not inside a loop. On a bar where it does not run, such as inside
+an `if` whose condition is false, its output is `null`, which `tea run`
+prints as `na`. An alert output holds a list on every bar, `[]` when no
+event was appended.
+
+**Pine Script:** Every plot and alert function takes an output `id` first, so Pine
+Script's `plot(ta.sma(close, 2))` fails with "missing argument 'series' in
+call to 'plot'"; write `plot("sma", ta.sma(close, 2))`. Tea cannot create
+drawing objects: there is no `label.new`, `line.new`, `box.new`,
+`table.new`, `polyline.new` or `linefill.new`, so every value of the
+`label`, `line`, `box`, `table`, `polyline` and `linefill` types is `na`.
 
 Available in every script without an import or namespace.
 
 | Name                            | Description                                                                                                         |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| [`plot`](#plot)                 | Writes one value per row, with options for drawing it, to a named output.                                           |
+| [`plot`](#plot)                 | Writes one value per bar, with options for drawing it, to a named output.                                           |
 | [`hline`](#hline)               | Writes a horizontal line at a fixed level to a named output.                                                        |
 | [`fill`](#fill)                 | Writes a shaded area between two plots or horizontal lines to a named output.                                       |
-| [`plotshape`](#plotshape)       | Writes a shape marker for the rows where a condition is true to a named output.                                     |
-| [`plotchar`](#plotchar)         | Writes a character marker for the rows where a condition is true to a named output.                                 |
-| [`bgcolor`](#bgcolor)           | Writes a background color for the current row to a named output.                                                    |
-| [`barcolor`](#barcolor)         | Writes a color for the current row's bar to a named output.                                                         |
+| [`plotshape`](#plotshape)       | Writes on each bar whether to show a shape marker there, with options for drawing it, to a named output.            |
+| [`plotchar`](#plotchar)         | Writes on each bar whether to show a character marker there, with options for drawing it, to a named output.        |
+| [`bgcolor`](#bgcolor)           | Writes a background color for the current bar to a named output.                                                    |
+| [`barcolor`](#barcolor)         | Writes a color for drawing the current bar to a named output.                                                       |
 | [`plot.style_*`](#plot-style)   | Drawing styles for the `style` argument of [`plot`](./plots.md#plot).                                               |
 | [`hline.style_*`](#hline-style) | Line styles for the `linestyle` argument of [`hline`](./plots.md#hline).                                            |
 | [`location.*`](#location)       | Positions for the `location` argument of [`plotshape`](./plots.md#plotshape) and [`plotchar`](./plots.md#plotchar). |
@@ -45,7 +66,7 @@ Available in every script without an import or namespace.
 
 ### plot
 
-Writes one value per row, with options for drawing it, to a named output.
+Writes one value per bar, with options for drawing it, to a named output.
 
 ```tea
 plot(
@@ -69,28 +90,55 @@ plot(
 | Parameter    | Type           | Default     | Description                                                                                                                                                                                             |
 | ------------ | -------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`         | `const string` |             | Name of the output this call writes.                                                                                                                                                                    |
-| `series`     | `series float` |             | Value to plot on the current row; may be `na`.                                                                                                                                                          |
+| `series`     | `series float` |             | Value to plot on the current bar; may be `na`.                                                                                                                                                          |
 | `title`      | `const string` | `""`        | Display name, separate from `id`.                                                                                                                                                                       |
-| `color`      | `series color` | `na`        | Color on the current row, such as [`color.red`](./color.md#color); it may change from row to row. `na` records no color, leaving the choice to the host.                                                |
-| `linewidth`  | `input int`    | `1`         | Width of the line.                                                                                                                                                                                      |
+| `color`      | `series color` | `na`        | Color on the current bar, such as [`color.red`](./color.md#color); it may change from bar to bar. `na` records no color, leaving the choice to the host.                                                |
+| `linewidth`  | `input int`    | `1`         | Line width in pixels.                                                                                                                                                                                   |
 | `style`      | `const string` | `"line"`    | How to draw the values: a `plot.style_*` constant such as [`plot.style_line`](./plots.md#plot-style), [`plot.style_histogram`](./plots.md#plot-style) or [`plot.style_columns`](./plots.md#plot-style). |
 | `trackprice` | `input bool`   | `false`     | Whether to also mark the latest value with a horizontal price line.                                                                                                                                     |
 | `histbase`   | `const float`  | `0.0`       | Base level for the histogram, column and area styles.                                                                                                                                                   |
-| `offset`     | `input int`    | `0`         | Number of rows to shift the drawing by.                                                                                                                                                                 |
+| `offset`     | `input int`    | `0`         | Number of bars to shift the drawing by: a positive number moves it right, toward later bars, and a negative number left. The value is still written on the current bar.                                 |
 | `editable`   | `const bool`   | `true`      | Whether users may edit the output's style in the host.                                                                                                                                                  |
-| `show_last`  | `input int`    | `0`         | How many of the most recent rows to draw.                                                                                                                                                               |
+| `show_last`  | `input int`    | `0`         | Number of most recent bars to draw; `0`, the default, sets no limit.                                                                                                                                    |
 | `display`    | `const string` | `"all"`     | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display).                                                                   |
 | `format`     | `const string` | `"inherit"` | Number format: [`format.inherit`](./plots.md#format), [`format.price`](./plots.md#format), [`format.volume`](./plots.md#format) or [`format.percent`](./plots.md#format).                               |
-| `precision`  | `const int`    | `0`         | Number of decimal places to show.                                                                                                                                                                       |
+| `precision`  | `const int`    | `0`         | Number of decimal places to show; `0`, the default, leaves the choice to the host.                                                                                                                      |
 
-**Returns:** The description written to `id`. Its fields hold the arguments under the parameter names, such as `series` and `color`; pass it to [`fill`](./plots.md#fill) to shade between two plots.
+**Returns:** `visual.Plot`: the description written to `id`. Pass it to [`fill`](./plots.md#fill) to shade between two plots.
 
-This plots a 20-row average, green while the close is above it:
+Each bar's description holds the arguments under the parameter names, with
+`null` for an `na` color.
+
+**Example:** A 2-bar average, drawn green while the close is above it. Its `series` is
+`na` on the first bar, and its `color` is green only at index 1.
 
 ```tea
-average = ta.sma(close, 20)
-plot("average", average, "SMA 20", color=close > average ? color.green : color.red, linewidth=2)
+emit "close" close
+average = ta.sma(close, 2)
+plot("average", average, "SMA 2", color=close > average ? color.green : color.red, linewidth=2)
 ```
+
+```csv
+time,close
+0,10
+1,12
+2,11
+```
+
+**Output:**
+
+```text
+index  close  average
+0      10     {"id":"average","series":"na","title":"SMA 2","color":{"r":255,"g":82,"b":82,"a":255},"linewidth":2,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+1      12     {"id":"average","series":11,"title":"SMA 2","color":{"r":76,"g":175,"b":80,"a":255},"linewidth":2,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+2      11     {"id":"average","series":11.5,"title":"SMA 2","color":{"r":255,"g":82,"b":82,"a":255},"linewidth":2,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+```
+
+**Pine Script:** Tea has no `join`, `force_overlay` or `linestyle` parameter; passing
+one is an error. In Pine Script, `precision = 0` shows no decimal places; in
+Tea, `0` is the default and leaves the choice to the host.
+
+**See also:** [`hline`](./plots.md#hline), [`fill`](./plots.md#fill)
 
 ### hline
 
@@ -112,15 +160,33 @@ hline(
 | Parameter   | Type           | Default   | Description                                                                                                                                                  |
 | ----------- | -------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `id`        | `const string` |           | Name of the output this call writes.                                                                                                                         |
-| `price`     | `input float`  |           | Level of the line. It can come from an input but cannot change from row to row.                                                                              |
+| `price`     | `input float`  |           | Level of the line. It can come from an input but cannot change from bar to bar.                                                                              |
 | `title`     | `const string` | `""`      | Display name, separate from `id`.                                                                                                                            |
-| `color`     | `input color`  | `na`      | Line color; like `price`, it cannot change from row to row. `na` records no color, leaving the choice to the host.                                           |
+| `color`     | `input color`  | `na`      | Line color; like `price`, it cannot change from bar to bar. `na` records no color, leaving the choice to the host.                                           |
 | `linestyle` | `const string` | `"solid"` | Line style: [`hline.style_solid`](./plots.md#hline-style), [`hline.style_dotted`](./plots.md#hline-style) or [`hline.style_dashed`](./plots.md#hline-style). |
-| `linewidth` | `input int`    | `1`       | Width of the line.                                                                                                                                           |
+| `linewidth` | `input int`    | `1`       | Line width in pixels.                                                                                                                                        |
 | `editable`  | `const bool`   | `true`    | Whether users may edit the output's style in the host.                                                                                                       |
 | `display`   | `const string` | `"all"`   | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display).                        |
 
-**Returns:** The description written to `id`, with fields named after the parameters; pass it to [`fill`](./plots.md#fill) to shade between two lines.
+**Returns:** `visual.Hline`: the description written to `id`, with fields named after the parameters. Pass it to [`fill`](./plots.md#fill) to shade between two lines.
+
+The description is written on every bar the call runs, with the same values
+each time.
+
+**Example:** A dashed red line at `70`.
+
+```tea
+hline("overbought", 70.0, "Overbought", color=color.red, linestyle=hline.style_dashed)
+```
+
+**Output:**
+
+```text
+index  overbought
+0      {"id":"overbought","price":70,"title":"Overbought","color":{"r":255,"g":82,"b":82,"a":255},"linestyle":"dashed","linewidth":1,"editable":true,"display":"all"}
+```
+
+**See also:** [`fill`](./plots.md#fill), [`plot`](./plots.md#plot)
 
 ### fill
 
@@ -143,27 +209,36 @@ fill(
 | `id`       | `const string` |         | Name of the output this call writes.                                                                                                  |
 | `plot1`    |                |         | One edge of the area: the value returned by [`plot`](./plots.md#plot) or [`hline`](./plots.md#hline). Only its `id` is recorded.      |
 | `plot2`    |                |         | The other edge, given like `plot1`.                                                                                                   |
-| `color`    | `series color` | `na`    | Fill color on the current row; it may change from row to row. `na` records no color, leaving the choice to the host.                  |
+| `color`    | `series color` | `na`    | Fill color on the current bar; it may change from bar to bar. `na` records no color, leaving the choice to the host.                  |
 | `title`    | `const string` | `""`    | Display name, separate from `id`.                                                                                                     |
 | `editable` | `const bool`   | `true`  | Whether users may edit the output's style in the host.                                                                                |
 | `display`  | `const string` | `"all"` | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display). |
 
-**Returns:** The description written to `id`; its `first` and `second` fields hold the IDs of `plot1` and `plot2`.
+**Returns:** `visual.Fill`: the description written to `id`; its `first` and `second` fields hold the IDs of `plot1` and `plot2`.
 
-The description refers to the two outputs by their IDs. This shades the area
-between a fast and a slow average:
+**Example:** A zone between two levels. The `zone` description names its edges by their
+IDs, `upper` and `lower`.
 
 ```tea
-fast = plot("fast", ta.ema(close, 10), "Fast EMA", color=color.blue)
-slow = plot("slow", ta.ema(close, 30), "Slow EMA", color=color.orange)
-fill("band", fast, slow, color=color.new(color.blue, 80))
+upper = hline("upper", 70.0, "Upper")
+lower = hline("lower", 30.0, "Lower")
+fill("zone", upper, lower, color=color.new(color.blue, 90))
 ```
+
+**Output:**
+
+```text
+index  upper                                                                                                                     lower                                                                                                                     zone
+0      {"id":"upper","price":70,"title":"Upper","color":null,"linestyle":"solid","linewidth":1,"editable":true,"display":"all"}  {"id":"lower","price":30,"title":"Lower","color":null,"linestyle":"solid","linewidth":1,"editable":true,"display":"all"}  {"id":"zone","first":"upper","second":"lower","color":{"r":33,"g":150,"b":243,"a":26},"title":"","editable":true,"display":"all"}
+```
+
+**See also:** [`plot`](./plots.md#plot), [`hline`](./plots.md#hline)
 
 ## Shapes and characters
 
 ### plotshape
 
-Writes a shape marker for the rows where a condition is true to a named output.
+Writes on each bar whether to show a shape marker there, with options for drawing it, to a named output.
 
 ```tea
 plotshape(
@@ -186,33 +261,54 @@ plotshape(
 | Parameter   | Type           | Default      | Description                                                                                                                                                   |
 | ----------- | -------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`        | `const string` |              | Name of the output this call writes.                                                                                                                          |
-| `series`    | `series bool`  |              | Whether the shape appears on the current row.                                                                                                                 |
+| `series`    | `series bool`  |              | Whether the shape appears on the current bar.                                                                                                                 |
 | `title`     | `const string` | `""`         | Display name, separate from `id`.                                                                                                                             |
 | `style`     | `const string` | `"circle"`   | Shape to draw: a `shape.*` constant such as [`shape.circle`](./plots.md#shape), [`shape.triangleup`](./plots.md#shape) or [`shape.xcross`](./plots.md#shape). |
 | `location`  | `const string` | `"abovebar"` | Where to place the shape: a `location.*` constant such as [`location.abovebar`](./plots.md#location) or [`location.belowbar`](./plots.md#location).           |
-| `color`     | `series color` | `na`         | Shape color on the current row; `na` records no color, leaving the choice to the host.                                                                        |
-| `offset`    | `input int`    | `0`          | Number of rows to shift the drawing by.                                                                                                                       |
+| `color`     | `series color` | `na`         | Shape color on the current bar; `na` records no color, leaving the choice to the host.                                                                        |
+| `offset`    | `input int`    | `0`          | Number of bars to shift the drawing by: a positive number moves it right, toward later bars, and a negative number left.                                      |
 | `text`      | `const string` | `""`         | Text to show with the shape.                                                                                                                                  |
-| `textcolor` | `series color` | `na`         | Color of `text` on the current row; `na` records no color, leaving the choice to the host.                                                                    |
+| `textcolor` | `series color` | `na`         | Color of `text` on the current bar; `na` records no color, leaving the choice to the host.                                                                    |
 | `size`      | `const string` | `"auto"`     | Shape size: a `size.*` constant such as [`size.auto`](./plots.md#size), [`size.small`](./plots.md#size) or [`size.large`](./plots.md#size).                   |
 | `editable`  | `const bool`   | `true`       | Whether users may edit the output's style in the host.                                                                                                        |
-| `show_last` | `input int`    | `0`          | How many of the most recent rows to draw.                                                                                                                     |
+| `show_last` | `input int`    | `0`          | Number of most recent bars to draw; `0`, the default, sets no limit.                                                                                          |
 | `display`   | `const string` | `"all"`      | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display).                         |
 
-**Returns:** The description written to `id`, with fields named after the parameters.
+**Returns:** `visual.Shape`: the description written to `id`, with fields named after the parameters.
 
-The description is written on every row the call runs; its `series` field
-records whether the shape appears on that row. This marks each row where the
-close crosses above its 20-row average:
+The description is written on every bar the call runs, not only where the
+condition is true: its `series` field says whether the shape appears on
+that bar.
+
+**Example:** A triangle below each bar where the close crosses above `11`. Every bar
+writes a description; `series` is `true` only at index 1.
 
 ```tea
-crossed = ta.crossover(close, ta.sma(close, 20))
-plotshape("cross", crossed, "Cross", style=shape.triangleup, location=location.belowbar, color=color.green)
+emit "close" close
+plotshape("cross", ta.crossover(close, 11.0), "Cross", style=shape.triangleup, location=location.belowbar)
 ```
+
+```csv
+time,close
+0,10
+1,12
+2,13
+```
+
+**Output:**
+
+```text
+index  close  cross
+0      10     {"id":"cross","series":false,"title":"Cross","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
+1      12     {"id":"cross","series":true,"title":"Cross","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
+2      13     {"id":"cross","series":false,"title":"Cross","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
+```
+
+**See also:** [`plotchar`](./plots.md#plotchar)
 
 ### plotchar
 
-Writes a character marker for the rows where a condition is true to a named output.
+Writes on each bar whether to show a character marker there, with options for drawing it, to a named output.
 
 ```tea
 plotchar(
@@ -235,29 +331,56 @@ plotchar(
 | Parameter   | Type           | Default      | Description                                                                                                                                             |
 | ----------- | -------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`        | `const string` |              | Name of the output this call writes.                                                                                                                    |
-| `series`    | `series bool`  |              | Whether the character appears on the current row.                                                                                                       |
+| `series`    | `series bool`  |              | Whether the character appears on the current bar.                                                                                                       |
 | `title`     | `const string` | `""`         | Display name, separate from `id`.                                                                                                                       |
 | `char`      | `const string` | `""`         | Character to draw.                                                                                                                                      |
 | `location`  | `const string` | `"abovebar"` | Where to place the character: a `location.*` constant such as [`location.abovebar`](./plots.md#location) or [`location.belowbar`](./plots.md#location). |
-| `color`     | `series color` | `na`         | Character color on the current row; `na` records no color, leaving the choice to the host.                                                              |
-| `offset`    | `input int`    | `0`          | Number of rows to shift the drawing by.                                                                                                                 |
+| `color`     | `series color` | `na`         | Character color on the current bar; `na` records no color, leaving the choice to the host.                                                              |
+| `offset`    | `input int`    | `0`          | Number of bars to shift the drawing by: a positive number moves it right, toward later bars, and a negative number left.                                |
 | `text`      | `const string` | `""`         | Text to show with the character.                                                                                                                        |
-| `textcolor` | `series color` | `na`         | Color of `text` on the current row; `na` records no color, leaving the choice to the host.                                                              |
+| `textcolor` | `series color` | `na`         | Color of `text` on the current bar; `na` records no color, leaving the choice to the host.                                                              |
 | `size`      | `const string` | `"auto"`     | Character size: a `size.*` constant such as [`size.auto`](./plots.md#size), [`size.small`](./plots.md#size) or [`size.large`](./plots.md#size).         |
 | `editable`  | `const bool`   | `true`       | Whether users may edit the output's style in the host.                                                                                                  |
-| `show_last` | `input int`    | `0`          | How many of the most recent rows to draw.                                                                                                               |
+| `show_last` | `input int`    | `0`          | Number of most recent bars to draw; `0`, the default, sets no limit.                                                                                    |
 | `display`   | `const string` | `"all"`      | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display).                   |
 
-**Returns:** The description written to `id`, with fields named after the parameters.
+**Returns:** `visual.Character`: the description written to `id`, with fields named after the parameters.
 
-The description is written on every row the call runs; its `series` field
-records whether the character appears on that row.
+The description is written on every bar the call runs, not only where the
+condition is true: its `series` field says whether the character appears on
+that bar.
+
+**Example:** A `+` above each bar whose close is higher than the one before. `series` is
+`false` at index 0, where `close[1]` is `na`, and at index 2.
+
+```tea
+emit "close" close
+plotchar("higher", close > close[1], "Higher", char="+")
+```
+
+```csv
+time,close
+0,10
+1,12
+2,11
+```
+
+**Output:**
+
+```text
+index  close  higher
+0      10     {"id":"higher","series":false,"title":"Higher","char":"+","location":"abovebar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
+1      12     {"id":"higher","series":true,"title":"Higher","char":"+","location":"abovebar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
+2      11     {"id":"higher","series":false,"title":"Higher","char":"+","location":"abovebar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
+```
+
+**See also:** [`plotshape`](./plots.md#plotshape)
 
 ## Background and bar colors
 
 ### bgcolor
 
-Writes a background color for the current row to a named output.
+Writes a background color for the current bar to a named output.
 
 ```tea
 bgcolor(
@@ -274,25 +397,42 @@ bgcolor(
 | Parameter   | Type           | Default | Description                                                                                                                           |
 | ----------- | -------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`        | `const string` |         | Name of the output this call writes.                                                                                                  |
-| `color`     | `series color` |         | Background color on the current row; `na` records no color.                                                                           |
+| `color`     | `series color` |         | Background color on the current bar; `na` records no color.                                                                           |
 | `title`     | `const string` | `""`    | Display name, separate from `id`.                                                                                                     |
-| `offset`    | `input int`    | `0`     | Number of rows to shift the drawing by.                                                                                               |
+| `offset`    | `input int`    | `0`     | Number of bars to shift the drawing by: a positive number moves it right, toward later bars, and a negative number left.              |
 | `editable`  | `const bool`   | `true`  | Whether users may edit the output's style in the host.                                                                                |
-| `show_last` | `input int`    | `0`     | How many of the most recent rows to draw.                                                                                             |
+| `show_last` | `input int`    | `0`     | Number of most recent bars to draw; `0`, the default, sets no limit.                                                                  |
 | `display`   | `const string` | `"all"` | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display). |
 
-**Returns:** The description written to `id`, with fields named after the parameters.
+**Returns:** `visual.Background`: the description written to `id`, with fields named after the parameters.
 
-This tints the rows where the close is above its 50-row average and records
-no color for the others:
+**Example:** A green tint on bars whose close is above `11`. Index 0 records no color,
+`null`.
 
 ```tea
-bgcolor("trend", close > ta.sma(close, 50) ? color.new(color.green, 90) : na)
+emit "close" close
+bgcolor("above", close > 11 ? color.new(color.green, 90) : na)
 ```
+
+```csv
+time,close
+0,10
+1,12
+```
+
+**Output:**
+
+```text
+index  close  above
+0      10     {"id":"above","color":null,"title":"","offset":0,"editable":true,"show_last":0,"display":"all"}
+1      12     {"id":"above","color":{"r":76,"g":175,"b":80,"a":26},"title":"","offset":0,"editable":true,"show_last":0,"display":"all"}
+```
+
+**See also:** [`barcolor`](./plots.md#barcolor)
 
 ### barcolor
 
-Writes a color for the current row's bar to a named output.
+Writes a color for drawing the current bar to a named output.
 
 ```tea
 barcolor(
@@ -309,14 +449,38 @@ barcolor(
 | Parameter   | Type           | Default | Description                                                                                                                           |
 | ----------- | -------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`        | `const string` |         | Name of the output this call writes.                                                                                                  |
-| `color`     | `series color` |         | Bar color on the current row; `na` records no color.                                                                                  |
+| `color`     | `series color` |         | Color of the current bar; `na` records no color.                                                                                      |
 | `title`     | `const string` | `""`    | Display name, separate from `id`.                                                                                                     |
-| `offset`    | `input int`    | `0`     | Number of rows to shift the drawing by.                                                                                               |
+| `offset`    | `input int`    | `0`     | Number of bars to shift the drawing by: a positive number moves it right, toward later bars, and a negative number left.              |
 | `editable`  | `const bool`   | `true`  | Whether users may edit the output's style in the host.                                                                                |
-| `show_last` | `input int`    | `0`     | How many of the most recent rows to draw.                                                                                             |
+| `show_last` | `input int`    | `0`     | Number of most recent bars to draw; `0`, the default, sets no limit.                                                                  |
 | `display`   | `const string` | `"all"` | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display). |
 
-**Returns:** The description written to `id`, with fields named after the parameters.
+**Returns:** `visual.BarColor`: the description written to `id`, with fields named after the parameters.
+
+**Example:** Bars that close at or above their open are colored green, others red.
+
+```tea
+emit "open" open
+emit "close" close
+barcolor("direction", close >= open ? color.green : color.red)
+```
+
+```csv
+time,open,close
+0,10,12
+1,12,11
+```
+
+**Output:**
+
+```text
+index  open  close  direction
+0      10    12     {"id":"direction","color":{"r":76,"g":175,"b":80,"a":255},"title":"","offset":0,"editable":true,"show_last":0,"display":"all"}
+1      12    11     {"id":"direction","color":{"r":255,"g":82,"b":82,"a":255},"title":"","offset":0,"editable":true,"show_last":0,"display":"all"}
+```
+
+**See also:** [`bgcolor`](./plots.md#bgcolor)
 
 ## Style constants
 
@@ -331,8 +495,8 @@ Drawing styles for the `style` argument of [`plot`](./plots.md#plot).
 | `plot.style_histogram` | `"histogram"` | A vertical bar from the `histbase` level to each value.            |
 | `plot.style_columns`   | `"columns"`   | A filled column from the `histbase` level to each value.           |
 | `plot.style_area`      | `"area"`      | A line with the area between it and the `histbase` level filled.   |
-| `plot.style_circles`   | `"circles"`   |                                                                    |
-| `plot.style_cross`     | `"cross"`     |                                                                    |
+| `plot.style_circles`   | `"circles"`   | A circle at each value.                                            |
+| `plot.style_cross`     | `"cross"`     | A cross at each value.                                             |
 | `plot.style_linebr`    | `"linebr"`    | Like `plot.style_line`, but with a gap wherever the value is `na`. |
 | `plot.style_areabr`    | `"areabr"`    | Like `plot.style_area`, but with a gap wherever the value is `na`. |
 
@@ -340,7 +504,7 @@ Each constant is a `const string`.
 
 Tea records the chosen name in the description that [`plot`](./plots.md#plot) emits, and the host decides how each style looks; the notes give each style’s usual appearance.
 
-**Example:**
+**Example:** Every row’s description records `"style":"columns"`; the host draws the columns.
 
 ```tea
 plot("volume", volume, style = plot.style_columns)
@@ -354,8 +518,6 @@ time,volume
 3,180
 4,90
 5,200
-6,110
-7,160
 ```
 
 **Output:**
@@ -368,8 +530,6 @@ index  volume
 3      {"id":"volume","series":180,"title":"","color":null,"linewidth":1,"style":"columns","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
 4      {"id":"volume","series":90,"title":"","color":null,"linewidth":1,"style":"columns","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
 5      {"id":"volume","series":200,"title":"","color":null,"linewidth":1,"style":"columns","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-6      {"id":"volume","series":110,"title":"","color":null,"linewidth":1,"style":"columns","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
-7      {"id":"volume","series":160,"title":"","color":null,"linewidth":1,"style":"columns","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
 ```
 
 ### hline style
@@ -386,7 +546,7 @@ Each constant is a `const string`.
 
 Tea records the chosen name in the description that [`hline`](./plots.md#hline) emits; the host draws the line.
 
-**Example:**
+**Example:** The description records `"linestyle":"dashed"`.
 
 ```tea
 hline("zero", 0, linestyle = hline.style_dashed)
@@ -438,23 +598,21 @@ Each constant is a `const string`.
 
 Tea records the chosen name in the emitted description; the host draws the shape.
 
-**Example:**
+**Example:** `"series"` is `true` only on bar 5, where the close crosses above its 3-bar average; every row records the shape, `"triangleup"`.
 
 ```tea
-crossed = ta.crossover(close, ta.sma(close, 20))
+crossed = ta.crossover(close, ta.sma(close, 3))
 plotshape("cross", crossed, style = shape.triangleup, location = location.belowbar, size = size.small)
 ```
 
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
@@ -466,9 +624,7 @@ index  cross
 2      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
 3      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
 4      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
-5      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
-6      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
-7      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
+5      {"id":"cross","series":true,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
 ```
 
 ### size
@@ -503,24 +659,22 @@ Where a host shows a plot’s or an input’s value.
 
 Each constant is a `const string`.
 
-Plot functions accept every constant in their `display` argument; inputs accept all except `display.pane` and `display.price_scale`. Tea records the choice for the host; it does not change what the script calculates or emits.
+Plot functions accept every constant in their `display` argument; inputs accept all except `display.pane` and `display.price_scale`. Tea records the choice in the plot’s description or the input’s settings for the host; it does not change any calculated value.
 
-**Example:**
+**Example:** Every row records `"display":"data_window"` next to the RSI value in `"series"`, which `display` does not change.
 
 ```tea
-plot("rsi", ta.rsi(close, 14), "RSI", display = display.data_window)
+plot("rsi", ta.rsi(close, 3), "RSI", display = display.data_window)
 ```
 
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
@@ -530,11 +684,9 @@ index  rsi
 0      {"id":"rsi","series":"na","title":"RSI","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"data_window","format":"inherit","precision":0}
 1      {"id":"rsi","series":"na","title":"RSI","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"data_window","format":"inherit","precision":0}
 2      {"id":"rsi","series":"na","title":"RSI","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"data_window","format":"inherit","precision":0}
-3      {"id":"rsi","series":"na","title":"RSI","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"data_window","format":"inherit","precision":0}
-4      {"id":"rsi","series":"na","title":"RSI","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"data_window","format":"inherit","precision":0}
-5      {"id":"rsi","series":"na","title":"RSI","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"data_window","format":"inherit","precision":0}
-6      {"id":"rsi","series":"na","title":"RSI","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"data_window","format":"inherit","precision":0}
-7      {"id":"rsi","series":"na","title":"RSI","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"data_window","format":"inherit","precision":0}
+3      {"id":"rsi","series":100,"title":"RSI","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"data_window","format":"inherit","precision":0}
+4      {"id":"rsi","series":57.142857142857146,"title":"RSI","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"data_window","format":"inherit","precision":0}
+5      {"id":"rsi","series":81.25,"title":"RSI","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"data_window","format":"inherit","precision":0}
 ```
 
 ### format
@@ -552,7 +704,7 @@ Each constant is a `const string`.
 
 Tea records the chosen name in the plot description; the host formats the numbers.
 
-**Example:**
+**Example:** Every row records `"format":"percent"`; the values are the change in percent, such as 25 on bar 3.
 
 ```tea
 plot("change", ta.roc(close, 1), "Change", format = format.percent)
@@ -561,13 +713,11 @@ plot("change", ta.roc(close, 1), "Change", format = format.percent)
 ```csv
 time,close
 0,9
-1,11
-2,10
-3,12
-4,9
-5,14
-6,10
-7,15
+1,12
+2,12
+3,15
+4,12
+5,18
 ```
 
 **Output:**
@@ -575,13 +725,11 @@ time,close
 ```text
 index  change
 0      {"id":"change","series":"na","title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
-1      {"id":"change","series":22.22222222222222,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
-2      {"id":"change","series":-9.090909090909092,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
-3      {"id":"change","series":20,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
-4      {"id":"change","series":-25,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
-5      {"id":"change","series":55.55555555555556,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
-6      {"id":"change","series":-28.571428571428573,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
-7      {"id":"change","series":50,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
+1      {"id":"change","series":33.333333333333336,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
+2      {"id":"change","series":0,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
+3      {"id":"change","series":25,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
+4      {"id":"change","series":-20,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
+5      {"id":"change","series":50,"title":"Change","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"percent","precision":0}
 ```
 
 ### position

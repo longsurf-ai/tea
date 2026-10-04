@@ -10,9 +10,10 @@ Read-only reporting methods that every portfolio provides.
 interface PortfolioView
 ```
 
-Use it as a type constraint for code that only reads results.
-[`portfolio.NetPortfolio`](./NetPortfolio.md) and [`portfolio.LotPortfolio`](./LotPortfolio.md) both
-satisfy it.
+[`portfolio.NetPortfolio`](./NetPortfolio.md) and [`portfolio.LotPortfolio`](./LotPortfolio.md) satisfy
+it, and so do the trade coordinators, such as [`trade.NextOpenTrade`](../trade/NextOpenTrade.md).
+Use it to constrain a type parameter, as in
+`type Report<P: portfolio.PortfolioView>`, in code that only reads results.
 
 ## Methods
 

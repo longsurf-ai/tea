@@ -38,7 +38,7 @@ The full symbol identifier, including its exchange prefix, such as `NASDAQ:AAPL`
 simple string syminfo.tickerid
 ```
 
-Supplied by the host when it binds the script; `na` when the host supplies none. Inside a request expression it is the host’s value for the requested data, not the request’s `symbol`.
+Inside a request expression it is the value the host supplies for that request, or `na`; Tea does not take it from the request’s `symbol` or from the script. Used as a request’s `symbol`, it must be supplied before the script can start.
 
 ### ticker
 
@@ -48,7 +48,7 @@ The symbol name without its exchange prefix, such as `AAPL` for `NASDAQ:AAPL`.
 simple string syminfo.ticker
 ```
 
-Supplied by the host when it binds the script; `na` when the host supplies none. Inside a request expression it is the host’s value for the requested data, not the request’s `symbol`.
+The host supplies it separately; Tea does not take it from [`syminfo.tickerid`](./symbol-and-timeframe.md#tickerid). Inside a request expression it is the value the host supplies for that request, or `na`; Tea does not take it from the request’s `symbol` or from the script.
 
 ### prefix
 
@@ -58,7 +58,7 @@ The exchange prefix of the symbol, such as `NASDAQ` for `NASDAQ:AAPL`.
 simple string syminfo.prefix
 ```
 
-Supplied by the host when it binds the script; `na` when the host supplies none. Inside a request expression it is the host’s value for the requested data, not the request’s `symbol`.
+The host supplies it separately; Tea does not take it from [`syminfo.tickerid`](./symbol-and-timeframe.md#tickerid). Inside a request expression it is the value the host supplies for that request, or `na`; Tea does not take it from the request’s `symbol` or from the script.
 
 ### currency
 
@@ -68,7 +68,7 @@ The currency the symbol’s prices are quoted in, such as `USD`.
 simple string syminfo.currency
 ```
 
-Supplied by the host when it binds the script; `na` when the host supplies none. Inside a request expression it is the host’s value for the requested data, not the request’s `symbol`.
+Inside a request expression it is the value the host supplies for that request, or `na`; Tea does not take it from the request’s `symbol` or from the script.
 
 ### basecurrency
 
@@ -78,7 +78,7 @@ The base currency of a currency pair, such as `BTC` for `BTCUSD`.
 simple string syminfo.basecurrency
 ```
 
-Supplied by the host when it binds the script; `na` when the host supplies none. Inside a request expression it is the host’s value for the requested data, not the request’s `symbol`.
+Inside a request expression it is the value the host supplies for that request, or `na`; Tea does not take it from the request’s `symbol` or from the script.
 
 ### type
 
@@ -88,7 +88,7 @@ The kind of instrument, such as `stock` or `crypto`.
 simple string syminfo.type
 ```
 
-Supplied by the host when it binds the script; `na` when the host supplies none. Inside a request expression it is the host’s value for the requested data, not the request’s `symbol`.
+Inside a request expression it is the value the host supplies for that request, or `na`; Tea does not take it from the request’s `symbol` or from the script.
 
 ### timezone
 
@@ -98,7 +98,7 @@ The time zone of the symbol’s exchange, such as `America/New_York`.
 simple string syminfo.timezone
 ```
 
-Supplied by the host when it binds the script; `na` when the host supplies none. Inside a request expression it is the host’s value for the requested data, not the request’s `symbol`.
+Inside a request expression it is the value the host supplies for that request, or `na`; Tea does not take it from the request’s `symbol` or from the script.
 
 ### mintick
 
@@ -108,7 +108,7 @@ The smallest price increment of the symbol.
 simple float syminfo.mintick
 ```
 
-Supplied by the host when it binds the script; `na` when the host supplies none. Inside a request expression it is the host’s value for the requested data, not the request’s `symbol`.
+Inside a request expression it is the value the host supplies for that request, or `na`; Tea does not take it from the request’s `symbol` or from the script.
 
 ### pointvalue
 
@@ -118,7 +118,7 @@ The value of a one-point price move, in the symbol’s currency.
 simple float syminfo.pointvalue
 ```
 
-Supplied by the host when it binds the script; `na` when the host supplies none. Inside a request expression it is the host’s value for the requested data, not the request’s `symbol`.
+Inside a request expression it is the value the host supplies for that request, or `na`; Tea does not take it from the request’s `symbol` or from the script.
 
 ## Timeframe
 
@@ -130,7 +130,7 @@ The timeframe of the script’s data as text, such as `"15"` or `"D"`.
 simple string timeframe.period
 ```
 
-Supplied by the host when it binds the script; `na` when the host supplies none. Inside a request expression it is the host’s value for the requested data, not the request’s `timeframe`.
+Inside a request expression it is the value the host supplies for that request, or `na`; Tea does not take it from the request’s `timeframe` or from the script. Used as a request’s `timeframe`, it must be supplied before the script can start.
 
 ### multiplier
 
@@ -140,7 +140,7 @@ The number of units in the timeframe, such as `15` for a 15-minute timeframe.
 simple int timeframe.multiplier
 ```
 
-Supplied by the host when it binds the script; `na` when the host supplies none. Inside a request expression it is the host’s value for the requested data, not the request’s `timeframe`.
+The host supplies it separately from [`timeframe.period`](./symbol-and-timeframe.md#period); Tea does not derive one from the other. Inside a request expression it is the value the host supplies for that request, or `na`; Tea does not take it from the request’s `timeframe` or from the script. Used where a value must be known when the script is bound, such as a history offset in `close[timeframe.multiplier]`, it must be supplied before the script can start.
 
 ### isseconds
 
@@ -150,7 +150,7 @@ Whether the timeframe is measured in seconds.
 simple bool timeframe.isseconds
 ```
 
-Supplied by the host when it binds the script, separately from [`timeframe.period`](./symbol-and-timeframe.md#period); `false` when the host supplies none. Inside a request expression it is the host’s value for the requested data.
+The host supplies it separately; Tea does not derive it from [`timeframe.period`](./symbol-and-timeframe.md#period). Inside a request expression it is the value the host supplies for that request, or `false`; Tea does not take it from the request’s `timeframe` or from the script.
 
 ### isminutes
 
@@ -160,7 +160,7 @@ Whether the timeframe is measured in minutes.
 simple bool timeframe.isminutes
 ```
 
-Supplied by the host when it binds the script, separately from [`timeframe.period`](./symbol-and-timeframe.md#period); `false` when the host supplies none. Inside a request expression it is the host’s value for the requested data.
+The host supplies it separately; Tea does not derive it from [`timeframe.period`](./symbol-and-timeframe.md#period). Inside a request expression it is the value the host supplies for that request, or `false`; Tea does not take it from the request’s `timeframe` or from the script.
 
 ### isintraday
 
@@ -170,7 +170,7 @@ Whether the timeframe is shorter than one day.
 simple bool timeframe.isintraday
 ```
 
-Supplied by the host when it binds the script, separately from [`timeframe.period`](./symbol-and-timeframe.md#period); `false` when the host supplies none. Inside a request expression it is the host’s value for the requested data.
+The host supplies it separately; Tea does not derive it from [`timeframe.period`](./symbol-and-timeframe.md#period). Inside a request expression it is the value the host supplies for that request, or `false`; Tea does not take it from the request’s `timeframe` or from the script.
 
 ### isdaily
 
@@ -180,7 +180,7 @@ Whether the timeframe is measured in days.
 simple bool timeframe.isdaily
 ```
 
-Supplied by the host when it binds the script, separately from [`timeframe.period`](./symbol-and-timeframe.md#period); `false` when the host supplies none. Inside a request expression it is the host’s value for the requested data.
+The host supplies it separately; Tea does not derive it from [`timeframe.period`](./symbol-and-timeframe.md#period). Inside a request expression it is the value the host supplies for that request, or `false`; Tea does not take it from the request’s `timeframe` or from the script.
 
 ### isweekly
 
@@ -190,7 +190,7 @@ Whether the timeframe is measured in weeks.
 simple bool timeframe.isweekly
 ```
 
-Supplied by the host when it binds the script, separately from [`timeframe.period`](./symbol-and-timeframe.md#period); `false` when the host supplies none. Inside a request expression it is the host’s value for the requested data.
+The host supplies it separately; Tea does not derive it from [`timeframe.period`](./symbol-and-timeframe.md#period). Inside a request expression it is the value the host supplies for that request, or `false`; Tea does not take it from the request’s `timeframe` or from the script.
 
 ### ismonthly
 
@@ -200,7 +200,7 @@ Whether the timeframe is measured in months.
 simple bool timeframe.ismonthly
 ```
 
-Supplied by the host when it binds the script, separately from [`timeframe.period`](./symbol-and-timeframe.md#period); `false` when the host supplies none. Inside a request expression it is the host’s value for the requested data.
+The host supplies it separately; Tea does not derive it from [`timeframe.period`](./symbol-and-timeframe.md#period). Inside a request expression it is the value the host supplies for that request, or `false`; Tea does not take it from the request’s `timeframe` or from the script.
 
 ### isdwm
 
@@ -210,4 +210,4 @@ Whether the timeframe is measured in days, weeks or months.
 simple bool timeframe.isdwm
 ```
 
-Supplied by the host when it binds the script, separately from [`timeframe.period`](./symbol-and-timeframe.md#period); `false` when the host supplies none. Inside a request expression it is the host’s value for the requested data.
+The host supplies it separately; Tea does not derive it from [`timeframe.period`](./symbol-and-timeframe.md#period). Inside a request expression it is the value the host supplies for that request, or `false`; Tea does not take it from the request’s `timeframe` or from the script.

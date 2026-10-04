@@ -22,21 +22,37 @@ request.security(
 )
 ```
 
-| Parameter    | Type               | Description                                                                                                                                                                                                                                                                                                                                          |
-| ------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `symbol`     | `simple string`    | The symbol of the requested data, recorded for the host, which binds the matching data stream. It must be known when the script is bound: a constant, an input, or a fixed value such as [`syminfo.tickerid`](./symbol-and-timeframe.md#tickerid). Cannot be `na`.                                                                                   |
-| `timeframe`  | `simple string`    | The timeframe of the requested data, such as `"60"` (60 minutes) or `"D"` (one day). Like `symbol`, it must be known when the script is bound. Cannot be `na`.                                                                                                                                                                                       |
-| `expression` | `series any value` | The calculation to run on the requested data, with that data’s own bars and history. It must produce one `int`, `float`, `bool`, `string`, `color` or enum value. It may read the script’s constants and inputs, except source inputs, but no other script variables; call a function to use several statements. Evaluated in the requested context. |
-| `fill`       | `simple string`    | What the result holds on a bar where no new requested value arrived since the previous bar: `"carry"`, the default, repeats the latest value, and `"sparse"` gives `na`. It must be known when the script is bound. Cannot be `na`.                                                                                                                  |
+| Parameter    | Type               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `symbol`     | `simple string`    | The symbol of the requested data, recorded for the host, which binds the matching data stream. It must be known when the script is bound: a constant, an input, or a fixed value such as [`syminfo.tickerid`](./symbol-and-timeframe.md#tickerid). If it reads a `syminfo` value the host has not supplied, the script cannot start. Cannot be `na`.                                                                                                                                                                                                 |
+| `timeframe`  | `simple string`    | The timeframe of the requested data, such as `"60"` (60 minutes) or `"D"` (one day). Like `symbol`, it must be known when the script is bound. Tea fetches nothing for it; when the stream the host binds declares a regular period that differs, such as hourly data for `"D"`, the script cannot start. Cannot be `na`.                                                                                                                                                                                                                            |
+| `expression` | `series any value` | The calculation to run on the requested data, with that data’s own bars and history. It must produce one `int`, `float`, `bool`, `string`, `color` or enum value. It may read the script’s constants and inputs, except source inputs and inputs named by their position (see [`input`](./input.md#input)), but no other script variables; call a function to use several statements. An input it reads is the request’s own copy, which the host sets separately: a value set for the script does not reach it. Evaluated in the requested context. |
+| `fill`       | `simple string`    | What the result holds on a bar where no new requested value arrived since the previous bar: `"carry"`, the default, repeats the latest value, and `"sparse"` gives the type’s empty value (`na`, or `false` for `bool`). It must be known when the script is bound. Cannot be `na`.                                                                                                                                                                                                                                                                  |
 
 **Returns:** The expression’s value from the requested data for the current bar, with the expression’s type; the type’s empty value (`na`, or `false` for `bool`) until the requested data has produced a value.
 
-The call must be the entire initializer of a top-level variable, such as `daily = request.security(...)`. The host binds the requested data stream under that variable’s name; Tea fetches no data itself. When both data streams carry event times, each bar receives the newest requested value that opened at or before it; otherwise requested values are paired with bars in order. History inside `expression` refers to the requested data, so `close[1]` there is its previous bar. Inside `expression`, `syminfo` and `timeframe` values are what the host supplies for the requested data; Tea does not set them from `symbol` and `timeframe`. To get several values, declare one request for each. See [Requests](../../requests.md) for binding and synchronization.
+The call must be the entire initializer of a top-level variable declared without `var` or `varip`, such as `daily = request.security(...)`. The host binds the requested data stream under that variable’s name; Tea fetches no data itself. History inside `expression` refers to the requested data, so `close[1]` there is its previous bar. To get several values, declare one request for each.
+
+Without event times on both data streams, requested values are paired with bars in order, one for each bar; once the requested data runs out, the remaining bars produce no output and no error. When both streams carry event times, each bar receives the newest requested value that opened at or before it, and a requested value that arrives after the bar it belongs to has been finalized stops the run with an error.
+
+A requested value is used from the time its bar opens, not from when that bar closes, and there is no `lookahead` or `gaps` argument. So when the host supplies each daily bar with its final values, an intraday bar at 00:00 already sees that day’s close. With `latest = request.security("AAPL", "D", close)` and `previous = request.security("AAPL", "D", close[1])`, and daily bars for Day 1 and Day 2 that close at 100 and 200:
+
+| Intraday bar opens | `latest` | `previous` |
+| ------------------ | -------- | ---------- |
+| Day 1 00:00        | 100      | `na`       |
+| Day 1 06:00        | 100      | `na`       |
+| Day 1 12:00        | 100      | `na`       |
+| Day 2 00:00        | 200      | 100        |
+| Day 2 06:00        | 200      | 100        |
+
+Inside `expression`, `syminfo` and `timeframe` values are the ones the host supplies for that request, and `na` or `false` without them; Tea does not set them from `symbol` and `timeframe`, and the script’s own values do not reach them. See [Requests](../../requests.md) for binding and synchronization.
 
 ```tea
 daily = request.security(syminfo.tickerid, "D", close[1])
 emit "previous_daily_close" daily
 ```
+
+**See also:** [`request.security_lower_tf`](./request.md#security_lower_tf)
 
 ### security_lower_tf
 
@@ -50,17 +66,31 @@ request.security_lower_tf(
 )
 ```
 
-| Parameter    | Type               | Description                                                                                                                                                                                                                                                                                                                                          |
-| ------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `symbol`     | `simple string`    | The symbol of the requested data, recorded for the host, which binds the matching data stream. It must be known when the script is bound: a constant, an input, or a fixed value such as [`syminfo.tickerid`](./symbol-and-timeframe.md#tickerid). Cannot be `na`.                                                                                   |
-| `timeframe`  | `simple string`    | The timeframe of the requested data, such as `"60"` (60 minutes) or `"D"` (one day). Like `symbol`, it must be known when the script is bound. Cannot be `na`.                                                                                                                                                                                       |
-| `expression` | `series any value` | The calculation to run on the requested data, with that data’s own bars and history. It must produce one `int`, `float`, `bool`, `string`, `color` or enum value. It may read the script’s constants and inputs, except source inputs, but no other script variables; call a function to use several statements. Evaluated in the requested context. |
+| Parameter    | Type               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `symbol`     | `simple string`    | The symbol of the requested data, recorded for the host, which binds the matching data stream. It must be known when the script is bound: a constant, an input, or a fixed value such as [`syminfo.tickerid`](./symbol-and-timeframe.md#tickerid). If it reads a `syminfo` value the host has not supplied, the script cannot start. Cannot be `na`.                                                                                                                                                                                                 |
+| `timeframe`  | `simple string`    | The timeframe of the requested data, such as `"60"` (60 minutes) or `"D"` (one day). Like `symbol`, it must be known when the script is bound. Tea fetches nothing for it; when the stream the host binds declares a regular period that differs, such as hourly data for `"D"`, the script cannot start. Cannot be `na`.                                                                                                                                                                                                                            |
+| `expression` | `series any value` | The calculation to run on the requested data, with that data’s own bars and history. It must produce one `int`, `float`, `bool`, `string`, `color` or enum value. It may read the script’s constants and inputs, except source inputs and inputs named by their position (see [`input`](./input.md#input)), but no other script variables; call a function to use several statements. An input it reads is the request’s own copy, which the host sets separately: a value set for the script does not reach it. Evaluated in the requested context. |
 
-**Returns:** An array of the expression’s values that belong to the current bar, oldest first; empty when there are none.
+**Returns:** An array of the expression’s values collected for the current bar, oldest first; empty when there are none. With event times, these are the values that opened after the previous bar and up to the current bar’s time.
 
-The call must be the entire initializer of a top-level variable, such as `ranges = request.security_lower_tf(...)`. The host binds the requested data stream under that variable’s name; Tea fetches no data itself. When both data streams carry event times, a bar collects the requested values that opened after the previous bar and up to its own time. Without event times, a bar collects a fixed number of values when both streams have regular periods that divide evenly, and one value otherwise. Inside `expression`, `syminfo` and `timeframe` values are what the host supplies for the requested data; Tea does not set them from `symbol` and `timeframe`. See [Requests](../../requests.md).
+The call must be the entire initializer of a top-level variable declared without `var` or `varip`, such as `ranges = request.security_lower_tf(...)`. The host binds the requested data stream under that variable’s name; Tea fetches no data itself.
+
+When both data streams carry event times, a bar collects the requested values that opened after the previous bar and up to its own time, and the first bar collects every value up to its time; a requested value that arrives after the bar it belongs to has been finalized stops the run with an error. A bar’s time is the time it opens, so a daily bar collects mostly the previous day’s values. With values every 6 hours from Day 1 00:00 under daily bars:
+
+| Daily bar opens | Values collected, by the time they opened |
+| --------------- | ----------------------------------------- |
+| Day 1 00:00     | Day 1 00:00                               |
+| Day 2 00:00     | Day 1 06:00, 12:00, 18:00 and Day 2 00:00 |
+| Day 3 00:00     | Day 2 06:00, 12:00, 18:00 and Day 3 00:00 |
+
+Without event times, values are collected in order. When the script’s data stream declares a regular period that holds a whole number of requested periods, each bar collects that number of values, such as four for each daily bar when `timeframe` is `"360"` (6 hours); otherwise each bar collects one value. The requested period is the one the requested stream declares, or else the one `timeframe` names. Once the requested data runs out, the remaining bars produce no output and no error.
+
+Inside `expression`, `syminfo` and `timeframe` values are the ones the host supplies for that request, and `na` or `false` without them; Tea does not set them from `symbol` and `timeframe`, and the script’s own values do not reach them. See [Requests](../../requests.md).
 
 ```tea
 ranges = request.security_lower_tf(syminfo.tickerid, "15", high - low)
 emit "intraday_bars" ranges.size()
 ```
+
+**See also:** [`request.security`](./request.md#security)

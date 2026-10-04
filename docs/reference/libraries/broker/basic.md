@@ -18,7 +18,7 @@ broker.basic(
 | `adverseSlippageRate` | `float` | `0.0`   | slippage as a fraction of price, as in [`broker.slippageRate`](./slippageRate.md)          |
 | `takerFeeRate`        | `float` | `0.0`   | commission as a fraction of notional, as in [`broker.commissionRate`](./commissionRate.md) |
 
-**Returns:** a new [`broker.BrokerEmulator`](./BrokerEmulator.md) without close processing.
+**Returns:** `broker.BrokerEmulator`: a new broker without close processing.
 
 The same as [`broker.new`](./new.md) with
 `commission = broker.commissionRate(takerFeeRate)`,
@@ -26,11 +26,40 @@ The same as [`broker.new`](./new.md) with
 `processOrdersOnClose = false`. Note the argument order: slippage first,
 then the fee.
 
+**Example:** `broker.basic(0.01, 0.001)` is 1% slippage and a 0.1% fee, the broker of
+the first [`broker.new`](./new.md) example: the buy at the open of 110 fills at
+111.1 and pays 1.111.
+
 ```tea
 import broker
 import portfolio
 import trade
 
-// 0.05% adverse slippage, then a 0.1% commission.
-var strat = trade.nextOpen(broker.basic(0.0005, 0.001), portfolio.new())
+var strat = trade.nextOpen(
+    broker.basic(0.01, 0.001),
+    portfolio.new(initialCash = 10000.0)
+)
+filled = strat.begin_bar(open, bar_index)
+if bar_index == 0
+    strat.entry("Long", trade.Direction.long, qty = 10.0)
+strat.end_bar(close, false)
+emit "open" open
+emit "price" filled.price
+emit "fee" filled.fee
 ```
+
+```csv
+time,open,close
+0,100,100
+1,110,112
+```
+
+**Output:**
+
+```text
+index  open  price  fee
+0      100   na     na
+1      110   111.1  1.111
+```
+
+**See also:** [`broker.new`](./new.md)

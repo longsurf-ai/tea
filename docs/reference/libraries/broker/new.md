@@ -20,32 +20,88 @@ broker.new(
 | `slippage`             | `broker.Slippage`   | `broker.Slippage.new(broker.SlippageKind.rate, 0.0, 0.0)` | adverse slippage setting from a helper such as [`broker.slippageTicks`](./slippageTicks.md) |
 | `processOrdersOnClose` | `bool`              | `false`                                                   | whether pending commands may also fill at bar closes                                        |
 
-**Returns:** a new [`broker.BrokerEmulator`](./BrokerEmulator.md).
+**Returns:** `broker.BrokerEmulator`: a new broker with no pending orders.
 
 With the defaults it charges no commission or slippage. With
 `processOrdersOnClose = true`, the next-open and OHLC coordinators also fill
 pending commands at bar closes, including the close of the bar a command was
 issued on. Pass the result to a trade coordinator such as
-[`trade.nextOpen`](../trade/nextOpen.md).
+[`trade.nextOpen`](../trade/nextOpen.md). [`broker.BrokerEmulator`](./BrokerEmulator.md) lists the execution
+rules.
+
+**Example:** A 10-unit buy submitted on index 0 fills at the open of 110 on index 1.
+Slippage of 1% raises the price to 111.1, the 0.1% commission on the 1111
+notional is 1.111, and cash falls from 10000 to 8887.889.
 
 ```tea
 import broker
 import portfolio
 import trade
 
-var strat = trade.ohlc(
+var strat = trade.nextOpen(
     broker.new(
-        commission = broker.commissionPercent(0.05),
-        slippage = broker.slippageTicks(1.0, 0.01),
-        processOrdersOnClose = true
+        commission = broker.commissionRate(0.001),
+        slippage = broker.slippageRate(0.01)
     ),
     portfolio.new(initialCash = 10000.0)
 )
-
-average = ta.sma(close, 20)
-strat.begin_bar(open, high, low, bar_index)
-if ta.crossover(close, average)
-    // Fills at this bar's close because processOrdersOnClose is true.
+filled = strat.begin_bar(open, bar_index)
+if bar_index == 0
     strat.entry("Long", trade.Direction.long, qty = 10.0)
 strat.end_bar(close, false)
+emit "open" open
+emit "price" filled.price
+emit "fee" filled.fee
+emit "cash" strat.cash()
 ```
+
+```csv
+time,open,close
+0,100,100
+1,110,112
+```
+
+**Output:**
+
+```text
+index  open  price  fee    cash
+0      100   na     na     10000
+1      110   111.1  1.111  8887.889
+```
+
+**Example:** With `processOrdersOnClose = true`, a 10-unit buy fills at the close of 104
+on index 0, the bar it was submitted on, so cash falls to 8960 there.
+
+```tea
+import broker
+import portfolio
+import trade
+
+var strat = trade.nextOpen(
+    broker.new(processOrdersOnClose = true),
+    portfolio.new(initialCash = 10000.0)
+)
+strat.begin_bar(open, bar_index)
+if bar_index == 0
+    strat.entry("Long", trade.Direction.long, qty = 10.0)
+strat.end_bar(close, false)
+emit "close" close
+emit "position" strat.position_quantity()
+emit "cash" strat.cash()
+```
+
+```csv
+time,open,close
+0,100,104
+1,110,112
+```
+
+**Output:**
+
+```text
+index  close  position  cash
+0      104    10        8960
+1      112    10        8960
+```
+
+**See also:** [`broker.basic`](./basic.md)

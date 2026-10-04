@@ -10,13 +10,14 @@ Accounting record of one open lot in a [`portfolio.LotPortfolio`](./LotPortfolio
 type OpenTrade
 ```
 
-| Field                   | Description                                                                           |
-| ----------------------- | ------------------------------------------------------------------------------------- |
-| `int id`                | Stable trade id from the entry fill; `close_trade` and `close_trade_at_stop` take it. |
-| `broker.Side entrySide` | Side the lot was opened on: `broker.Side.buy` for long, `broker.Side.sell` for short. |
-| `float entryPrice`      | Entry fill price, after slippage.                                                     |
-| `float quantity`        | Lot size; always positive.                                                            |
-| `float entryFee = 0.0`  | Commission paid on entry, deducted from the lot's profit when it closes.              |
+| Field                   | Description                                                                                                                                                                                                                            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `int id`                | Trade id from the entry fill; it does not change while the lot is open. [`trade.LotTrade.close_trade`](../trade/LotTrade.md#close_trade) and [`trade.LotTrade.close_trade_at_stop`](../trade/LotTrade.md#close_trade_at_stop) take it. |
+| `broker.Side entrySide` | Side the lot was opened on: `broker.Side.buy` for long, `broker.Side.sell` for short.                                                                                                                                                  |
+| `float entryPrice`      | Entry fill price, after slippage.                                                                                                                                                                                                      |
+| `float quantity`        | Lot size; always positive.                                                                                                                                                                                                             |
+| `float entryFee = 0.0`  | Commission paid on entry, deducted from the lot's profit when it closes.                                                                                                                                                               |
 
-It holds only what accounting needs. Keep exit rules such as stops and
-targets in your strategy's own state, keyed by `id`.
+[`portfolio.LotPortfolio.open_trade`](./LotPortfolio.md#open_trade) returns one. It holds only what
+accounting needs; keep exit rules such as stops and targets in your
+strategy's own state, keyed by `id`.

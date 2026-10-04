@@ -37,7 +37,7 @@ int reject(
 | `barIndex`  | `int`              | bar index of the refusal    |
 | `reason`    | `broker.Rejection` | why it was refused          |
 
-**Returns:** `0`.
+**Returns:** `int`: `0`.
 
 ### stop_touched
 
@@ -59,7 +59,7 @@ bool stop_touched(
 | `lowPrice`  | `float`       | the bar's low                                  |
 | `stopPrice` | `float`       | stop level                                     |
 
-**Returns:** `true` when touched.
+**Returns:** `bool`: `true` when touched.
 
 ### execute_at_close
 
@@ -81,7 +81,7 @@ broker.Fill execute_at_close(
 | `account`    | `broker.Account` | account view from the portfolio |
 | `barIndex`   | `int`            | current bar index               |
 
-**Returns:** the fill, or `na` when rejected.
+**Returns:** `broker.Fill`: the fill, or `na` when rejected.
 
 ### execute_if_stop_touched
 
@@ -109,4 +109,4 @@ broker.Fill execute_if_stop_touched(
 | `account`   | `broker.Account` | account view from the portfolio           |
 | `barIndex`  | `int`            | current bar index                         |
 
-**Returns:** the fill, or `na`.
+**Returns:** `broker.Fill`: the fill, or `na`.

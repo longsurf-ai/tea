@@ -54,12 +54,22 @@ tea run <file> --input <file> [--trace] [--<input name> <value>...]
 | -------- | ---------------- |
 | `file`   | Tea source file. |
 
-| Option               | Description                                                            |
-| -------------------- | ---------------------------------------------------------------------- |
-| `-i, --input <file>` | CSV dataset to bind as input series. Required.                         |
-| `--trace`            | Print the machine trace format (golden-compatible) instead of a table. |
+| Option               | Description                                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `-i, --input <file>` | CSV file whose columns feed the series of the same name. Required.                                         |
+| `--trace`            | Print a line declaring each output, then one line per output cell (index, name, value), instead of tables. |
 
-Compile and execute a Tea script over a CSV dataset. Override an input default with a flag named after the variable that declares it, such as `--length` 20 for length = input.int(14).
+Compile and execute a Tea script over a CSV dataset, one bar per row, and print its outputs.
+
+CSV file: the first row holds unique column names. Each column feeds the series of the same name, such as close or volume, and every cell must be a number or empty, which reads as na. An optional time column holds integer epoch milliseconds that increase from row to row, with no empty cells; a script that reads time requires it. When the file has no hl2, hlc3, ohlc4 or hlcc4 column, that series is computed from the open, high, low and close columns it uses.
+
+Inputs: override an input with a flag after the file, such as `--length` 20 for length = input.int(14). An input is named after the variable it initializes at the top level of the script. An input inside a function, a block or an expression, one declared with var or varip, or one whose variable is reassigned is named after its position instead, such as input@7:5 for line 7, column 5. Inputs named i, h, V, help, trace or version clash with the command's own options, and the script cannot run.
+
+Output: a System table with the row count and timings, a Parameters table with the value of each input, and an Outputs table with one row per bar and one column per output. With `--trace` it prints a line declaring each output, then one line per output cell, instead of the tables.
+
+Exit status: 0 on success; 1 when the arguments, compilation, the CSV file or the run fails; 2 when the script uses a feature Tea does not implement yet.
+
+Limits: a script that calls request._ cannot run, because tea run binds no data for requests. syminfo._ and timeframe._ hold na, or false for the timeframe.is_ flags. timenow reads the system clock.
 
 ### tea build
 
