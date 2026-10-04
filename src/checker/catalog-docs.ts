@@ -646,7 +646,7 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       },
       returns: 'The chosen series’ value on the current bar.',
       details:
-        'The host supplies the name of a series, such as `"high"`, and must bind a data stream that has it. The result can be used like {@link close}, including its history. A source input cannot be declared inside a request expression, and a request expression cannot read one.',
+        'The host supplies the name of a series, such as `"high"`, and must bind a data stream that has it; only the chosen series is needed, so with `"high"` chosen the stream needs no `close`. The result can be used like {@link close}, including its history. A source input cannot be declared inside a request expression, and a request expression cannot read one.',
       examples: [
         example(
           'The host supplies no series name, so `source` is `close` and `average` is the 3-bar average of the closes.',

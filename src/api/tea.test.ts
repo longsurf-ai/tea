@@ -128,6 +128,25 @@ describe('tea', () => {
     expect(node.ready()).toBe(true);
   });
 
+  test('a selected source needs only its own series, not the default', async () => {
+    const node = tea`
+      source = input.source(close)
+      emit "output0" source
+    `
+      .bind({source: 'open'})
+      .bind(
+        new DataStream(
+          new Schema([new Field('open', new Float64(), false)]),
+          of({open: 20}),
+        ),
+      );
+    expect(node.ready()).toBe(true);
+    const sink = new StepSink();
+    node.to(sink);
+    await sink.completion;
+    expect(values(sink)).toEqual([20]);
+  });
+
   test('is ready at creation when the Program has no binding requirements', () => {
     let node = tea`emit "output0" 1`;
 
