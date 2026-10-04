@@ -1,9 +1,10 @@
 # Tea documentation
 
 Human-authored language documentation and generated reference material for the
-standalone Tea toolchain. This directory is also the Mintlify project root;
-`docs.json` owns the hosted reader experience and navigation. The Docusaurus
-configuration in `../website/` exists only for the packaged offline renderer.
+standalone Tea toolchain. This directory is also the Mintlify project root,
+used for previews and link checks; `docs.json` owns navigation. The Docusaurus
+configuration in `../website/` renders the public site on GitHub Pages and the
+packaged offline build.
 
 ## Invariants
 
