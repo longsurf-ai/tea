@@ -3384,6 +3384,20 @@ class Checker {
           else this.recordExpressionDependency(member);
           return {type: member.type, qualifier: member.qualifier, value: null};
         }
+        // Name the member, not the package: `ta.tr` is Pine's variable form.
+        const written = `${s.x.value}.${s.sel.value}`;
+        if (member === undefined) {
+          this.error(s.pos, `undeclared name '${written}'`);
+          return INVALID_TV;
+        }
+        if (member.kind === ObjectKind.Function) {
+          this.error(s.pos, `'${written}' is a function; call it`);
+          return INVALID_TV;
+        }
+        if (member.kind !== ObjectKind.Variable) {
+          this.error(s.pos, `'${written}' is a type, not a value`);
+          return INVALID_TV;
+        }
       }
       if (entry?.kind === ObjectKind.Enum) {
         this.info.uses.set(s.x, entry);

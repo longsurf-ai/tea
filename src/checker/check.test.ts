@@ -920,6 +920,17 @@ describe('calls', () => {
 });
 
 describe('diagnostics', () => {
+  test('a package member used as a value is named in the error', () => {
+    const errorsOf = (src: string) =>
+      checkText(src).errors.map(error => error.msg);
+    expect(errorsOf('a = ta.tr')).toEqual(["'ta.tr' is a function; call it"]);
+    expect(errorsOf('a = ta.vwap')).toEqual(["undeclared name 'ta.vwap'"]);
+    expect(errorsOf('import broker\na = broker.Side')).toEqual([
+      "'broker.Side' is a type, not a value",
+    ]);
+    expect(errorsOf('a = ta.obv')).toEqual([]);
+  });
+
   test("a function parameter's default must fit its annotation", () => {
     const errorsOf = (src: string) =>
       checkText(src).errors.map(error => error.msg);
