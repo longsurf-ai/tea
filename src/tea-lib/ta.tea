@@ -20,13 +20,13 @@
  *
  * Each written call keeps its own history and state, covering only the bars on
  * which that call runs. A call does not run on a bar when the code around it
- * is skipped: an `if` branch, `switch` arm or ternary arm that is not taken,
- * or the right side of an `and` or `or` whose left side already decides the
- * result. Its windows then read that bar as `na`, and its running state does
- * not change on it. A call inside a loop shares one history and state across
- * all iterations, so its running state advances on each iteration. Call these
- * functions on every bar and combine their results with conditions
- * afterwards; see
+ * is skipped, such as an `if` branch, `switch` arm or ternary arm that is not
+ * taken, the right side of an `and` or `or` whose left side already decides
+ * the result, or a loop that runs zero times. Its windows then read that bar
+ * as `na`, and its running state does not change on it. A call inside a loop
+ * shares one history and state across all iterations, so its running state
+ * advances on each iteration. Call these functions on every bar and combine
+ * their results with conditions afterwards; see
  * [values and control flow](/language-guide/values-and-control-flow).
  *
  * ```tea
@@ -45,15 +45,24 @@
  * {@link ta.linreg}, {@link ta.percentrank} and {@link ta.swma}, an `na` value
  * anywhere in the window makes the result `na` instead, and {@link ta.change},
  * {@link ta.mom} and {@link ta.roc} are `na` when either value they compare is
- * `na`. Most results are also `na` until enough bars have arrived; each entry
- * says when.
+ * `na`. {@link ta.cci}, {@link ta.stoch} and {@link ta.wpr} are `na`, and
+ * {@link ta.rising} and {@link ta.falling} are `false`, when the current value
+ * they measure is `na`. Most results are also `na` until enough bars have
+ * arrived; each entry says when.
+ *
+ * Most sources are typed `float`: an `int` source, such as {@link bar_index},
+ * is converted to `float`, and a `bool` or `string` source is a compile error.
+ * {@link ta.change} keeps an `int` source `int`. A `simple` parameter, such as
+ * the `length` of {@link ta.ema}, takes a value known when the script starts,
+ * like a constant or an input; a `series` value, such as `bar_index + 1`, is a
+ * compile error there.
  *
  * A count, such as `length`, has a minimum, which its parameter states. A
- * value below it stops the run with an error that names the function, such as
- * `ta.sma: length must be at least 1`; a constant that low is a compile error
- * at the call. A length computed on each bar, such as `bar_index + 1`, reaches
- * back at most 500 bars: older values read as `na`. A constant or input length
- * is not limited this way.
+ * value below it, or `na`, stops the run with an error that names the
+ * function, such as `ta.sma: length must be at least 1`; a constant that low,
+ * or `na`, is a compile error at the call. A `series` length, such as
+ * `bar_index + 1`, reaches back at most 500 bars: older values read as `na`.
+ * A constant or input length is not limited this way.
  *
  * @pine
  * These differences apply across `ta`:
@@ -64,7 +73,8 @@
  *   and the variable) and the variable `ta.tr`, which Tea writes as the call
  *   `ta.tr(false)`.
  * - The Pine manual states no minimum for counts such as `length`; in Tea a
- *   count below its minimum, such as a `length` of `0`, is an error.
+ *   count below its minimum, such as a `length` of `0`, or an `na` count is an
+ *   error.
  * - The Pine manual says that `na` values are ignored, and for some functions
  *   that the calculation uses `length` values that are not `na`. A Tea window
  *   function reads the last `length` bars and leaves out the `na` values among
@@ -139,7 +149,8 @@ export sma(float source, int length) =>
  *
  * @param source Series to average, usually {@link close}.
  * @param length Smoothing length in bars, at least 1; larger values react
- * more slowly.
+ * more slowly. It must be known when the script starts, such as a constant
+ * or an input.
  * @returns `float`: the average.
  * @formula
  * \mathrm{ema}_t = \begin{cases}
@@ -196,7 +207,8 @@ export ema(float source, simple int length) =>
  *
  * @param source Series to average.
  * @param length Smoothing length in bars, at least 1; also the number of
- * values in the starting mean.
+ * values in the starting mean. It must be known when the script starts, such
+ * as a constant or an input.
  * @returns `float`: the average.
  * @formula
  * \begin{aligned}
@@ -394,7 +406,8 @@ export vwma(float source, int length) =>
  *
  * @param source Series to average, usually {@link close}.
  * @param length Number of bars in the longest of the three averages, at
- * least 2.
+ * least 2. It must be known when the script starts, such as a constant or an
+ * input.
  * @returns `float`: the average.
  * @formula
  * \begin{aligned}
@@ -506,12 +519,15 @@ export swma(float source) =>
  * @param series Series to average, usually {@link close}.
  * @param length Number of bars in the window, at least 1.
  * @param offset Position of the peak weight, from 0 (the oldest value) to 1
- * (the newest).
+ * (the newest). It must be known when the script starts, such as a constant
+ * or an input.
  * @param sigma Sharpness of the curve: its standard deviation is
  * `length / sigma` bars, so a larger `sigma` puts more of the weight near the
- * peak.
+ * peak. It must be known when the script starts, such as a constant or an
+ * input.
  * @param floor `true` rounds the peak position down to a whole bar; `false`,
- * the default, keeps it as computed.
+ * the default, keeps it as computed. It must be known when the script starts,
+ * such as a constant or an input.
  * @returns `float`: the weighted mean of the window.
  * @formula
  * \begin{aligned}
@@ -586,7 +602,8 @@ export alma(float series, int length, simple float offset, simple float sigma, s
  * @param source Series to fit, usually {@link close}.
  * @param length Number of bars in the window, at least 2.
  * @param offset Bars back from the current bar at which to read the line; 0
- * reads it on the current bar.
+ * reads it on the current bar. It must be known when the script starts, such
+ * as a constant or an input.
  * @returns `float`: the value of the fitted line.
  * @formula
  * \begin{aligned}
@@ -750,11 +767,12 @@ export change(source, int length = 1) =>
 /**
  * Momentum: `source` minus its value `length` bars ago.
  *
- * It is the same as {@link ta.change}, with `length` required.
+ * It is the same as {@link ta.change} with `length` required, except that an
+ * `int` source gives a `float` result.
  *
  * @param source Series to compare, usually {@link close}.
  * @param length Number of bars back, at least 1.
- * @returns `float`, or `int` for an `int` source: the difference.
+ * @returns `float`: the difference.
  * @formula
  * \mathrm{mom}_t = \mathit{source}_t - \mathit{source}_{t-\mathit{length}}
  * @warmup `na` on the first `length` bars, and when either value is `na`.
@@ -832,7 +850,8 @@ export roc(float source, int length) =>
  * when only the smoothed gain is `0`.
  *
  * @param source Series to measure, usually {@link close}.
- * @param length Smoothing length in bars, at least 1.
+ * @param length Smoothing length in bars, at least 1. It must be a value
+ * known when the script starts, such as a constant or an input.
  * @returns `float`: the index.
  * @formula
  * \begin{aligned}
@@ -945,27 +964,38 @@ export cmo(float series, int length) =>
  *
  * The bar-to-bar change of `source` is smoothed twice with {@link ta.ema},
  * first over `long_length` bars and then over `short_length` bars, and divided
- * by the absolute change smoothed the same way.
+ * by the absolute change smoothed the same way. Both smoothings skip a bar
+ * whose change is `na`.
  *
  * @param source Series to measure, usually {@link close}.
- * @param short_length Length of the second smoothing in bars, at least 1.
- * @param long_length Length of the first smoothing in bars, at least 1.
+ * @param short_length Length of the second smoothing in bars, at least 1. It
+ * must be a value known when the script starts, such as a constant or an
+ * input.
+ * @param long_length Length of the first smoothing in bars, at least 1. It
+ * must be a value known when the script starts, such as a constant or an
+ * input.
  * @returns `float`: the index.
  * @formula
- * \mathrm{tsi}_t = \frac{\mathrm{ema}(\mathrm{ema}(\Delta,
- * \mathit{long\_length}), \mathit{short\_length})_t}
- * {\mathrm{ema}(\mathrm{ema}(|\Delta|,
- * \mathit{long\_length}), \mathit{short\_length})_t}
- * \quad\text{where}\quad
- * \Delta_t = \mathit{source}_t - \mathit{source}_{t-1}
- * @warmup `na` on the first bar and until `source` has changed; the first
- * change that is not `0` gives exactly `1` or `-1`. With both lengths `1`, it
- * is also `na` on each bar where `source` did not change. An `na` value leaves
- * out the changes into and out of it: on those bars the first smoothings keep
- * their values and the second ones still move toward them.
+ * \begin{aligned}
+ * \Delta_t &= \mathit{source}_t - \mathit{source}_{t-1} \\
+ * (a_t, b_t) &= \begin{cases}
+ * \bigl(\mathrm{ema}(\Delta, \mathit{long\_length})_t,\
+ * \mathrm{ema}(|\Delta|, \mathit{long\_length})_t\bigr)
+ * & \Delta_t \ne \text{na} \\
+ * (\text{na}, \text{na}) & \text{otherwise}
+ * \end{cases} \\
+ * \mathrm{tsi}_t &= \frac{\mathrm{ema}(a, \mathit{short\_length})_t}
+ * {\mathrm{ema}(b, \mathit{short\_length})_t}
+ * \end{aligned}
+ * @warmup `na` until a bar-to-bar change of `source` is known and not `0`;
+ * that change gives exactly `1` or `-1`. With both lengths `1`, it is also
+ * `na` on each bar where `source` did not change. An `na` value leaves out
+ * the changes into and out of it, so the index keeps its value on that bar
+ * and the next.
  * @example
- * The first change gives 1 at index 1. At index 2 the smoothed change is 1
- * and the smoothed absolute change `5 / 3`, so the index is 0.6.
+ * The first change gives 1 at index 1, and at index 2 the smoothed change, 1,
+ * over the smoothed absolute change, `5 / 3`, gives 0.6. The close is missing
+ * at index 5, so the index keeps its value there and at index 6.
  * ```tea
  * emit "close" close
  * emit "tsi" ta.tsi(close, 2, 3)
@@ -977,8 +1007,9 @@ export cmo(float series, int length) =>
  * 2,11
  * 3,14
  * 4,13
- * 5,13
+ * 5,
  * 6,16
+ * 7,15
  * ```
  * @see ta.ema
  * @see ta.cmo
@@ -1180,8 +1211,10 @@ export wpr(int length) =>
  * N_t = \sum_{i \in K_t,\ \Delta_{t-i} < 0} F_{t-i} \\
  * \mathrm{mfi}_t &= 100 - \frac{100}{1 + P_t / N_t}
  * \end{aligned}
- * @warmup `na` on the first `length` bars, and when no bar in the window fell;
- * `0` when bars fell but none rose.
+ * @warmup `na` on the first `length` bars, and when the bars in the window
+ * that fell have a total flow of `0`, as when none fell or their volume is
+ * `0`. It is `0` when the bars that rose have a total flow of `0` but those
+ * that fell do not.
  * @example
  * At index 4 the 3-bar window has one rising bar with a flow of `12 * 100` and
  * one falling bar with `11 * 200`, so the index is
@@ -1227,30 +1260,36 @@ export mfi(float series, int length) =>
  * signal line and the histogram.
  *
  * The MACD line is the fast {@link ta.ema} of `source` minus the slow one,
- * the signal line is the {@link ta.ema} of the MACD line, and the histogram is
- * the MACD line minus the signal line.
+ * the signal line is the {@link ta.ema} of the MACD line over the bars where
+ * `source` is known, and the histogram is the MACD line minus the signal
+ * line.
  *
  * @param source Series to measure, usually {@link close}.
- * @param fastlen Length of the fast average in bars, at least 1.
- * @param slowlen Length of the slow average in bars, at least 1.
- * @param siglen Length of the signal line's average in bars, at least 1.
+ * @param fastlen Length of the fast average in bars, at least 1. It must be
+ * a value known when the script starts, such as a constant or an input.
+ * @param slowlen Length of the slow average in bars, at least 1. It must be
+ * a value known when the script starts, such as a constant or an input.
+ * @param siglen Length of the signal line's average in bars, at least 1. It
+ * must be a value known when the script starts, such as a constant or an
+ * input.
  * @returns `[float, float, float]`: the MACD line, the signal line and the
  * histogram.
  * @formula
  * \begin{aligned}
  * \mathrm{macd}_t &= \mathrm{ema}(\mathit{source}, \mathit{fastlen})_t -
  * \mathrm{ema}(\mathit{source}, \mathit{slowlen})_t \\
- * \mathrm{signal}_t &= \mathrm{ema}(\mathrm{macd}, \mathit{siglen})_t \\
+ * \mathrm{signal}_t &= \mathrm{ema}(y, \mathit{siglen})_t, \qquad
+ * y_t = \begin{cases} \mathrm{macd}_t & \mathit{source}_t \ne \text{na} \\
+ * \text{na} & \text{otherwise} \end{cases} \\
  * \mathrm{histogram}_t &= \mathrm{macd}_t - \mathrm{signal}_t
  * \end{aligned}
  * @warmup All three are `na` before the first known value of `source` and `0`
  * on it, because each average starts from its first value. On a bar where
- * `source` is `na`, the MACD line keeps its value and the signal line still
- * moves toward it.
+ * `source` is `na`, all three keep their values.
  * @example
  * All three are 0 on the first bar, and at index 1 the fast average is 12 and
- * the slow one 11.5, so the MACD line is 0.5. At index 4 the close is
- * missing: the MACD line keeps its value and the signal line moves toward it.
+ * the slow one 11.5, so the MACD line is 0.5. The close is missing at index 4,
+ * so all three keep their values there.
  * ```tea
  * [macdLine, signalLine, histogram] = ta.macd(close, 2, 3, 2)
  * emit "close" close
@@ -1291,30 +1330,41 @@ export macd(float source, simple int fastlen, simple int slowlen, simple int sig
  * Directional Index (ADX), each from `0` to `100`.
  *
  * On each bar, the rise of {@link high} is the upward move and the fall of
- * {@link low} the downward move; only the larger of the two counts, and only
- * when it is positive. Each move is smoothed with {@link ta.rma} over
- * `diLength` bars and divided by {@link ta.atr} over the same bars, as a
- * percentage, giving +DI and -DI. ADX is `100` times the {@link ta.rma}, over
- * `adxSmoothing` bars, of the absolute difference of +DI and -DI divided by
- * their sum.
+ * {@link low} the downward move; only the larger of the two is kept, and only
+ * when it is positive. Each move and the true range ({@link ta.tr}) are
+ * smoothed with {@link ta.rma} over `diLength` bars, and each smoothed move as
+ * a percentage of the smoothed true range gives +DI and -DI. A bar counts
+ * toward these three averages only when its high and low and the previous
+ * bar's high, low and close are all known, so the first bar never counts.
+ * ADX is `100` times the {@link ta.rma}, over `adxSmoothing` bars, of the
+ * absolute difference of +DI and -DI divided by their sum.
  *
- * @param diLength Smoothing length for +DI and -DI in bars, at least 1.
- * @param adxSmoothing Smoothing length for ADX in bars, at least 1.
+ * +DI and -DI leave `0` to `100` only when a close lies above its bar's high
+ * or below its low.
+ *
+ * @param diLength Smoothing length for +DI and -DI in bars, at least 1. It
+ * must be a value known when the script starts, such as a constant or an
+ * input.
+ * @param adxSmoothing Smoothing length for ADX in bars, at least 1. It must
+ * be a value known when the script starts, such as a constant or an input.
  * @returns `[float, float, float]`: +DI, -DI and ADX.
  * @formula
  * \begin{aligned}
  * u_t &= \mathit{high}_t - \mathit{high}_{t-1}, \qquad
- * d_t = \mathit{low}_{t-1} - \mathit{low}_t \\
+ * d_t = \mathit{low}_{t-1} - \mathit{low}_t, \qquad
+ * r_t = \mathrm{tr}(\text{false})_t \\
  * p_t &= \begin{cases} u_t & u_t > d_t \text{ and } u_t > 0 \\
- * 0 & \text{otherwise, including when } u_t \text{ or } d_t \text{ is na}
+ * 0 & \text{otherwise} \end{cases}, \qquad
+ * m_t = \begin{cases} d_t & d_t > u_t \text{ and } d_t > 0 \\
+ * 0 & \text{otherwise} \end{cases} \\
+ * (\hat{p}_t, \hat{m}_t, \hat{r}_t) &= \begin{cases}
+ * (p_t, m_t, r_t) & u_t, d_t, r_t \ne \text{na} \\
+ * (\text{na}, \text{na}, \text{na}) & \text{otherwise}
  * \end{cases} \\
- * m_t &= \begin{cases} d_t & d_t > u_t \text{ and } d_t > 0 \\
- * 0 & \text{otherwise, including when } u_t \text{ or } d_t \text{ is na}
- * \end{cases} \\
- * q^{+}_t &= \frac{100 \cdot \mathrm{rma}(p, \mathit{diLength})_t}
- * {\mathrm{atr}(\mathit{diLength})_t}, \qquad
- * q^{-}_t = \frac{100 \cdot \mathrm{rma}(m, \mathit{diLength})_t}
- * {\mathrm{atr}(\mathit{diLength})_t} \\
+ * q^{+}_t &= \frac{100 \cdot \mathrm{rma}(\hat{p}, \mathit{diLength})_t}
+ * {\mathrm{rma}(\hat{r}, \mathit{diLength})_t}, \qquad
+ * q^{-}_t = \frac{100 \cdot \mathrm{rma}(\hat{m}, \mathit{diLength})_t}
+ * {\mathrm{rma}(\hat{r}, \mathit{diLength})_t} \\
  * \mathrm{DI}^{\pm}_t &= \begin{cases} q^{\pm}_t & q^{\pm}_t \ne \text{na} \\
  * \mathrm{DI}^{\pm}_{t-1} & \text{otherwise} \end{cases} \\
  * \mathrm{ADX}_t &= 100 \cdot \mathrm{rma}(x, \mathit{adxSmoothing})_t,
@@ -1322,20 +1372,17 @@ export macd(float source, simple int fastlen, simple int slowlen, simple int sig
  * {\mathrm{DI}^{+}_t + \mathrm{DI}^{-}_t},
  * \text{ or } 0 \text{ when both are } 0
  * \end{aligned}
- * @warmup +DI and -DI are `na` until {@link ta.atr} over `diLength` bars is
- * known and not `0`. That ATR is known once `diLength` bars have a known high
- * and low, so the first `diLength - 1` bars are always `na`, and it is `0`
- * until a bar's true range ({@link ta.tr}) is not `0`. After that +DI and -DI
- * keep their values on a bar where the ATR is `0`. ADX is `na` until
- * `adxSmoothing` values of +DI and -DI are known. Both moves count as `0` on
- * a bar where the change of {@link high} or {@link low} is `na`: the first
- * bar, and a bar with a missing high or low and the bar after it. After a
- * missing {@link close}, the next bar's true range is its high minus its low,
- * so +DI or -DI can pass `100`.
+ * @warmup +DI and -DI are `na` until `diLength` bars have counted and a
+ * counted bar has a true range other than `0`, so always on the first
+ * `diLength` bars. After that, on a bar that does not count or where the
+ * smoothed true range is `0`, they keep their values and ADX still averages
+ * them. ADX is `na` until `adxSmoothing` values of +DI and -DI are known.
  * @example
- * +DI and -DI start at index 2, where the smoothed upward and downward moves
- * are both `2 / 3` and the ATR is 3, so both are about 22.22. ADX starts at
- * index 3, once two values of +DI and -DI are known.
+ * +DI and -DI start at index 3, the third bar that counts: the smoothed moves,
+ * `4 / 3` up and `2 / 3` down, as percentages of the smoothed true range,
+ * `11 / 3`, are about 36.36 and 18.18. The missing close at index 5 keeps
+ * index 6 from counting, so +DI and -DI keep their values there while ADX
+ * still moves.
  * ```tea
  * [plusDI, minusDI, adx] = ta.dmi(3, 2)
  * emit "high" high
@@ -1352,11 +1399,11 @@ export macd(float source, simple int fastlen, simple int slowlen, simple int sig
  * 2,11,7,10
  * 3,13,9,12
  * 4,12,8,9
- * 5,15,10,14
+ * 5,15,10,
  * 6,14,9,10
  * 7,16,11,15
  * ```
- * @see ta.atr
+ * @see ta.tr
  * @see ta.rma
  * @category Momentum
  */
@@ -1369,8 +1416,9 @@ export dmi(simple int diLength, simple int adxSmoothing) =>
 	down = -change(low)
 	trueRange = tr(false)
 	// A bar counts toward all three averages or none: only when both moves
-	// and the true range are known. The true range is at least either move,
-	// so +DI and -DI stay within 0 and 100.
+	// and the true range are known. When each close lies within its bar's low
+	// and high, the true range is at least either move, so +DI and -DI stay
+	// within 0 and 100.
 	known = not (na(up) or na(down) or na(trueRange))
 	trur = rma(known ? trueRange : na, diLength)
 	rawPlus = 100 * rma(known ? (up > down and up > 0 ? up : 0.0) : na, diLength) / trur
@@ -1390,13 +1438,15 @@ export dmi(simple int diLength, simple int adxSmoothing) =>
  * previous close.
  *
  * It measures how far price moved during the bar, counting a gap from the
- * previous {@link close}. When that close lies between this bar's {@link low}
- * and {@link high}, the true range is `high - low`. It is in price units.
- * {@link ta.atr} averages it.
+ * previous {@link close}, which comes from the bar before even when the call
+ * did not run on that bar. When that close lies between this bar's
+ * {@link low} and {@link high}, the true range is `high - low`. It is in
+ * price units. {@link ta.atr} averages it. Pine Script's variable `ta.tr` is
+ * the same as `ta.tr(false)`.
  *
  * @param handle_na Result when the previous close is `na`, as on the first
- * bar: `true` gives `high - low`; `false` gives `na`. Pine Script's
- * variable `ta.tr` is `ta.tr(false)`.
+ * bar: `true` gives `high - low`; `false` gives `na`. It must be known when
+ * the script starts, such as a constant or an input.
  * @returns `float`: the true range.
  * @formula
  * \mathrm{tr}_t = \begin{cases}
@@ -1420,7 +1470,7 @@ export dmi(simple int diLength, simple int adxSmoothing) =>
  * emit "high" high
  * emit "low" low
  * emit "close" close
- * emit "tr" ta.tr(true)
+ * emit "tr(true)" ta.tr(true)
  * emit "tr(false)" ta.tr(false)
  * ```
  * ```csv
@@ -1449,7 +1499,8 @@ export tr(simple bool handle_na) =>
  * which each bar moves the average `1 / length` of the way toward the new true
  * range ({@link ta.tr}). The first bar's true range is `high - low`.
  *
- * @param length Smoothing length in bars, at least 1.
+ * @param length Smoothing length in bars, at least 1. It must be known when
+ * the script starts, such as a constant or an input.
  * @returns `float`: the average true range.
  * @formula
  * \mathrm{atr}_t = \mathrm{rma}(\mathrm{tr}(\text{true}), \mathit{length})_t
@@ -1649,8 +1700,8 @@ export variance(float source, int length, bool biased = true) =>
  * window is `na`. With `biased` set to `false`, also `na` when only one value
  * in the window is known.
  * @example
- * At indexes 3 to 5 the closes alternate between 10 and 12, each 1 from their
- * mean of 11, so the 4-bar standard deviation is 1. The windows that hold the
+ * At indexes 3 to 5 each 4-bar window holds two 10s and two 12s, each 1 from
+ * their mean of 11, so the standard deviation is 1. The windows that hold the
  * 18 at index 6 give 3.
  * ```tea
  * emit "close" close
@@ -1685,8 +1736,7 @@ export stdev(float source, int length, bool biased = true) =>
  *
  * @param source Series to measure, such as {@link close}.
  * @param length Number of bars in the window, at least 1.
- * @returns `float`, or `int` for an `int` source: the highest value in the
- * window minus the lowest.
+ * @returns `float`: the highest value in the window minus the lowest.
  * @formula
  * \begin{aligned}
  * \mathrm{range}_t &= \max_{i \in K_t} \mathit{source}_{t-i}
@@ -1714,11 +1764,13 @@ export stdev(float source, int length, bool biased = true) =>
  * 6,9
  * 7,10
  * ```
+ * @pine Pine's manual gives an `int` result for an `int` source; Tea's
+ * result is always `float`.
  * @see ta.highest
  * @see ta.lowest
  * @category Statistics
  */
-export range(source, int length) =>
+export range(float source, int length) =>
 	if not (length >= 1)
 		runtime.error("ta.range: length must be at least 1")
 	highest(source, length) - lowest(source, length)
@@ -1734,7 +1786,8 @@ export range(source, int length) =>
  *
  * @param series Series to measure, usually {@link close}.
  * @param length Number of bars in the window, at least 1.
- * @param mult Band distance in standard deviations, such as `2`.
+ * @param mult Band distance in standard deviations, such as `2`. It must be
+ * known when the script starts, such as a constant or an input.
  * @returns `[float, float, float]`: the middle band, the upper band and the
  * lower band.
  * @formula
@@ -1791,7 +1844,8 @@ export bb(float series, int length, simple float mult) =>
  *
  * @param series Series to measure, usually {@link close}.
  * @param length Number of bars in the window, at least 1.
- * @param mult Band distance in standard deviations, such as `2`.
+ * @param mult Band distance in standard deviations, such as `2`. It must be
+ * known when the script starts, such as a constant or an input.
  * @returns `float`: the width in percent of the middle band.
  * @formula
  * \mathrm{bbw}_t = 100 \cdot \frac{2 \cdot \mathit{mult}
@@ -1839,10 +1893,13 @@ export bbw(float series, int length, simple float mult) =>
  * average range is an exponential average, not {@link ta.atr}.
  *
  * @param series Series to average, usually {@link close}.
- * @param length Smoothing length in bars for both averages, at least 1.
- * @param mult Band distance in average ranges, such as `2`.
+ * @param length Smoothing length in bars for both averages, at least 1. It
+ * must be known when the script starts, such as a constant or an input.
+ * @param mult Band distance in average ranges, such as `2`. It must be known
+ * when the script starts, such as a constant or an input.
  * @param useTrueRange `true`, the default, measures each bar's range with
- * `ta.tr(false)`; `false` uses `high - low`.
+ * `ta.tr(false)`; `false` uses `high - low`. It must be known when the script
+ * starts, such as a constant or an input.
  * @returns `[float, float, float]`: the middle line, the upper band and the
  * lower band.
  * @formula
@@ -1905,13 +1962,17 @@ export kc(float series, simple int length, simple float mult, simple bool useTru
  * Unlike {@link ta.bbw}, it is not multiplied by `100`.
  *
  * @param series Series to average, usually {@link close}.
- * @param length Smoothing length in bars for both averages, at least 1.
- * @param mult Band distance in average ranges, such as `2`.
+ * @param length Smoothing length in bars for both averages, at least 1. It
+ * must be known when the script starts, such as a constant or an input.
+ * @param mult Band distance in average ranges, such as `2`. It must be known
+ * when the script starts, such as a constant or an input.
  * @param useTrueRange `true`, the default, measures each bar's range with
- * `ta.tr(false)`; `false` uses `high - low`.
+ * `ta.tr(false)`; `false` uses `high - low`. It must be known when the script
+ * starts, such as a constant or an input.
  * @returns `float`: the width as a fraction of the middle line.
  * @formula
- * \mathrm{kcw}_t = \frac{\mathit{upper}_t - \mathit{lower}_t}{\mathit{middle}_t}
+ * \mathrm{kcw}_t = \frac{\mathit{upper}_t - \mathit{lower}_t}
+ *   {\mathit{middle}_t}
  * \quad\text{where}\quad
  * [\mathit{middle}, \mathit{upper}, \mathit{lower}]
  *   = \mathrm{kc}(\mathit{series}, \mathit{length}, \mathit{mult},
@@ -1961,7 +2022,8 @@ export kcw(float series, simple int length, simple float mult, simple bool useTr
  * turns down when `close` falls below it.
  *
  * @param factor Band distance in average true ranges, such as `3`.
- * @param atrPeriod Length of the {@link ta.atr}, at least 1.
+ * @param atrPeriod Length of the {@link ta.atr}, at least 1. It must be known
+ * when the script starts, such as a constant or an input.
  * @returns `[float, int]`: the line, then the direction: `-1` in an uptrend
  * and `1` in a downtrend.
  * @formula
@@ -2053,12 +2115,16 @@ export supertrend(float factor, simple int atrPeriod) =>
  * Parabolic SAR (stop and reverse): a trailing stop level that follows the
  * trend and speeds up as the trend makes new extremes.
  *
- * The trend starts on the bar where {@link bar_index} is `1`. If
- * {@link close} rose from the bar before, it is an uptrend: the level starts
- * at the previous bar's {@link low} and the extreme point at this bar's
- * {@link high}. Otherwise it is a downtrend: the level starts at the previous
- * bar's high and the extreme point at this bar's low. The acceleration factor
- * starts at `start`. Then each bar, from that one on, takes these steps:
+ * A bar counts when the call runs on it and its {@link high}, {@link low} and
+ * {@link close} are all known. On a bar with a missing price the level holds.
+ * Below, "the previous bar" means the latest earlier bar that counts.
+ *
+ * The trend starts on the second bar that counts. If the close rose from the
+ * previous bar, it is an uptrend: the level starts at the previous bar's low
+ * and the extreme point at this bar's high. Otherwise it is a downtrend: the
+ * level starts at the previous bar's high and the extreme point at this bar's
+ * low. The acceleration factor starts at `start`. Then each bar that counts,
+ * from that one on, takes these steps:
  *
  * 1. The level moves toward the extreme point by the acceleration factor
  *    times the distance between them.
@@ -2072,59 +2138,65 @@ export supertrend(float factor, simple int atrPeriod) =>
  *    `inc`, up to `max`.
  * 4. If the trend is now up, the level is lowered to the lowest low of the
  *    previous two bars if it is above it; if it is now down, the level is
- *    raised to their highest high if it is below it. On the bar where
- *    `bar_index` is `1`, only the previous bar counts.
+ *    raised to their highest high if it is below it. On the bar where the
+ *    trend starts, there is only one previous bar.
  *
  * Step 2 compares the bar with the level from step 1, before step 4.
  *
- * @param start Initial acceleration factor, such as `0.02`.
+ * @param start Initial acceleration factor, such as `0.02`. It must be known
+ * when the script starts, such as a constant or an input.
  * @param inc Increase of the acceleration factor at each new extreme point,
- * such as `0.02`.
- * @param max Largest acceleration factor, such as `0.2`.
+ * such as `0.02`. It must be known when the script starts, such as a constant
+ * or an input.
+ * @param max Largest acceleration factor, such as `0.2`. It must be known when
+ * the script starts, such as a constant or an input.
  * @returns `float`: the stop level.
  * @formula
  * \begin{aligned}
- * S^{*}_t &= S_{t-1} + a_{t-1} \cdot (E_{t-1} - S_{t-1}) \\[4pt]
+ * S^{*}_t &= S_p + a_p \cdot (E_p - S_p) \\[4pt]
  * \text{uptrend:}\quad S_t &= \begin{cases}
- *   \max(E_{t-1}, \mathit{high}_t, \mathit{high}_{t-1}, \mathit{high}_{t-2})
+ *   \max(E_p, \mathit{high}_t, \mathit{high}_p, \mathit{high}_q)
  *     & S^{*}_t > \mathit{low}_t \text{ (turns down)} \\
- *   \min(S^{*}_t, \mathit{low}_{t-1}, \mathit{low}_{t-2}) & \text{otherwise}
+ *   \min(S^{*}_t, \mathit{low}_p, \mathit{low}_q) & \text{otherwise}
  * \end{cases} \\
  * (E_t, a_t) &= \begin{cases}
  *   (\mathit{low}_t, \mathit{start}) & S^{*}_t > \mathit{low}_t \\
- *   (\mathit{high}_t, \min(a_{t-1} + \mathit{inc}, \mathit{max}))
- *     & \mathit{high}_t > E_{t-1} \\
- *   (E_{t-1}, a_{t-1}) & \text{otherwise}
+ *   (\mathit{high}_t, \min(a_p + \mathit{inc}, \mathit{max}))
+ *     & \mathit{high}_t > E_p \\
+ *   (E_p, a_p) & \text{otherwise}
  * \end{cases} \\[4pt]
  * \text{downtrend:}\quad S_t &= \begin{cases}
- *   \min(E_{t-1}, \mathit{low}_t, \mathit{low}_{t-1}, \mathit{low}_{t-2})
+ *   \min(E_p, \mathit{low}_t, \mathit{low}_p, \mathit{low}_q)
  *     & S^{*}_t < \mathit{high}_t \text{ (turns up)} \\
- *   \max(S^{*}_t, \mathit{high}_{t-1}, \mathit{high}_{t-2}) & \text{otherwise}
+ *   \max(S^{*}_t, \mathit{high}_p, \mathit{high}_q) & \text{otherwise}
  * \end{cases} \\
  * (E_t, a_t) &= \begin{cases}
  *   (\mathit{high}_t, \mathit{start}) & S^{*}_t < \mathit{high}_t \\
- *   (\mathit{low}_t, \min(a_{t-1} + \mathit{inc}, \mathit{max}))
- *     & \mathit{low}_t < E_{t-1} \\
- *   (E_{t-1}, a_{t-1}) & \text{otherwise}
+ *   (\mathit{low}_t, \min(a_p + \mathit{inc}, \mathit{max}))
+ *     & \mathit{low}_t < E_p \\
+ *   (E_p, a_p) & \text{otherwise}
  * \end{cases} \\[4pt]
- * \text{on bar 1:}\quad (S_{t-1}, E_{t-1}, a_{t-1}) &= \begin{cases}
- *   (\mathit{low}_0, \mathit{high}_1, \mathit{start}) \text{, uptrend}
- *     & \mathit{close}_1 > \mathit{close}_0 \\
- *   (\mathit{high}_0, \mathit{low}_1, \mathit{start}) \text{, downtrend}
+ * \text{where the trend starts:}\quad (S_p, E_p, a_p) &= \begin{cases}
+ *   (\mathit{low}_p, \mathit{high}_t, \mathit{start}) \text{, uptrend}
+ *     & \mathit{close}_t > \mathit{close}_p \\
+ *   (\mathit{high}_p, \mathit{low}_t, \mathit{start}) \text{, downtrend}
  *     & \text{otherwise}
  * \end{cases} \\
- * & \text{and the terms for bar } t-2 \text{ are left out}
+ * & \text{and the terms for bar } q \text{ are left out} \\[4pt]
+ * \text{where}\quad & p, q \text{: the latest and second-latest earlier bars
+ *   that count} \\
+ * & S_t = S_{t-1} \text{ on a bar with a missing high, low or close}
  * \end{aligned}
- * @warmup `na` on the first bar, and on every bar if this call does not run on
- * the bar where `bar_index` is `1`. A missing high or low makes the level `na`
- * when the level is set from it, where the trend starts or turns, or limited
- * by it in step 4, such as a missing low on either of the previous two bars in
- * an uptrend. Once the level is `na`, it stays `na`.
+ * @warmup `na` until the second bar on which the call runs with a known high,
+ * low and close: only on the first bar for a call that runs on every bar with
+ * no missing price. After that it is never `na`: a bar with a missing high,
+ * low or close keeps the previous level. An `na` `start`, `inc` or `max`
+ * gives `na` on every bar.
  * @example
- * The close rises at index 1, so the trend starts up from the previous low, 8,
- * and new highs raise the factor to 0.2 as the level climbs to 8.8 and 9.64.
- * At index 5 the low of 9 is below the level, so the trend turns down and the
- * level jumps to 14, the highest high of the uptrend.
+ * The close rises at index 1, so the trend starts up from the previous low,
+ * 8; the level then climbs, holding at 8.8 at index 4, where the low is
+ * missing. At index 6 the low of 9 is below the level, so the trend turns
+ * down and the level jumps to 14, the highest high of the uptrend.
  * ```tea
  * emit "high" high
  * emit "low" low
@@ -2137,12 +2209,18 @@ export supertrend(float factor, simple int atrPeriod) =>
  * 1,11,9,10.5
  * 2,12,10,11.5
  * 3,13,11,12.5
- * 4,14,12,13.5
- * 5,13,9,9.5
- * 6,12,8,8.5
- * 7,11,7,7.5
- * 8,10,6,6.5
+ * 4,13,,12.8
+ * 5,14,12,13.5
+ * 6,13,9,9.5
+ * 7,12,8,8.5
+ * 8,11,7,7.5
+ * 9,10,6,6.5
  * ```
+ * @pine The reference code in Pine's manual starts the trend on the bar where
+ * `bar_index` is `1` and does not skip bars with a missing price. Tea starts
+ * on the second bar on which the call runs with a known high, low and close,
+ * and skips the bars without them; when every price is known and the call
+ * runs on every bar, the levels are the same.
  * @see ta.supertrend
  * @category Trailing stops
  */
@@ -2211,7 +2289,8 @@ export sar(simple float start, simple float inc, simple float max) =>
 		high1 := high
 		low1 := low
 		close1 := close
-	result
+	// An na setting would give levels from na arithmetic, so it gives na.
+	na(start) or na(inc) or na(max) ? na : result
 
 // ---- crosses and conditions -------------------------------------------------
 
@@ -2380,7 +2459,8 @@ export cross(float source1, float source2) =>
  * \land (K_t \ne \varnothing)
  * \land \Big(\mathit{source}_t > \max_{i \in K_t} \mathit{source}_{t-i}\Big)
  * \quad\text{where}\quad
- * K_t = \{\, i : 1 \le i \le \mathit{length},\ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * K_t = \{\, i : 1 \le i \le \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
  * @warmup `false` on the first `length` bars. After that, `false` when
  * `source` is `na` or every previous value in the window is `na`.
  * @example
@@ -2438,7 +2518,8 @@ export rising(float source, int length) =>
  * \land (K_t \ne \varnothing)
  * \land \Big(\mathit{source}_t < \min_{i \in K_t} \mathit{source}_{t-i}\Big)
  * \quad\text{where}\quad
- * K_t = \{\, i : 1 \le i \le \mathit{length},\ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * K_t = \{\, i : 1 \le i \le \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
  * @warmup `false` on the first `length` bars. After that, `false` when
  * `source` is `na` or every previous value in the window is `na`.
  * @example
@@ -2534,12 +2615,12 @@ export barssince(bool condition) =>
  *
  * @param source Series to search, usually {@link high}.
  * @param length Number of bars in the window, at least 1.
- * @returns `float`, or `int` for an `int` source: the highest value in the
- * window.
+ * @returns `float`: the highest value in the window.
  * @formula
  * \mathrm{highest}_t = \max_{i \in K_t} \mathit{source}_{t-i}
  * \quad\text{where}\quad
- * K_t = \{\, i : 0 \le i < \mathit{length},\ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * K_t = \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
  * @warmup `na` on the first `length - 1` bars, and when every value in the
  * window is `na`.
  * @example
@@ -2585,12 +2666,12 @@ export highest(float source, int length) =>
  *
  * @param source Series to search, usually {@link low}.
  * @param length Number of bars in the window, at least 1.
- * @returns `float`, or `int` for an `int` source: the lowest value in the
- * window.
+ * @returns `float`: the lowest value in the window.
  * @formula
  * \mathrm{lowest}_t = \min_{i \in K_t} \mathit{source}_{t-i}
  * \quad\text{where}\quad
- * K_t = \{\, i : 0 \le i < \mathit{length},\ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * K_t = \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
  * @warmup `na` on the first `length - 1` bars, and when every value in the
  * window is `na`.
  * @example
@@ -2646,7 +2727,8 @@ export lowest(float source, int length) =>
  * -\min \Big\{\, i \in K_t :
  * \mathit{source}_{t-i} = \max_{j \in K_t} \mathit{source}_{t-j} \,\Big\}
  * \quad\text{where}\quad
- * K_t = \{\, i : 0 \le i < \mathit{length},\ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * K_t = \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
  * @warmup `na` on the first `length - 1` bars, and when every value in the
  * window is `na`.
  * @example
@@ -2704,7 +2786,8 @@ export highestbars(float source, int length) =>
  * -\min \Big\{\, i \in K_t :
  * \mathit{source}_{t-i} = \min_{j \in K_t} \mathit{source}_{t-j} \,\Big\}
  * \quad\text{where}\quad
- * K_t = \{\, i : 0 \le i < \mathit{length},\ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * K_t = \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
  * @warmup `na` on the first `length - 1` bars, and when every value in the
  * window is `na`.
  * @example
@@ -2752,53 +2835,56 @@ export lowestbars(float source, int length) =>
  * `na`.
  *
  * The pivot must be strictly higher than each of these `leftbars + rightbars`
- * neighbors: a tie with any of them is not a pivot. Neighbors that are `na`,
- * including those before the first bar, are left out, so a value with fewer
- * known neighbors, or none, can still be a pivot. A pivot is reported
- * `rightbars` bars after its own bar, so `bar_index - rightbars` is the bar
- * index of the pivot.
+ * neighbors: a tie with any of them is not a pivot. Neighbors that are `na`
+ * are left out, but at least one must be known, unless `leftbars` and
+ * `rightbars` are both `0`. A pivot is reported `rightbars` bars after its own
+ * bar, so `bar_index - rightbars` is the bar index of the pivot.
  *
  * @param source Series to search, usually {@link high}.
  * @param leftbars Number of bars before the pivot that must be lower, at
  * least 0.
  * @param rightbars Number of bars after the pivot that must be lower, at
  * least 0.
- * @returns `float`, or `int` for an `int` source: the pivot's value on the bar
- * that reports it, otherwise `na`.
+ * @returns `float`: the pivot's value on the bar that reports it, otherwise
+ * `na`.
  * @formula
  * \begin{aligned}
  * \mathrm{pivothigh}_t &=
  * \begin{cases}
- * p_t & \text{if } \mathit{source}_{t-i} < p_t \text{ for every } i \in J_t \\
+ * p_t & \text{if } (J_t \ne \varnothing \lor n = 0)
+ * \text{ and } \mathit{source}_{t-i} < p_t \text{ for every } i \in J_t \\
  * \text{na} & \text{otherwise}
  * \end{cases} \\
- * p_t &= \mathit{source}_{t-\mathit{rightbars}} \\
- * J_t &= \{\, i : 0 \le i \le \mathit{leftbars} + \mathit{rightbars},
- * \ i \ne \mathit{rightbars},\ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * p_t &= \mathit{source}_{t-\mathit{rightbars}}, \qquad
+ * n = \mathit{leftbars} + \mathit{rightbars} \\
+ * J_t &= \{\, i : 0 \le i \le n,\ i \ne \mathit{rightbars},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
  * \end{aligned}
- * @warmup `na` on the first `rightbars` bars, and on a bar where the value
- * `rightbars` bars back is `na`.
+ * @warmup `na` on the first `leftbars + rightbars` bars, so a value with fewer
+ * than `leftbars` bars before it is never a pivot. After that, `na` on a bar
+ * where the value `rightbars` bars back is `na`, or where that value has
+ * neighbors and all of them are `na`.
  * @example
- * Pivots with two bars on each side, reported two bars late: index 3 reports
- * the 13 at index 1, which has one bar on its left, and index 11 reports the
- * 12 at index 9, whose missing neighbor at index 8 is left out. The equal
- * highs at indices 5 and 6 are not pivots.
+ * Two bars on each side, so the first four bars are `na` and the 13 at index
+ * 0, with no bars before it, is never a pivot. Index 5 reports the 12 at index
+ * 3, leaving out the missing high at index 4, and index 11 reports the 15 at
+ * index 9; the equal highs at indices 6 and 7 are not pivots.
  * ```tea
  * emit "high" high
  * emit "pivothigh" ta.pivothigh(high, 2, 2)
  * ```
  * ```csv
  * time,high
- * 0,10
- * 1,13
- * 2,11
+ * 0,13
+ * 1,11
+ * 2,10
  * 3,12
- * 4,10
- * 5,14
+ * 4,
+ * 5,11
  * 6,14
- * 7,11
- * 8,
- * 9,12
+ * 7,14
+ * 8,10
+ * 9,15
  * 10,9
  * 11,8
  * ```
@@ -2811,9 +2897,9 @@ export lowestbars(float source, int length) =>
  */
 export pivothigh(float source, int leftbars, int rightbars) =>
 	if not (leftbars >= 0)
-		runtime.error("ta.pivothigh: leftbars must not be negative")
+		runtime.error("ta.pivothigh: leftbars must be at least 0")
 	if not (rightbars >= 0)
-		runtime.error("ta.pivothigh: rightbars must not be negative")
+		runtime.error("ta.pivothigh: rightbars must be at least 0")
 	var int bars = 0
 	bars += 1
 	pivot = source[rightbars]
@@ -2835,53 +2921,56 @@ export pivothigh(float source, int leftbars, int rightbars) =>
  * `na`.
  *
  * The pivot must be strictly lower than each of these `leftbars + rightbars`
- * neighbors: a tie with any of them is not a pivot. Neighbors that are `na`,
- * including those before the first bar, are left out, so a value with fewer
- * known neighbors, or none, can still be a pivot. A pivot is reported
- * `rightbars` bars after its own bar, so `bar_index - rightbars` is the bar
- * index of the pivot.
+ * neighbors: a tie with any of them is not a pivot. Neighbors that are `na`
+ * are left out, but at least one must be known, unless `leftbars` and
+ * `rightbars` are both `0`. A pivot is reported `rightbars` bars after its own
+ * bar, so `bar_index - rightbars` is the bar index of the pivot.
  *
  * @param source Series to search, usually {@link low}.
  * @param leftbars Number of bars before the pivot that must be higher, at
  * least 0.
  * @param rightbars Number of bars after the pivot that must be higher, at
  * least 0.
- * @returns `float`, or `int` for an `int` source: the pivot's value on the bar
- * that reports it, otherwise `na`.
+ * @returns `float`: the pivot's value on the bar that reports it, otherwise
+ * `na`.
  * @formula
  * \begin{aligned}
  * \mathrm{pivotlow}_t &=
  * \begin{cases}
- * p_t & \text{if } \mathit{source}_{t-i} > p_t \text{ for every } i \in J_t \\
+ * p_t & \text{if } (J_t \ne \varnothing \lor n = 0)
+ * \text{ and } \mathit{source}_{t-i} > p_t \text{ for every } i \in J_t \\
  * \text{na} & \text{otherwise}
  * \end{cases} \\
- * p_t &= \mathit{source}_{t-\mathit{rightbars}} \\
- * J_t &= \{\, i : 0 \le i \le \mathit{leftbars} + \mathit{rightbars},
- * \ i \ne \mathit{rightbars},\ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * p_t &= \mathit{source}_{t-\mathit{rightbars}}, \qquad
+ * n = \mathit{leftbars} + \mathit{rightbars} \\
+ * J_t &= \{\, i : 0 \le i \le n,\ i \ne \mathit{rightbars},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
  * \end{aligned}
- * @warmup `na` on the first `rightbars` bars, and on a bar where the value
- * `rightbars` bars back is `na`.
+ * @warmup `na` on the first `leftbars + rightbars` bars, so a value with fewer
+ * than `leftbars` bars before it is never a pivot. After that, `na` on a bar
+ * where the value `rightbars` bars back is `na`, or where that value has
+ * neighbors and all of them are `na`.
  * @example
- * Pivots with two bars on each side, reported two bars late: index 3 reports
- * the 7 at index 1, which has one bar on its left, and index 11 reports the 8
- * at index 9, whose missing neighbor at index 8 is left out. The equal lows at
- * indices 5 and 6 are not pivots.
+ * Two bars on each side, so the first four bars are `na` and the 7 at index 0,
+ * with no bars before it, is never a pivot. Index 5 reports the 8 at index 3,
+ * leaving out the missing low at index 4, and index 11 reports the 5 at index
+ * 9; the equal lows at indices 6 and 7 are not pivots.
  * ```tea
  * emit "low" low
  * emit "pivotlow" ta.pivotlow(low, 2, 2)
  * ```
  * ```csv
  * time,low
- * 0,10
- * 1,7
- * 2,9
+ * 0,7
+ * 1,9
+ * 2,10
  * 3,8
- * 4,10
- * 5,6
+ * 4,
+ * 5,9
  * 6,6
- * 7,9
- * 8,
- * 9,8
+ * 7,6
+ * 8,10
+ * 9,5
  * 10,11
  * 11,12
  * ```
@@ -2894,9 +2983,9 @@ export pivothigh(float source, int leftbars, int rightbars) =>
  */
 export pivotlow(float source, int leftbars, int rightbars) =>
 	if not (leftbars >= 0)
-		runtime.error("ta.pivotlow: leftbars must not be negative")
+		runtime.error("ta.pivotlow: leftbars must be at least 0")
 	if not (rightbars >= 0)
-		runtime.error("ta.pivotlow: rightbars must not be negative")
+		runtime.error("ta.pivotlow: rightbars must be at least 0")
 	var int bars = 0
 	bars += 1
 	pivot = source[rightbars]
@@ -3053,7 +3142,7 @@ export min(float source) =>
  *
  * @param source1 First series, such as {@link close}.
  * @param source2 Second series, paired with `source1` bar by bar.
- * @param length Number of bars in the window, at least 1.
+ * @param length Number of bars in the window, at least 2.
  * @returns `float`: Pearson's correlation coefficient, from `-1` to `1`.
  * @formula
  * \begin{aligned}
@@ -3070,7 +3159,6 @@ export min(float source) =>
  * \end{aligned}
  * @warmup `na` on the first `length - 1` bars, when fewer than two bars in the
  * window have both values, and when either series is constant over those bars.
- * A `length` of 1 therefore always gives `na`.
  * @example
  * At index 2 the close and the volume both rise by equal steps, so the
  * correlation is 1; at index 4 the close falls by equal steps while the volume

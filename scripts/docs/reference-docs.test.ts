@@ -447,3 +447,41 @@ describe('in-app reference manual', () => {
     expect(color?.symbols).toContain('color.red');
   });
 });
+
+describe('reference coverage', () => {
+  test('every ta export has a formula, its warm-up and a runnable example', () => {
+    const ta = teaLibraries().find(library => library.name === 'ta')!;
+    const missing = ta.exports.flatMap(item => [
+      ...(item.doc?.formula == null ? [`ta.${item.name}: @formula`] : []),
+      ...(item.doc?.warmup == null ? [`ta.${item.name}: @warmup`] : []),
+      ...((item.doc?.examples.length ?? 0) === 0
+        ? [`ta.${item.name}: @example`]
+        : []),
+    ]);
+    expect(missing).toEqual([]);
+  });
+
+  test('every strategy function and coordinator method has a runnable example', () => {
+    const missing = teaLibraries()
+      .filter(library =>
+        ['trade', 'broker', 'portfolio'].includes(library.name),
+      )
+      .flatMap(library =>
+        library.exports.flatMap(item => [
+          ...(item.kind === 'function' && (item.doc?.examples.length ?? 0) === 0
+            ? [`${library.name}.${item.name}`]
+            : []),
+          ...(library.name === 'trade' && item.kind === 'type'
+            ? item.members
+                .filter(
+                  member =>
+                    member.kind === 'method' &&
+                    (member.doc?.examples.length ?? 0) === 0,
+                )
+                .map(member => `${library.name}.${item.name}.${member.name}`)
+            : []),
+        ]),
+      );
+    expect(missing).toEqual([]);
+  });
+});
