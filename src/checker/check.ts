@@ -410,21 +410,7 @@ class Checker {
       );
     } else {
       name = libraryDeclarationName(headers[0]) ?? name;
-      if (!isSourcePackageName(name)) {
-        this.error(
-          headers[0].pos,
-          `library name '${name}' is not a valid source identifier`,
-        );
-      }
-      if (file.stmtList[0] !== headers[0]) {
-        this.error(
-          headers[0].pos,
-          'library() declaration must be the first statement in a library package',
-        );
-      }
-      for (const duplicate of headers.slice(1)) {
-        this.error(duplicate.pos, 'duplicate library() declaration');
-      }
+      this.checkLibraryHeaders(file, headers, name);
     }
 
     const scope = new Scope(null);
@@ -438,9 +424,42 @@ class Checker {
     return state.pkg;
   }
 
+  /**
+   * The rules every library() header follows, whether the library is imported
+   * or opened on its own: a valid name, first in the file, and only one.
+   */
+  private checkLibraryHeaders(
+    file: syntax.File,
+    headers: readonly syntax.Stmt[],
+    name: string,
+  ): void {
+    if (!isSourcePackageName(name)) {
+      this.error(
+        headers[0]!.pos,
+        `library name '${name}' is not a valid source identifier`,
+      );
+    }
+    if (file.stmtList[0] !== headers[0]) {
+      this.error(
+        headers[0]!.pos,
+        'library() declaration must be the first statement in a library package',
+      );
+    }
+    for (const duplicate of headers.slice(1)) {
+      this.error(duplicate.pos, 'duplicate library() declaration');
+    }
+  }
+
   checkPackage(): CheckedPackage {
     const file = this.rootState.pkg.files[0];
     this.withPackage(this.rootState, () => {
+      if (this.rootLibrary !== null) {
+        this.checkLibraryHeaders(
+          file,
+          file.stmtList.filter(isLibraryDeclaration),
+          this.rootLibrary,
+        );
+      }
       this.checkImports(file);
       this.declareMembers(file);
       bindFileNames(file, this.scope, this.info);

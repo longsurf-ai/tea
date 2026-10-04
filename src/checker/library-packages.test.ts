@@ -85,6 +85,20 @@ describe('source library headers and package declarations', () => {
     expect(hasMessage(invalidName, 'not a valid source identifier')).toBe(true);
   });
 
+  test('a library checked on its own follows the same header rules', () => {
+    // As `tea build lib.tea` or an editor checks the library itself.
+    expect(
+      messages(checkText('library("not-addressable")\nexport value() => 1\n')),
+    ).toEqual([
+      "library name 'not-addressable' is not a valid source identifier",
+    ]);
+    expect(
+      messages(
+        checkText('library("lib")\nlibrary("lib")\nexport value() => 1\n'),
+      ),
+    ).toEqual(['duplicate library() declaration']);
+  });
+
   test('rejects duplicate functions, import aliases, and cross-kind names', () => {
     const duplicateFunctions = checkWith(
       {
