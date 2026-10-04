@@ -403,9 +403,8 @@ describe('semantic ownership', () => {
         type: 'map<string, int>',
       },
       {
-        source:
-          'x = request.security("X", "D", [close, [true, array.new<int>()]])',
-        type: '[float, [bool, array<int>]]',
+        source: 'x = request.security("X", "D", [close, array.new<int>()])',
+        type: '[float, array<int>]',
       },
       {
         source: 'x = request.security("X", "D", [close, true])',
@@ -1128,5 +1127,12 @@ describe('tuple declarations', () => {
     expect(checkText('[a, b] = [close, open]\nemit "a" a\n').errors).toEqual(
       [],
     );
+  });
+
+  test('a tuple cannot be an element of another tuple', () => {
+    const result = checkText('[a, b] = [[1, 2], 3]\nemit "b" b\n');
+    expect(result.errors.map(error => error.msg)).toEqual([
+      'a tuple element cannot itself be a tuple',
+    ]);
   });
 });

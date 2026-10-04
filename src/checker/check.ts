@@ -3738,6 +3738,11 @@ class Checker {
       if (tvs[i].type.kind === TypeKind.Na) {
         this.error(elem.pos, 'na tuple element requires a concrete type');
       }
+      // A tuple only carries values to a destructuring declaration, so it
+      // cannot be one of another tuple's values.
+      if (tvs[i].type.kind === TypeKind.Tuple) {
+        this.error(elem.pos, 'a tuple element cannot itself be a tuple');
+      }
     });
     return {
       type: {kind: TypeKind.Tuple, elems: tvs.map(tv => tv.type)},
