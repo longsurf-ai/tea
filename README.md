@@ -53,7 +53,8 @@ folding for `.tea` files. See its README for packaging and installation.
 Language documentation and Mintlify configuration live in [docs](docs).
 Use a supported LTS Node release (20, 22, or 24), then run `npm run docs:dev`
 while writing or `npm run docs:check` to validate references, navigation, and
-the packaged offline build. The hosted documentation root is `/docs`.
+the packaged offline build. The documentation is published at
+https://longsurf-ai.github.io/tea/ from `main`.
 
 The Reference under `docs/reference` is generated from the code it describes:
 document a library export with a `/** */` doc comment directly above it, a native
@@ -63,9 +64,9 @@ language pages in `docs/reference/language` are written by hand. Run
 `npm run docs:generate` after changing any of these; `npm test` fails when a
 public name is undocumented or an example does not compile.
 
-The Docusaurus shell in [website](website) renders the version-matched offline
-site. `tea docs` serves that packaged build locally without running a site
-builder or requiring network access.
+The Docusaurus shell in [website](website) renders that site and the
+version-matched offline build. `tea docs` serves the packaged build locally
+without running a site builder or requiring network access.
 
 See [Program IR](docs/ir.md), [Memory model](docs/memory-model.md), and
 [Runtime](docs/runtime.md) for compiler and execution contracts.
