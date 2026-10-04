@@ -108,7 +108,9 @@ async function inspectCSV(path: string): Promise<Schema> {
           record.some(header => typeof header !== 'string' || header === '') ||
           new Set(record).size !== record.length
         ) {
-          throw new Error(`CSV source '${path}' has an invalid header`);
+          throw new Error(
+            `CSV source '${path}' needs a header of distinct, non-empty column names`,
+          );
         }
         schema = new Schema(
           record.map(header => new Field(header, new Utf8(), false)),
@@ -179,7 +181,12 @@ function csvCell(field: Field, value: unknown): unknown {
     if (DataType.isFloat(type)) return Number.NaN;
     throw new TypeError(`CSV field '${field.name}' is empty`);
   }
-  if (DataType.isInt(type) && type.bitWidth === 64) return BigInt(value);
+  if (DataType.isInt(type) && type.bitWidth === 64) {
+    if (!/^\s*-?\d+\s*$/.test(value)) {
+      throw new TypeError(`CSV field '${field.name}' must be an integer`);
+    }
+    return BigInt(value);
+  }
   if (
     DataType.isFloat(type) ||
     DataType.isInt(type) ||

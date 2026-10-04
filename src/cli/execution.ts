@@ -6,6 +6,7 @@ import {i} from '../api/clock';
 import {createNode} from '../api/node';
 import {CSVSource} from '../api/source';
 import {DataStream} from '../api/stream';
+import {OperationalError} from '../base/operational-error';
 import {Errors} from '../base/print';
 import {generate} from '../codegen/codegen';
 import {compileToProgram} from '../compiler';
@@ -73,7 +74,12 @@ export async function runCommand(
   if (options.trace) {
     for (const line of traceDeclaration(declaration)) host.print(line);
   }
-  const stream = await csvBatchStream(input);
+  const stream = await csvBatchStream(input).catch((error: unknown) => {
+    // A missing file or a malformed cell is the user's input to fix.
+    throw new OperationalError(
+      `cannot read input '${input}': ${(error as {code?: unknown}).code === 'ENOENT' ? 'no such file' : (error as Error).message}`,
+    );
+  });
 
   let executionMs = 0;
   let result;

@@ -101,6 +101,19 @@ describe('CLI Batch Recipe', () => {
     expect(result.stderr).toBe("tea: unknown parameter option '--missing'\n");
     expect(result.stderr).not.toContain('\n    at ');
   });
+  test('a missing script or an unreadable CSV is one line, without a stack', () => {
+    const script = invokeCli('run', 'missing.tea', '-i', DATA);
+    expect(script.status).toBe(1);
+    expect(script.stderr).toBe(
+      "tea: cannot read 'missing.tea': no such file\n",
+    );
+    const input = invokeCli('run', SOURCE, '-i', 'missing.csv');
+    expect(input.status).toBe(1);
+    expect(input.stderr).toBe(
+      "tea: cannot read input 'missing.csv': no such file\n",
+    );
+  });
+
   test('reports semantic parameter failures from module.bind without a stack', () => {
     const result = invokeCli('run', SOURCE, '-i', DATA, '--scale', '5');
     expect(result.status).toBe(1);

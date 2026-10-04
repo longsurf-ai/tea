@@ -116,7 +116,7 @@ describe('CSVSource', () => {
   test('rejects duplicate headers during discovery', async () => {
     await expect(
       CSVSource.open(fixture('duplicate-header.csv')),
-    ).rejects.toThrow('has an invalid header');
+    ).rejects.toThrow('needs a header of distinct, non-empty column names');
   });
 
   test('does not open an explicitly typed source before subscription', async () => {

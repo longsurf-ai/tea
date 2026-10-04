@@ -1,6 +1,7 @@
 // Purpose: Source loading and import resolution — the driver-side half of the import seam: parses entry files, resolves import paths through a registry, loads source packages recursively with cycle detection, and hands the checker an Importer. Never reports user errors; the checker positions them.
 
 import {readFileSync} from 'node:fs';
+import {OperationalError} from '../base/operational-error';
 import {dirname, join, normalize} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {formatPos, newFileBase} from '../base/pos';
@@ -23,13 +24,31 @@ export function loadPackage(
   return inputs.map(input => {
     const {filename, source} =
       typeof input === 'string'
-        ? {filename: input, source: readFileSync(input, 'utf8')}
+        ? {filename: input, source: readEntry(input)}
         : input;
     captured?.set(filename, source);
     return parse(newFileBase(filename), source, (pos, msg) =>
       errors.errorAt(pos, msg),
     );
   });
+}
+
+/**
+ * The text of an entry file named by path. A file that cannot be read is the
+ * caller's input, not a compiler defect, so it fails as an
+ * {@link OperationalError} that a command line can print as one line.
+ */
+function readEntry(filename: string): string {
+  try {
+    return readFileSync(filename, 'utf8');
+  } catch (error) {
+    const code = (error as {code?: unknown}).code;
+    throw new OperationalError(
+      code === 'ENOENT'
+        ? `cannot read '${filename}': no such file`
+        : `cannot read '${filename}': ${(error as Error).message}`,
+    );
+  }
 }
 
 /**
