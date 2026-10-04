@@ -72,7 +72,8 @@ different branch when f32 and f64 straddle a comparison boundary; the reported
 numeric profile must remain visible to callers performing parity analysis.
 
 NaN is Tea's numeric missing value and crosses the GPU boundary through a
-canonical quiet-NaN bit pattern. Infinity is rejected.
+canonical quiet-NaN bit pattern. A series value outside the f32 range, such as
+Infinity or `1e39`, is rejected when a binding is prepared.
 
 Every artifact states this profile in its `numeric` field:
 
@@ -85,7 +86,11 @@ Every artifact states this profile in its `numeric` field:
   to allow when comparing decoded results with the CPU's f64 results. Tea
   publishes it for parity checks but does not apply it.
 
-Int constants outside the i32 range and any use of `%` fail lowering.
+Values that leave the f32 or i32 range also differ: a float result beyond
+about `3.4e38` is `na` on the GPU where the CPU keeps it, and `math.floor` of a
+float outside the i32 range, such as `math.floor(close * 1e9)`, is `na` on the
+GPU where the CPU returns the whole number. Int constants outside the i32
+range and any use of `%` fail lowering.
 
 ## Physical allocation
 
@@ -144,11 +149,17 @@ dynamic requests, request-child execution, drawings, and other builtin mappings
 that the backend cannot derive exactly. `plot()` and the other visual calls
 build `visual.*` structs, so a script that uses them fails with
 `struct-reference-lowering-unimplemented`; write its numeric outputs with
-`emit` instead.
+`emit` instead. That is not always enough: a `ta.*` call whose length comes
+from an input, such as `ta.sma(close, length)` with `length = input.int(14)`,
+fails with `native-call-lowering-unimplemented`, because the function's length
+check calls `runtime.error`, which has no GPU rule; only a constant length
+lowers. A function that returns a tuple, such as `ta.macd` or `ta.bb`, fails
+with `tuple-layout-unimplemented`.
 
 Checking a script needs no device: `analyzeWgslEligibility(program)` returns
 the eligibility ledger, and `compileProgramToWgsl(program)` returns either the
-artifact or `status: 'staged-unsupported'` with issue codes. Neither, nor
+artifact or `status: 'staged-unsupported'` with issue codes. The result names
+only the first blocker, so check again after each change. Neither, nor
 `createGpuExecution`, is a package entry yet: they live in the source tree, in
 `src/codegen/wgsl` and `src/runtime/gpu`.
 
