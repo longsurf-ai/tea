@@ -179,8 +179,10 @@ export interface Node {
    *
    * A run failure, such as a runtime error in the script or an input row that
    * breaks the rules of `bind()`, ends the run and reaches every observer
-   * through `error()`; `to()` does not throw it. If an observer's `next()`
-   * throws, the run stops and every observer receives that error.
+   * through `error()`; `to()` does not throw it. An observer without `error()`
+   * gets the failure as an unhandled RxJS error, which Node.js reports as an
+   * uncaught exception. If an observer's `next()` throws, the run stops and
+   * every observer receives that error.
    *
    * Unsubscribing the returned Subscription removes only that observer. The
    * run continues, even with no observers left, until its inputs end or
@@ -480,7 +482,12 @@ class TeaNode implements Node {
           this.deliveryFailure.error(error);
         }
       },
-      error: error => observer.error?.(error),
+      // Without an error callback RxJS reports the failure as unhandled,
+      // rather than dropping it.
+      error:
+        observer.error === undefined
+          ? undefined
+          : error => observer.error!(error),
       complete: () => observer.complete?.(),
     });
   }
