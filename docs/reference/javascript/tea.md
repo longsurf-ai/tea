@@ -1022,15 +1022,16 @@ Without the field, every row is final.
 
 Streams bound to one Node are paired by position: their first rows form
 the first input row, and so on, and the run ends when any of them ends.
-Paired rows must agree on `time`, when both have one, and on
-`provisional`. Streams with a regular [`Clock`](./tea.md#clock) must share it.
+A single DataStream bound after every series is bound supplies none: it
+only drives the steps, and is paired in like the others. Paired rows must
+agree on `time`, when both have one, and on `provisional`. Streams with a
+regular [`Clock`](./tea.md#clock) must share it.
 
 Throws [`BindError`](./tea.md#binderror) for an unknown parameter or a value the input
 does not accept, a key or path that matches no declaration or more than
-one, a series that is already bound, a single DataStream when every
-series is already bound, a schema that lacks a series or gives it the
-wrong type, a `provisional` field that is not a non-nullable `Bool`, or
-clocks that disagree. Throws `Error` when this Node is
+one, a series that is already bound, a schema that lacks a series or gives
+it the wrong type, a `provisional` field that is not a non-nullable
+`Bool`, or clocks that disagree. Throws `Error` when this Node is
 disposed. Rows that break the time or pairing rules fail the run instead,
 and the error reaches observers through `error()`.
 
