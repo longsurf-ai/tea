@@ -28,7 +28,9 @@ export function applyTransparency(color: string, transp: number): string {
   if (clamped === 0) {
     return base;
   }
-  const alpha = Math.round((100 - clamped) * 2.55)
+  // `* 255 / 100` is exact for whole percentages where `* 2.55` is not:
+  // 50 gives 127.5, which rounds to 128, not 127.4999… rounding to 127.
+  const alpha = Math.round(((100 - clamped) * 255) / 100)
     .toString(16)
     .toUpperCase();
   return alpha === 'FF' ? base : base + alpha.padStart(2, '0');

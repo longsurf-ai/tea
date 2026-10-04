@@ -41,3 +41,10 @@ test('Color preserves the frontend color arithmetic and transparency', () => {
     );
   }
 });
+
+test('transparency maps whole percentages to the nearest alpha byte', () => {
+  // 50% is 127.5 of 255 and rounds up; a 2.55 factor computed 127.4999….
+  expect(applyTransparency('#FF0000', 50)).toBe('#FF000080');
+  expect(applyTransparency('#FF0000', 10)).toBe('#FF0000E6');
+  expect(applyTransparency('#FF0000', 80)).toBe('#FF000033');
+});
