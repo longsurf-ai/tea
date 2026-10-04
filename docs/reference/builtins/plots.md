@@ -46,6 +46,9 @@ Available in every script without an import or namespace.
 
 | Name                            | Description                                                                                                         |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| [`plotsegment`](#plotsegment)   | Writes a complete line segment description at this bar, without creating a drawing handle.                          |
+| [`plotzone`](#plotzone)         | Writes a bounded time/value region at this bar, without creating a persistent box.                                  |
+| [`plotcandle`](#plotcandle)     | Writes one OHLC candle description on each bar for a host to render.                                                |
 | [`plot`](#plot)                 | Writes one value per bar, with options for drawing it, to a named output.                                           |
 | [`hline`](#hline)               | Writes a horizontal line at a fixed level to a named output.                                                        |
 | [`fill`](#fill)                 | Writes a shaded area between two plots or horizontal lines to a named output.                                       |
@@ -62,7 +65,176 @@ Available in every script without an import or namespace.
 | [`format.*`](#format)           | Number formats for the `format` argument of [`plot`](./plots.md#plot).                                              |
 | [`position.*`](#position)       | Anchor positions for tables on a chart.                                                                             |
 
+## Geometry descriptions
+
+### plotsegment
+
+Writes a complete line segment description at this bar, without creating a drawing handle.
+
+```tea
+plotsegment(
+    const string id,
+    series int start_time,
+    series float start_value,
+    series int end_time,
+    series float end_value,
+    series color color = na,
+    const int linewidth = 1,
+    const string text = "",
+    const bool force_overlay = false
+)
+```
+
+| Parameter       | Type           | Default | Description                                          |
+| --------------- | -------------- | ------- | ---------------------------------------------------- |
+| `id`            | `const string` |         | Name of the output this call writes.                 |
+| `start_time`    | `series int`   |         | Start timestamp in milliseconds.                     |
+| `start_value`   | `series float` |         | Value at the first endpoint.                         |
+| `end_time`      | `series int`   |         | End timestamp in milliseconds.                       |
+| `end_value`     | `series float` |         | Value at the second endpoint.                        |
+| `color`         | `series color` | `na`    | Segment color; `na` lets the host choose.            |
+| `linewidth`     | `const int`    | `1`     | Stroke width in pixels.                              |
+| `text`          | `const string` | `""`    | Short explanation shown with the segment.            |
+| `force_overlay` | `const bool`   | `false` | Whether the host places this on the main price pane. |
+
+**Returns:** The segment description written to `id`.
+
+Times use the same milliseconds as `time`. A conditional call describes an
+event when it becomes known; a segment may connect earlier confirmed points.
+Repeating a description represents the currently active segment. The host
+owns drawing and keeps the bar of confirmation separate from the endpoints.
+
+**Example:** A line between the previous and current close.
+
+```tea
+plotsegment("leg", time[1], close[1], time, close, color=color.teal)
+```
+
+```csv
+time,close
+1704153600000,10
+1704240000000,12
+```
+
+**Output:**
+
+```text
+index  leg
+0      {"id":"leg","start_time":"na","start_value":"na","end_time":1704153600000,"end_value":10,"color":{"r":0,"g":137,"b":123,"a":255},"linewidth":1,"text":"","force_overlay":false}
+1      {"id":"leg","start_time":1704153600000,"start_value":10,"end_time":1704240000000,"end_value":12,"color":{"r":0,"g":137,"b":123,"a":255},"linewidth":1,"text":"","force_overlay":false}
+```
+
+### plotzone
+
+Writes a bounded time/value region at this bar, without creating a persistent box.
+
+```tea
+plotzone(
+    const string id,
+    series int start_time,
+    series int end_time,
+    series float top,
+    series float bottom,
+    series color color = na,
+    const string text = "",
+    const bool force_overlay = false
+)
+```
+
+| Parameter       | Type           | Default | Description                                          |
+| --------------- | -------------- | ------- | ---------------------------------------------------- |
+| `id`            | `const string` |         | Name of the output this call writes.                 |
+| `start_time`    | `series int`   |         | Region start timestamp in milliseconds.              |
+| `end_time`      | `series int`   |         | Region end timestamp in milliseconds.                |
+| `top`           | `series float` |         | Upper value boundary.                                |
+| `bottom`        | `series float` |         | Lower value boundary.                                |
+| `color`         | `series color` | `na`    | Region fill color, including transparency.           |
+| `text`          | `const string` | `""`    | Short explanation shown with the region.             |
+| `force_overlay` | `const bool`   | `false` | Whether the host places this on the main price pane. |
+
+**Returns:** The region description written to `id`.
+
+For an active region, emit its complete current geometry on every bar,
+including its original start time. A host replaces repeated descriptions
+of the same region; it does not replay creation or deletion commands.
+
+**Example:** A region between two fixed price levels.
+
+```tea
+plotzone("range", time[1], time, 12.0, 8.0, color=color.new(color.teal, 80))
+```
+
+```csv
+time
+1704153600000
+1704240000000
+```
+
+**Output:**
+
+```text
+index  range
+0      {"id":"range","start_time":"na","end_time":1704153600000,"top":12,"bottom":8,"color":{"r":0,"g":137,"b":123,"a":51},"text":"","force_overlay":false}
+1      {"id":"range","start_time":1704153600000,"end_time":1704240000000,"top":12,"bottom":8,"color":{"r":0,"g":137,"b":123,"a":51},"text":"","force_overlay":false}
+```
+
 ## Plots
+
+### plotcandle
+
+Writes one OHLC candle description on each bar for a host to render.
+
+```tea
+plotcandle(
+    const string id,
+    series float open_value,
+    series float high_value,
+    series float low_value,
+    series float close_value,
+    const string title = "",
+    series color color = na,
+    series color wickcolor = na,
+    series color bordercolor = na
+)
+```
+
+| Parameter     | Type           | Default | Description                          |
+| ------------- | -------------- | ------- | ------------------------------------ |
+| `id`          | `const string` |         | Name of the output this call writes. |
+| `open_value`  | `series float` |         | Opening value.                       |
+| `high_value`  | `series float` |         | Highest value.                       |
+| `low_value`   | `series float` |         | Lowest value.                        |
+| `close_value` | `series float` |         | Closing value.                       |
+| `title`       | `const string` | `""`    | Display name for this candle series. |
+| `color`       | `series color` | `na`    | Candle body color.                   |
+| `wickcolor`   | `series color` | `na`    | Wick color.                          |
+| `bordercolor` | `series color` | `na`    | Body border color.                   |
+
+**Returns:** The candle description written to `id`.
+
+Values may be derived (for example Heikin-Ashi), so the script's title and
+explanation must distinguish those values from the underlying market bars.
+A missing OHLC value describes a gap.
+
+**Example:** Describe the supplied OHLC bars.
+
+```tea
+plotcandle("bars", open, high, low, close, color=color.teal)
+```
+
+```csv
+time,open,high,low,close
+1704153600000,10,12,9,11
+1704240000000,11,14,10,13
+```
+
+**Output:**
+
+```text
+index  bars
+0      {"id":"bars","open":10,"high":12,"low":9,"close":11,"title":"","color":{"r":0,"g":137,"b":123,"a":255},"wickcolor":null,"bordercolor":null}
+1      {"id":"bars","open":11,"high":14,"low":10,"close":13,"title":"","color":{"r":0,"g":137,"b":123,"a":255},"wickcolor":null,"bordercolor":null}
+```
 
 ### plot
 
@@ -257,25 +429,27 @@ plotshape(
     const string size = "auto",
     const bool editable = true,
     input int show_last = 0,
-    const string display = "all"
+    const string display = "all",
+    const bool force_overlay = false
 )
 ```
 
-| Parameter   | Type           | Default      | Description                                                                                                                                                   |
-| ----------- | -------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`        | `const string` |              | Name of the output this call writes.                                                                                                                          |
-| `series`    | `series bool`  |              | Whether the shape appears on the current bar.                                                                                                                 |
-| `title`     | `const string` | `""`         | Display name, separate from `id`.                                                                                                                             |
-| `style`     | `const string` | `"circle"`   | Shape to draw: a `shape.*` constant such as [`shape.circle`](./plots.md#shape), [`shape.triangleup`](./plots.md#shape) or [`shape.xcross`](./plots.md#shape). |
-| `location`  | `const string` | `"abovebar"` | Where to place the shape: a `location.*` constant such as [`location.abovebar`](./plots.md#location) or [`location.belowbar`](./plots.md#location).           |
-| `color`     | `series color` | `na`         | Shape color on the current bar; `na` records no color, leaving the choice to the host.                                                                        |
-| `offset`    | `input int`    | `0`          | Number of bars to shift the drawing by: a positive number moves it right, toward later bars, and a negative number left.                                      |
-| `text`      | `const string` | `""`         | Text to show with the shape.                                                                                                                                  |
-| `textcolor` | `series color` | `na`         | Color of `text` on the current bar; `na` records no color, leaving the choice to the host.                                                                    |
-| `size`      | `const string` | `"auto"`     | Shape size: a `size.*` constant such as [`size.auto`](./plots.md#size), [`size.small`](./plots.md#size) or [`size.large`](./plots.md#size).                   |
-| `editable`  | `const bool`   | `true`       | Whether users may edit the output's style in the host.                                                                                                        |
-| `show_last` | `input int`    | `0`          | Number of most recent bars to draw; `0`, the default, sets no limit.                                                                                          |
-| `display`   | `const string` | `"all"`      | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display).                         |
+| Parameter       | Type           | Default      | Description                                                                                                                                                   |
+| --------------- | -------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`            | `const string` |              | Name of the output this call writes.                                                                                                                          |
+| `series`        | `series bool`  |              | Whether the shape appears on the current bar.                                                                                                                 |
+| `title`         | `const string` | `""`         | Display name, separate from `id`.                                                                                                                             |
+| `style`         | `const string` | `"circle"`   | Shape to draw: a `shape.*` constant such as [`shape.circle`](./plots.md#shape), [`shape.triangleup`](./plots.md#shape) or [`shape.xcross`](./plots.md#shape). |
+| `location`      | `const string` | `"abovebar"` | Where to place the shape: a `location.*` constant such as [`location.abovebar`](./plots.md#location) or [`location.belowbar`](./plots.md#location).           |
+| `color`         | `series color` | `na`         | Shape color on the current bar; `na` records no color, leaving the choice to the host.                                                                        |
+| `offset`        | `input int`    | `0`          | Number of bars to shift the drawing by: a positive number moves it right, toward later bars, and a negative number left.                                      |
+| `text`          | `const string` | `""`         | Text to show with the shape.                                                                                                                                  |
+| `textcolor`     | `series color` | `na`         | Color of `text` on the current bar; `na` records no color, leaving the choice to the host.                                                                    |
+| `size`          | `const string` | `"auto"`     | Shape size: a `size.*` constant such as [`size.auto`](./plots.md#size), [`size.small`](./plots.md#size) or [`size.large`](./plots.md#size).                   |
+| `editable`      | `const bool`   | `true`       | Whether users may edit the output's style in the host.                                                                                                        |
+| `show_last`     | `input int`    | `0`          | Number of most recent bars to draw; `0`, the default, sets no limit.                                                                                          |
+| `display`       | `const string` | `"all"`      | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display).                         |
+| `force_overlay` | `const bool`   | `false`      | Whether the host places this mark on the main price pane.                                                                                                     |
 
 **Returns:** `visual.Shape`: the description written to `id`, with fields named after the parameters.
 
@@ -302,9 +476,9 @@ time,close
 
 ```text
 index  close  cross
-0      10     {"id":"cross","series":false,"title":"Cross","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
-1      12     {"id":"cross","series":true,"title":"Cross","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
-2      13     {"id":"cross","series":false,"title":"Cross","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
+0      10     {"id":"cross","series":false,"title":"Cross","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all","force_overlay":false}
+1      12     {"id":"cross","series":true,"title":"Cross","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all","force_overlay":false}
+2      13     {"id":"cross","series":false,"title":"Cross","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all","force_overlay":false}
 ```
 
 **See also:** [`plotchar`](./plots.md#plotchar)
@@ -327,25 +501,27 @@ plotchar(
     const string size = "auto",
     const bool editable = true,
     input int show_last = 0,
-    const string display = "all"
+    const string display = "all",
+    const bool force_overlay = false
 )
 ```
 
-| Parameter   | Type           | Default      | Description                                                                                                                                             |
-| ----------- | -------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`        | `const string` |              | Name of the output this call writes.                                                                                                                    |
-| `series`    | `series bool`  |              | Whether the character appears on the current bar.                                                                                                       |
-| `title`     | `const string` | `""`         | Display name, separate from `id`.                                                                                                                       |
-| `char`      | `const string` | `""`         | Character to draw.                                                                                                                                      |
-| `location`  | `const string` | `"abovebar"` | Where to place the character: a `location.*` constant such as [`location.abovebar`](./plots.md#location) or [`location.belowbar`](./plots.md#location). |
-| `color`     | `series color` | `na`         | Character color on the current bar; `na` records no color, leaving the choice to the host.                                                              |
-| `offset`    | `input int`    | `0`          | Number of bars to shift the drawing by: a positive number moves it right, toward later bars, and a negative number left.                                |
-| `text`      | `const string` | `""`         | Text to show with the character.                                                                                                                        |
-| `textcolor` | `series color` | `na`         | Color of `text` on the current bar; `na` records no color, leaving the choice to the host.                                                              |
-| `size`      | `const string` | `"auto"`     | Character size: a `size.*` constant such as [`size.auto`](./plots.md#size), [`size.small`](./plots.md#size) or [`size.large`](./plots.md#size).         |
-| `editable`  | `const bool`   | `true`       | Whether users may edit the output's style in the host.                                                                                                  |
-| `show_last` | `input int`    | `0`          | Number of most recent bars to draw; `0`, the default, sets no limit.                                                                                    |
-| `display`   | `const string` | `"all"`      | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display).                   |
+| Parameter       | Type           | Default      | Description                                                                                                                                             |
+| --------------- | -------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`            | `const string` |              | Name of the output this call writes.                                                                                                                    |
+| `series`        | `series bool`  |              | Whether the character appears on the current bar.                                                                                                       |
+| `title`         | `const string` | `""`         | Display name, separate from `id`.                                                                                                                       |
+| `char`          | `const string` | `""`         | Character to draw.                                                                                                                                      |
+| `location`      | `const string` | `"abovebar"` | Where to place the character: a `location.*` constant such as [`location.abovebar`](./plots.md#location) or [`location.belowbar`](./plots.md#location). |
+| `color`         | `series color` | `na`         | Character color on the current bar; `na` records no color, leaving the choice to the host.                                                              |
+| `offset`        | `input int`    | `0`          | Number of bars to shift the drawing by: a positive number moves it right, toward later bars, and a negative number left.                                |
+| `text`          | `const string` | `""`         | Text to show with the character.                                                                                                                        |
+| `textcolor`     | `series color` | `na`         | Color of `text` on the current bar; `na` records no color, leaving the choice to the host.                                                              |
+| `size`          | `const string` | `"auto"`     | Character size: a `size.*` constant such as [`size.auto`](./plots.md#size), [`size.small`](./plots.md#size) or [`size.large`](./plots.md#size).         |
+| `editable`      | `const bool`   | `true`       | Whether users may edit the output's style in the host.                                                                                                  |
+| `show_last`     | `input int`    | `0`          | Number of most recent bars to draw; `0`, the default, sets no limit.                                                                                    |
+| `display`       | `const string` | `"all"`      | Where the output appears: a `display.*` constant such as [`display.all`](./plots.md#display) or [`display.none`](./plots.md#display).                   |
+| `force_overlay` | `const bool`   | `false`      | Whether the host places this mark on the main price pane.                                                                                               |
 
 **Returns:** `visual.Character`: the description written to `id`, with fields named after the parameters.
 
@@ -372,9 +548,9 @@ time,close
 
 ```text
 index  close  higher
-0      10     {"id":"higher","series":false,"title":"Higher","char":"+","location":"abovebar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
-1      12     {"id":"higher","series":true,"title":"Higher","char":"+","location":"abovebar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
-2      11     {"id":"higher","series":false,"title":"Higher","char":"+","location":"abovebar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all"}
+0      10     {"id":"higher","series":false,"title":"Higher","char":"+","location":"abovebar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all","force_overlay":false}
+1      12     {"id":"higher","series":true,"title":"Higher","char":"+","location":"abovebar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all","force_overlay":false}
+2      11     {"id":"higher","series":false,"title":"Higher","char":"+","location":"abovebar","color":null,"offset":0,"text":"","textcolor":null,"size":"auto","editable":true,"show_last":0,"display":"all","force_overlay":false}
 ```
 
 **See also:** [`plotshape`](./plots.md#plotshape)
@@ -622,12 +798,12 @@ time,close
 
 ```text
 index  cross
-0      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
-1      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
-2      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
-3      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
-4      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
-5      {"id":"cross","series":true,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all"}
+0      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all","force_overlay":false}
+1      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all","force_overlay":false}
+2      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all","force_overlay":false}
+3      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all","force_overlay":false}
+4      {"id":"cross","series":false,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all","force_overlay":false}
+5      {"id":"cross","series":true,"title":"","style":"triangleup","location":"belowbar","color":null,"offset":0,"text":"","textcolor":null,"size":"small","editable":true,"show_last":0,"display":"all","force_overlay":false}
 ```
 
 ### size

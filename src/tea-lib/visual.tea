@@ -39,6 +39,137 @@
  */
 library("visual")
 
+struct Segment
+    string id
+    int start_time
+    float start_value
+    int end_time
+    float end_value
+    color color
+    int linewidth
+    string text
+    bool force_overlay
+
+/**
+ * Writes a complete line segment description at this bar, without creating a drawing handle.
+ *
+ * Times use the same milliseconds as `time`. A conditional call describes an
+ * event when it becomes known; a segment may connect earlier confirmed points.
+ * Repeating a description represents the currently active segment. The host
+ * owns drawing and keeps the bar of confirmation separate from the endpoints.
+ *
+ * @param id Name of the output this call writes.
+ * @param start_time Start timestamp in milliseconds.
+ * @param start_value Value at the first endpoint.
+ * @param end_time End timestamp in milliseconds.
+ * @param end_value Value at the second endpoint.
+ * @param color Segment color; `na` lets the host choose.
+ * @param linewidth Stroke width in pixels.
+ * @param text Short explanation shown with the segment.
+ * @param force_overlay Whether the host places this on the main price pane.
+ * @returns The segment description written to `id`.
+ * @example A line between the previous and current close.
+ * ```tea
+ * plotsegment("leg", time[1], close[1], time, close, color=color.teal)
+ * ```
+ * ```csv
+ * time,close
+ * 1704153600000,10
+ * 1704240000000,12
+ * ```
+ * @category Geometry descriptions
+ */
+export plotsegment(const string id, series int start_time, series float start_value, series int end_time, series float end_value, series color color = na, const int linewidth = 1, const string text = "", const bool force_overlay = false) =>
+    p = Segment.new(id, start_time, start_value, end_time, end_value, color, linewidth, text, force_overlay)
+    emit id p
+    return p
+
+struct Zone
+    string id
+    int start_time
+    int end_time
+    float top
+    float bottom
+    color color
+    string text
+    bool force_overlay
+
+/**
+ * Writes a bounded time/value region at this bar, without creating a persistent box.
+ *
+ * For an active region, emit its complete current geometry on every bar,
+ * including its original start time. A host replaces repeated descriptions
+ * of the same region; it does not replay creation or deletion commands.
+ *
+ * @param id Name of the output this call writes.
+ * @param start_time Region start timestamp in milliseconds.
+ * @param end_time Region end timestamp in milliseconds.
+ * @param top Upper value boundary.
+ * @param bottom Lower value boundary.
+ * @param color Region fill color, including transparency.
+ * @param text Short explanation shown with the region.
+ * @param force_overlay Whether the host places this on the main price pane.
+ * @returns The region description written to `id`.
+ * @example A region between two fixed price levels.
+ * ```tea
+ * plotzone("range", time[1], time, 12.0, 8.0, color=color.new(color.teal, 80))
+ * ```
+ * ```csv
+ * time
+ * 1704153600000
+ * 1704240000000
+ * ```
+ * @category Geometry descriptions
+ */
+export plotzone(const string id, series int start_time, series int end_time, series float top, series float bottom, series color color = na, const string text = "", const bool force_overlay = false) =>
+    p = Zone.new(id, start_time, end_time, top, bottom, color, text, force_overlay)
+    emit id p
+    return p
+
+struct Candle
+    string id
+    float open
+    float high
+    float low
+    float close
+    string title
+    color color
+    color wickcolor
+    color bordercolor
+
+/**
+ * Writes one OHLC candle description on each bar for a host to render.
+ *
+ * Values may be derived (for example Heikin-Ashi), so the script's title and
+ * explanation must distinguish those values from the underlying market bars.
+ * A missing OHLC value describes a gap.
+ *
+ * @param id Name of the output this call writes.
+ * @param open_value Opening value.
+ * @param high_value Highest value.
+ * @param low_value Lowest value.
+ * @param close_value Closing value.
+ * @param title Display name for this candle series.
+ * @param color Candle body color.
+ * @param wickcolor Wick color.
+ * @param bordercolor Body border color.
+ * @returns The candle description written to `id`.
+ * @example Describe the supplied OHLC bars.
+ * ```tea
+ * plotcandle("bars", open, high, low, close, color=color.teal)
+ * ```
+ * ```csv
+ * time,open,high,low,close
+ * 1704153600000,10,12,9,11
+ * 1704240000000,11,14,10,13
+ * ```
+ * @category Plots
+ */
+export plotcandle(const string id, series float open_value, series float high_value, series float low_value, series float close_value, const string title = "", series color color = na, series color wickcolor = na, series color bordercolor = na) =>
+    p = Candle.new(id, open_value, high_value, low_value, close_value, title, color, wickcolor, bordercolor)
+    emit id p
+    return p
+
 struct Plot
     string id
     float series
@@ -231,6 +362,7 @@ struct Shape
     bool editable
     int show_last
     string display
+    bool force_overlay
 
 /**
  * Writes on each bar whether to show a shape marker there, with options for drawing it, to a named output.
@@ -275,11 +407,12 @@ struct Shape
  * 1,12
  * 2,13
  * ```
+ * @param force_overlay Whether the host places this mark on the main price pane.
  * @see plotchar
  * @category Shapes and characters
  */
-export plotshape(const string id, series bool series, const string title = "", const string style = "circle", const string location = "abovebar", series color color = na, input int offset = 0, const string text = "", series color textcolor = na, const string size = "auto", const bool editable = true, input int show_last = 0, const string display = "all") =>
-    p = Shape.new(id, series, title, style, location, color, offset, text, textcolor, size, editable, show_last, display)
+export plotshape(const string id, series bool series, const string title = "", const string style = "circle", const string location = "abovebar", series color color = na, input int offset = 0, const string text = "", series color textcolor = na, const string size = "auto", const bool editable = true, input int show_last = 0, const string display = "all", const bool force_overlay = false) =>
+    p = Shape.new(id, series, title, style, location, color, offset, text, textcolor, size, editable, show_last, display, force_overlay)
     emit id p
     return p
 
@@ -297,6 +430,7 @@ struct Character
     bool editable
     int show_last
     string display
+    bool force_overlay
 
 /**
  * Writes on each bar whether to show a character marker there, with options for drawing it, to a named output.
@@ -340,11 +474,12 @@ struct Character
  * 1,12
  * 2,11
  * ```
+ * @param force_overlay Whether the host places this mark on the main price pane.
  * @see plotshape
  * @category Shapes and characters
  */
-export plotchar(const string id, series bool series, const string title = "", const string char = "", const string location = "abovebar", series color color = na, input int offset = 0, const string text = "", series color textcolor = na, const string size = "auto", const bool editable = true, input int show_last = 0, const string display = "all") =>
-    p = Character.new(id, series, title, char, location, color, offset, text, textcolor, size, editable, show_last, display)
+export plotchar(const string id, series bool series, const string title = "", const string char = "", const string location = "abovebar", series color color = na, input int offset = 0, const string text = "", series color textcolor = na, const string size = "auto", const bool editable = true, input int show_last = 0, const string display = "all", const bool force_overlay = false) =>
+    p = Character.new(id, series, title, char, location, color, offset, text, textcolor, size, editable, show_last, display, force_overlay)
     emit id p
     return p
 

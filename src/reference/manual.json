@@ -8,7 +8,7 @@
           "id": "reference/overview",
           "title": "Reading the reference",
           "description": "How to read signatures, formulas and examples, and how a script reaches each name.",
-          "markdown": "The reference documents every name a Tea script can use, the language itself, the `tea` command and the JavaScript API. Each entry gives its syntax, parameters and result, and where they help, a formula, an example with its real output, and how it differs from Pine Script. To learn Tea, start with the Documentation tab.\n\n## Reading signatures\n\nA built-in reads `result name(qualifier type parameter, …)`. The result’s qualifier is shown only when it is fixed, as in `input int input.int(…)`; otherwise the result is as variable as the most variable argument. `= …` marks an optional parameter, whose description says what leaving it out means, and `...` marks one that takes any number of arguments. `int | float` accepts either type. Qualifiers go from least to most variable: `const`, `input`, `simple`, `series` (see [Types and qualifiers](#reference/language/types)).\n\nA function written in Tea, such as `ta.sma` or `trade.nextOpen`, shows its declaration as written: a parameter without a qualifier accepts any qualifier, a parameter without a type accepts any argument the function body can use, and **Returns** names the result type. Methods show their declarations, including the result type.\n\n## Reading formulas\n\nA formula names each value after the parameter it comes from, and a subscript names the bar. The current bar is t, so a value on the current bar and one i bars back read\n\n$$\nx_t = \\texttt{x} \\qquad x_{t-i} = \\texttt{x[i]}\n$$\n\nA value before the first bar is `na`. Each entry’s **Warm-up and na** says when its result is `na`.\n\n## How examples run\n\nEvery example on these pages is a complete program, and the output under it is what the program writes when the reference is built. The program runs as\n\n```bash\ntea run example.tea --input example.csv\n```\n\non the CSV shown with it, or on a single bar whose `time` is 0 when it shows none. The CSV holds only the columns the program reads, and an empty cell is `na`. Each output column is a value the program writes with `emit`, and `index` counts bars from 0. A strategy’s run also writes the broker’s event outputs, such as `broker.FillExecuted`; the examples show only the columns they write themselves.\n\nExamples are illustrations: they show what this version of Tea computes, not values checked against Pine Script.\n\n## Names and imports\n\n| Names | How a script reaches them |\n| --- | --- |\n| `ta.*` | In every script, as `ta.name`. |\n| `geometry.*` | After `import geometry`, as `geometry.name`. |\n| `plot`, `hline`, `fill`, `plotshape`, `plotchar`, `bgcolor`, `barcolor`, `alertcondition`, `alert` | In every script, without an import or a namespace. |\n| `broker.*` | After `import broker`, as `broker.name`. |\n| `portfolio.*` | After `import portfolio`, as `portfolio.name`. |\n| `trade.*` | After `import trade`, as `trade.name`. |\n| `open`, `high`, `low`, `close`, `volume`, `hl2`, `hlc3`, `ohlc4`, `hlcc4` | In every script, without an import or a namespace. |\n| `array.*`, `barstate.*`, `color.*`, `display.*`, `format.*`, `hline.*`, `input.*`, `location.*`, `map.*`, `math.*`, `matrix.*`, `plot.*`, `position.*`, `request.*`, `runtime.*`, `shape.*`, `size.*`, `str.*`, `syminfo.*`, `timeframe.*` | In every script, as `namespace.name`. |"
+          "markdown": "The reference documents every name a Tea script can use, the language itself, the `tea` command and the JavaScript API. Each entry gives its syntax, parameters and result, and where they help, a formula, an example with its real output, and how it differs from Pine Script. To learn Tea, start with the Documentation tab.\n\n## Reading signatures\n\nA built-in reads `result name(qualifier type parameter, …)`. The result’s qualifier is shown only when it is fixed, as in `input int input.int(…)`; otherwise the result is as variable as the most variable argument. `= …` marks an optional parameter, whose description says what leaving it out means, and `...` marks one that takes any number of arguments. `int | float` accepts either type. Qualifiers go from least to most variable: `const`, `input`, `simple`, `series` (see [Types and qualifiers](#reference/language/types)).\n\nA function written in Tea, such as `ta.sma` or `trade.nextOpen`, shows its declaration as written: a parameter without a qualifier accepts any qualifier, a parameter without a type accepts any argument the function body can use, and **Returns** names the result type. Methods show their declarations, including the result type.\n\n## Reading formulas\n\nA formula names each value after the parameter it comes from, and a subscript names the bar. The current bar is t, so a value on the current bar and one i bars back read\n\n$$\nx_t = \\texttt{x} \\qquad x_{t-i} = \\texttt{x[i]}\n$$\n\nA value before the first bar is `na`. Each entry’s **Warm-up and na** says when its result is `na`.\n\n## How examples run\n\nEvery example on these pages is a complete program, and the output under it is what the program writes when the reference is built. The program runs as\n\n```bash\ntea run example.tea --input example.csv\n```\n\non the CSV shown with it, or on a single bar whose `time` is 0 when it shows none. The CSV holds only the columns the program reads, and an empty cell is `na`. Each output column is a value the program writes with `emit`, and `index` counts bars from 0. A strategy’s run also writes the broker’s event outputs, such as `broker.FillExecuted`; the examples show only the columns they write themselves.\n\nExamples are illustrations: they show what this version of Tea computes, not values checked against Pine Script.\n\n## Names and imports\n\n| Names | How a script reaches them |\n| --- | --- |\n| `ta.*` | In every script, as `ta.name`. |\n| `geometry.*` | After `import geometry`, as `geometry.name`. |\n| `plotsegment`, `plotzone`, `plotcandle`, `plot`, `hline`, `fill`, `plotshape`, `plotchar`, `bgcolor`, `barcolor`, `alertcondition`, `alert` | In every script, without an import or a namespace. |\n| `broker.*` | After `import broker`, as `broker.name`. |\n| `portfolio.*` | After `import portfolio`, as `portfolio.name`. |\n| `trade.*` | After `import trade`, as `trade.name`. |\n| `open`, `high`, `low`, `close`, `volume`, `hl2`, `hlc3`, `ohlc4`, `hlcc4` | In every script, without an import or a namespace. |\n| `array.*`, `barstate.*`, `color.*`, `display.*`, `format.*`, `hline.*`, `input.*`, `location.*`, `map.*`, `math.*`, `matrix.*`, `plot.*`, `position.*`, `request.*`, `runtime.*`, `shape.*`, `size.*`, `str.*`, `syminfo.*`, `timeframe.*` | In every script, as `namespace.name`. |"
         },
         {
           "kind": "article",
@@ -1081,6 +1081,207 @@
           "commonParameters": [],
           "entries": [
             {
+              "id": "plotsegment",
+              "symbols": ["plotsegment"],
+              "kind": "function",
+              "category": "Geometry descriptions",
+              "summary": "Writes a complete line segment description at this bar, without creating a drawing handle.",
+              "signatures": [
+                "plotsegment(\n    const string id,\n    series int start_time,\n    series float start_value,\n    series int end_time,\n    series float end_value,\n    series color color = na,\n    const int linewidth = 1,\n    const string text = \"\",\n    const bool force_overlay = false\n)"
+              ],
+              "parameters": [
+                {
+                  "name": "id",
+                  "type": "const string",
+                  "defaultValue": null,
+                  "description": "Name of the output this call writes."
+                },
+                {
+                  "name": "start_time",
+                  "type": "series int",
+                  "defaultValue": null,
+                  "description": "Start timestamp in milliseconds."
+                },
+                {
+                  "name": "start_value",
+                  "type": "series float",
+                  "defaultValue": null,
+                  "description": "Value at the first endpoint."
+                },
+                {
+                  "name": "end_time",
+                  "type": "series int",
+                  "defaultValue": null,
+                  "description": "End timestamp in milliseconds."
+                },
+                {
+                  "name": "end_value",
+                  "type": "series float",
+                  "defaultValue": null,
+                  "description": "Value at the second endpoint."
+                },
+                {
+                  "name": "color",
+                  "type": "series color",
+                  "defaultValue": "na",
+                  "description": "Segment color; `na` lets the host choose."
+                },
+                {
+                  "name": "linewidth",
+                  "type": "const int",
+                  "defaultValue": "1",
+                  "description": "Stroke width in pixels."
+                },
+                {
+                  "name": "text",
+                  "type": "const string",
+                  "defaultValue": "\"\"",
+                  "description": "Short explanation shown with the segment."
+                },
+                {
+                  "name": "force_overlay",
+                  "type": "const bool",
+                  "defaultValue": "false",
+                  "description": "Whether the host places this on the main price pane."
+                }
+              ],
+              "returns": "The segment description written to `id`.",
+              "members": null,
+              "body": "Times use the same milliseconds as `time`. A conditional call describes an\nevent when it becomes known; a segment may connect earlier confirmed points.\nRepeating a description represents the currently active segment. The host\nowns drawing and keeps the bar of confirmation separate from the endpoints.\n\n**Example:** A line between the previous and current close.\n\n```tea\nplotsegment(\"leg\", time[1], close[1], time, close, color=color.teal)\n```\n\n```csv\ntime,close\n1704153600000,10\n1704240000000,12\n```\n\n**Output:**\n\n```text\nindex  leg\n0      {\"id\":\"leg\",\"start_time\":\"na\",\"start_value\":\"na\",\"end_time\":1704153600000,\"end_value\":10,\"color\":{\"r\":0,\"g\":137,\"b\":123,\"a\":255},\"linewidth\":1,\"text\":\"\",\"force_overlay\":false}\n1      {\"id\":\"leg\",\"start_time\":1704153600000,\"start_value\":10,\"end_time\":1704240000000,\"end_value\":12,\"color\":{\"r\":0,\"g\":137,\"b\":123,\"a\":255},\"linewidth\":1,\"text\":\"\",\"force_overlay\":false}\n```"
+            },
+            {
+              "id": "plotzone",
+              "symbols": ["plotzone"],
+              "kind": "function",
+              "category": "Geometry descriptions",
+              "summary": "Writes a bounded time/value region at this bar, without creating a persistent box.",
+              "signatures": [
+                "plotzone(\n    const string id,\n    series int start_time,\n    series int end_time,\n    series float top,\n    series float bottom,\n    series color color = na,\n    const string text = \"\",\n    const bool force_overlay = false\n)"
+              ],
+              "parameters": [
+                {
+                  "name": "id",
+                  "type": "const string",
+                  "defaultValue": null,
+                  "description": "Name of the output this call writes."
+                },
+                {
+                  "name": "start_time",
+                  "type": "series int",
+                  "defaultValue": null,
+                  "description": "Region start timestamp in milliseconds."
+                },
+                {
+                  "name": "end_time",
+                  "type": "series int",
+                  "defaultValue": null,
+                  "description": "Region end timestamp in milliseconds."
+                },
+                {
+                  "name": "top",
+                  "type": "series float",
+                  "defaultValue": null,
+                  "description": "Upper value boundary."
+                },
+                {
+                  "name": "bottom",
+                  "type": "series float",
+                  "defaultValue": null,
+                  "description": "Lower value boundary."
+                },
+                {
+                  "name": "color",
+                  "type": "series color",
+                  "defaultValue": "na",
+                  "description": "Region fill color, including transparency."
+                },
+                {
+                  "name": "text",
+                  "type": "const string",
+                  "defaultValue": "\"\"",
+                  "description": "Short explanation shown with the region."
+                },
+                {
+                  "name": "force_overlay",
+                  "type": "const bool",
+                  "defaultValue": "false",
+                  "description": "Whether the host places this on the main price pane."
+                }
+              ],
+              "returns": "The region description written to `id`.",
+              "members": null,
+              "body": "For an active region, emit its complete current geometry on every bar,\nincluding its original start time. A host replaces repeated descriptions\nof the same region; it does not replay creation or deletion commands.\n\n**Example:** A region between two fixed price levels.\n\n```tea\nplotzone(\"range\", time[1], time, 12.0, 8.0, color=color.new(color.teal, 80))\n```\n\n```csv\ntime\n1704153600000\n1704240000000\n```\n\n**Output:**\n\n```text\nindex  range\n0      {\"id\":\"range\",\"start_time\":\"na\",\"end_time\":1704153600000,\"top\":12,\"bottom\":8,\"color\":{\"r\":0,\"g\":137,\"b\":123,\"a\":51},\"text\":\"\",\"force_overlay\":false}\n1      {\"id\":\"range\",\"start_time\":1704153600000,\"end_time\":1704240000000,\"top\":12,\"bottom\":8,\"color\":{\"r\":0,\"g\":137,\"b\":123,\"a\":51},\"text\":\"\",\"force_overlay\":false}\n```"
+            },
+            {
+              "id": "plotcandle",
+              "symbols": ["plotcandle"],
+              "kind": "function",
+              "category": "Plots",
+              "summary": "Writes one OHLC candle description on each bar for a host to render.",
+              "signatures": [
+                "plotcandle(\n    const string id,\n    series float open_value,\n    series float high_value,\n    series float low_value,\n    series float close_value,\n    const string title = \"\",\n    series color color = na,\n    series color wickcolor = na,\n    series color bordercolor = na\n)"
+              ],
+              "parameters": [
+                {
+                  "name": "id",
+                  "type": "const string",
+                  "defaultValue": null,
+                  "description": "Name of the output this call writes."
+                },
+                {
+                  "name": "open_value",
+                  "type": "series float",
+                  "defaultValue": null,
+                  "description": "Opening value."
+                },
+                {
+                  "name": "high_value",
+                  "type": "series float",
+                  "defaultValue": null,
+                  "description": "Highest value."
+                },
+                {
+                  "name": "low_value",
+                  "type": "series float",
+                  "defaultValue": null,
+                  "description": "Lowest value."
+                },
+                {
+                  "name": "close_value",
+                  "type": "series float",
+                  "defaultValue": null,
+                  "description": "Closing value."
+                },
+                {
+                  "name": "title",
+                  "type": "const string",
+                  "defaultValue": "\"\"",
+                  "description": "Display name for this candle series."
+                },
+                {
+                  "name": "color",
+                  "type": "series color",
+                  "defaultValue": "na",
+                  "description": "Candle body color."
+                },
+                {
+                  "name": "wickcolor",
+                  "type": "series color",
+                  "defaultValue": "na",
+                  "description": "Wick color."
+                },
+                {
+                  "name": "bordercolor",
+                  "type": "series color",
+                  "defaultValue": "na",
+                  "description": "Body border color."
+                }
+              ],
+              "returns": "The candle description written to `id`.",
+              "members": null,
+              "body": "Values may be derived (for example Heikin-Ashi), so the script's title and\nexplanation must distinguish those values from the underlying market bars.\nA missing OHLC value describes a gap.\n\n**Example:** Describe the supplied OHLC bars.\n\n```tea\nplotcandle(\"bars\", open, high, low, close, color=color.teal)\n```\n\n```csv\ntime,open,high,low,close\n1704153600000,10,12,9,11\n1704240000000,11,14,10,13\n```\n\n**Output:**\n\n```text\nindex  bars\n0      {\"id\":\"bars\",\"open\":10,\"high\":12,\"low\":9,\"close\":11,\"title\":\"\",\"color\":{\"r\":0,\"g\":137,\"b\":123,\"a\":255},\"wickcolor\":null,\"bordercolor\":null}\n1      {\"id\":\"bars\",\"open\":11,\"high\":14,\"low\":10,\"close\":13,\"title\":\"\",\"color\":{\"r\":0,\"g\":137,\"b\":123,\"a\":255},\"wickcolor\":null,\"bordercolor\":null}\n```"
+            },
+            {
               "id": "plot",
               "symbols": ["plot"],
               "kind": "function",
@@ -1306,7 +1507,7 @@
               "category": "Shapes and characters",
               "summary": "Writes on each bar whether to show a shape marker there, with options for drawing it, to a named output.",
               "signatures": [
-                "plotshape(\n    const string id,\n    series bool series,\n    const string title = \"\",\n    const string style = \"circle\",\n    const string location = \"abovebar\",\n    series color color = na,\n    input int offset = 0,\n    const string text = \"\",\n    series color textcolor = na,\n    const string size = \"auto\",\n    const bool editable = true,\n    input int show_last = 0,\n    const string display = \"all\"\n)"
+                "plotshape(\n    const string id,\n    series bool series,\n    const string title = \"\",\n    const string style = \"circle\",\n    const string location = \"abovebar\",\n    series color color = na,\n    input int offset = 0,\n    const string text = \"\",\n    series color textcolor = na,\n    const string size = \"auto\",\n    const bool editable = true,\n    input int show_last = 0,\n    const string display = \"all\",\n    const bool force_overlay = false\n)"
               ],
               "parameters": [
                 {
@@ -1386,11 +1587,17 @@
                   "type": "const string",
                   "defaultValue": "\"all\"",
                   "description": "Where the output appears: a `display.*` constant such as [`display.all`](#display.*) or [`display.none`](#display.*)."
+                },
+                {
+                  "name": "force_overlay",
+                  "type": "const bool",
+                  "defaultValue": "false",
+                  "description": "Whether the host places this mark on the main price pane."
                 }
               ],
               "returns": "`visual.Shape`: the description written to `id`, with fields named after the parameters.",
               "members": null,
-              "body": "The description is written on every bar the call runs, not only where the\ncondition is true: its `series` field says whether the shape appears on\nthat bar.\n\n**Example:** A triangle below each bar where the close crosses above `11`. Every bar\nwrites a description; `series` is `true` only at index 1.\n\n```tea\nemit \"close\" close\nplotshape(\"cross\", ta.crossover(close, 11.0), \"Cross\", style=shape.triangleup, location=location.belowbar)\n```\n\n```csv\ntime,close\n0,10\n1,12\n2,13\n```\n\n**Output:**\n\n```text\nindex  close  cross\n0      10     {\"id\":\"cross\",\"series\":false,\"title\":\"Cross\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n1      12     {\"id\":\"cross\",\"series\":true,\"title\":\"Cross\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n2      13     {\"id\":\"cross\",\"series\":false,\"title\":\"Cross\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n```\n\n**See also:** [`plotchar`](#plotchar)"
+              "body": "The description is written on every bar the call runs, not only where the\ncondition is true: its `series` field says whether the shape appears on\nthat bar.\n\n**Example:** A triangle below each bar where the close crosses above `11`. Every bar\nwrites a description; `series` is `true` only at index 1.\n\n```tea\nemit \"close\" close\nplotshape(\"cross\", ta.crossover(close, 11.0), \"Cross\", style=shape.triangleup, location=location.belowbar)\n```\n\n```csv\ntime,close\n0,10\n1,12\n2,13\n```\n\n**Output:**\n\n```text\nindex  close  cross\n0      10     {\"id\":\"cross\",\"series\":false,\"title\":\"Cross\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n1      12     {\"id\":\"cross\",\"series\":true,\"title\":\"Cross\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n2      13     {\"id\":\"cross\",\"series\":false,\"title\":\"Cross\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n```\n\n**See also:** [`plotchar`](#plotchar)"
             },
             {
               "id": "plotchar",
@@ -1399,7 +1606,7 @@
               "category": "Shapes and characters",
               "summary": "Writes on each bar whether to show a character marker there, with options for drawing it, to a named output.",
               "signatures": [
-                "plotchar(\n    const string id,\n    series bool series,\n    const string title = \"\",\n    const string char = \"\",\n    const string location = \"abovebar\",\n    series color color = na,\n    input int offset = 0,\n    const string text = \"\",\n    series color textcolor = na,\n    const string size = \"auto\",\n    const bool editable = true,\n    input int show_last = 0,\n    const string display = \"all\"\n)"
+                "plotchar(\n    const string id,\n    series bool series,\n    const string title = \"\",\n    const string char = \"\",\n    const string location = \"abovebar\",\n    series color color = na,\n    input int offset = 0,\n    const string text = \"\",\n    series color textcolor = na,\n    const string size = \"auto\",\n    const bool editable = true,\n    input int show_last = 0,\n    const string display = \"all\",\n    const bool force_overlay = false\n)"
               ],
               "parameters": [
                 {
@@ -1479,11 +1686,17 @@
                   "type": "const string",
                   "defaultValue": "\"all\"",
                   "description": "Where the output appears: a `display.*` constant such as [`display.all`](#display.*) or [`display.none`](#display.*)."
+                },
+                {
+                  "name": "force_overlay",
+                  "type": "const bool",
+                  "defaultValue": "false",
+                  "description": "Whether the host places this mark on the main price pane."
                 }
               ],
               "returns": "`visual.Character`: the description written to `id`, with fields named after the parameters.",
               "members": null,
-              "body": "The description is written on every bar the call runs, not only where the\ncondition is true: its `series` field says whether the character appears on\nthat bar.\n\n**Example:** A `+` above each bar whose close is higher than the one before. `series` is\n`false` at index 0, where `close[1]` is `na`, and at index 2.\n\n```tea\nemit \"close\" close\nplotchar(\"higher\", close > close[1], \"Higher\", char=\"+\")\n```\n\n```csv\ntime,close\n0,10\n1,12\n2,11\n```\n\n**Output:**\n\n```text\nindex  close  higher\n0      10     {\"id\":\"higher\",\"series\":false,\"title\":\"Higher\",\"char\":\"+\",\"location\":\"abovebar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n1      12     {\"id\":\"higher\",\"series\":true,\"title\":\"Higher\",\"char\":\"+\",\"location\":\"abovebar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n2      11     {\"id\":\"higher\",\"series\":false,\"title\":\"Higher\",\"char\":\"+\",\"location\":\"abovebar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n```\n\n**See also:** [`plotshape`](#plotshape)"
+              "body": "The description is written on every bar the call runs, not only where the\ncondition is true: its `series` field says whether the character appears on\nthat bar.\n\n**Example:** A `+` above each bar whose close is higher than the one before. `series` is\n`false` at index 0, where `close[1]` is `na`, and at index 2.\n\n```tea\nemit \"close\" close\nplotchar(\"higher\", close > close[1], \"Higher\", char=\"+\")\n```\n\n```csv\ntime,close\n0,10\n1,12\n2,11\n```\n\n**Output:**\n\n```text\nindex  close  higher\n0      10     {\"id\":\"higher\",\"series\":false,\"title\":\"Higher\",\"char\":\"+\",\"location\":\"abovebar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n1      12     {\"id\":\"higher\",\"series\":true,\"title\":\"Higher\",\"char\":\"+\",\"location\":\"abovebar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n2      11     {\"id\":\"higher\",\"series\":false,\"title\":\"Higher\",\"char\":\"+\",\"location\":\"abovebar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"auto\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n```\n\n**See also:** [`plotshape`](#plotshape)"
             },
             {
               "id": "bgcolor",
@@ -1779,7 +1992,7 @@
                   ["`shape.diamond`", "`\"diamond\"`", ""]
                 ]
               },
-              "body": "Each constant is a `const string`.\n\nTea records the chosen name in the emitted description; the host draws the shape.\n\n**Example:** `\"series\"` is `true` only on bar 5, where the close crosses above its 3-bar average; every row records the shape, `\"triangleup\"`.\n\n```tea\ncrossed = ta.crossover(close, ta.sma(close, 3))\nplotshape(\"cross\", crossed, style = shape.triangleup, location = location.belowbar, size = size.small)\n```\n\n```csv\ntime,close\n0,9\n1,12\n2,12\n3,15\n4,12\n5,18\n```\n\n**Output:**\n\n```text\nindex  cross\n0      {\"id\":\"cross\",\"series\":false,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n1      {\"id\":\"cross\",\"series\":false,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n2      {\"id\":\"cross\",\"series\":false,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n3      {\"id\":\"cross\",\"series\":false,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n4      {\"id\":\"cross\",\"series\":false,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n5      {\"id\":\"cross\",\"series\":true,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\"}\n```"
+              "body": "Each constant is a `const string`.\n\nTea records the chosen name in the emitted description; the host draws the shape.\n\n**Example:** `\"series\"` is `true` only on bar 5, where the close crosses above its 3-bar average; every row records the shape, `\"triangleup\"`.\n\n```tea\ncrossed = ta.crossover(close, ta.sma(close, 3))\nplotshape(\"cross\", crossed, style = shape.triangleup, location = location.belowbar, size = size.small)\n```\n\n```csv\ntime,close\n0,9\n1,12\n2,12\n3,15\n4,12\n5,18\n```\n\n**Output:**\n\n```text\nindex  cross\n0      {\"id\":\"cross\",\"series\":false,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n1      {\"id\":\"cross\",\"series\":false,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n2      {\"id\":\"cross\",\"series\":false,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n3      {\"id\":\"cross\",\"series\":false,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n4      {\"id\":\"cross\",\"series\":false,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n5      {\"id\":\"cross\",\"series\":true,\"title\":\"\",\"style\":\"triangleup\",\"location\":\"belowbar\",\"color\":null,\"offset\":0,\"text\":\"\",\"textcolor\":null,\"size\":\"small\",\"editable\":true,\"show_last\":0,\"display\":\"all\",\"force_overlay\":false}\n```"
             },
             {
               "id": "size.*",
