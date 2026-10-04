@@ -105,8 +105,8 @@
           },
           {
             "group": "Technical analysis",
-            "root": "reference/builtins/ta",
             "pages": [
+              "reference/builtins/ta",
               {
                 "group": "Moving averages",
                 "pages": [

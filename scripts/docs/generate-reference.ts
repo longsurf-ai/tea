@@ -1730,6 +1730,24 @@ async function referenceTab(root: string): Promise<readonly NavigationGroup[]> {
   return tab.groups;
 }
 
+/**
+ * The page that opens a group: its root, or a per-entry page listed first in
+ * a section heading such as Technical analysis. A section has no root, since
+ * Mintlify draws a top-level group with a root as an expandable item.
+ */
+function openingPage(
+  group: NavigationGroup,
+  generated: ReadonlyMap<string, Page>,
+): string | undefined {
+  const [first] = group.pages;
+  return (
+    group.root ??
+    (typeof first === 'string' && generated.get(first)?.perEntry
+      ? first
+      : undefined)
+  );
+}
+
 function frontMatterValue(text: string, key: string): string {
   const value = new RegExp(`^${key}:\\s*(.+?)\\s*$`, 'm').exec(text)?.[1] ?? '';
   return /^["']/.test(value)
@@ -1739,9 +1757,9 @@ function frontMatterValue(text: string, key: string): string {
 
 /**
  * docs.json owns navigation; generation checks it. Every generated page is
- * listed exactly once, and a per-entry page is the `root` of a group whose
- * pages are one group per category, listing its entry pages in order. A
- * mismatch prints the `pages` the group needs.
+ * listed exactly once, and a per-entry page opens a group (see
+ * {@link openingPage}) whose other pages are one group per category, listing
+ * its entry pages in order. A mismatch prints the `pages` the group needs.
  */
 async function checkNavigation(
   root: string,
@@ -1755,17 +1773,19 @@ async function checkNavigation(
     listed.add(route);
   };
   const walk = (group: NavigationGroup) => {
-    const page =
-      group.root === undefined ? undefined : generated.get(group.root);
-    if (group.root !== undefined) list(group.root);
+    const opening = openingPage(group, generated);
+    const page = opening === undefined ? undefined : generated.get(opening);
+    if (opening !== undefined) list(opening);
     if (page?.perEntry) {
       const expected = [...categories(page)].map(([category, items]) => ({
         group: category,
         pages: items.map(item => `${page.route}/${item.heading}`),
       }));
-      if (JSON.stringify(group.pages) !== JSON.stringify(expected)) {
+      const listedCategories =
+        group.root === undefined ? group.pages.slice(1) : group.pages;
+      if (JSON.stringify(listedCategories) !== JSON.stringify(expected)) {
         throw new Error(
-          `docs.json: the group rooted at ${page.route} must list its entries by category:\n${JSON.stringify(expected, null, 2)}`,
+          `docs.json: the group opened by ${page.route} must list its entries by category:\n${JSON.stringify(expected, null, 2)}`,
         );
       }
       for (const route of expected.flatMap(category => category.pages)) {
@@ -1780,7 +1800,9 @@ async function checkNavigation(
       }
       list(item);
       if (generated.get(item)?.perEntry) {
-        throw new Error(`docs.json: ${item} must be a group's root`);
+        throw new Error(
+          `docs.json: ${item} must open its group, as its root or a section's first page`,
+        );
       }
       if (
         !generated.has(item) &&
@@ -1828,10 +1850,12 @@ async function manual(
   const generated = new Map(pages.map(page => [page.route, page]));
   const groups: {title: string; routes: string[]}[] = [];
   const collect = (node: string | NavigationGroup, routes: string[]) => {
+    const opening =
+      typeof node === 'string' ? undefined : openingPage(node, generated);
     if (typeof node === 'string') {
       if (!OUTSIDE_MANUAL.routes.includes(node)) routes.push(node);
-    } else if (node.root !== undefined) {
-      routes.push(node.root);
+    } else if (opening !== undefined) {
+      routes.push(opening);
     } else {
       for (const child of node.pages) collect(child, routes);
     }
