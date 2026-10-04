@@ -416,6 +416,38 @@ describe('Tea strategy components end to end', () => {
     expectNumbersClose(valuesFor(sink, 2), [0, 1000 / 15]);
   });
 
+  test('an OHLC exit waits for the next bar after a stop entry filled inside its bar', async () => {
+    // The open of 100 came before the entry at 105, so it cannot fill the
+    // exit at 101 on that bar; the next bar's low of 100 does.
+    const source = [
+      '',
+      'import broker',
+      'import portfolio',
+      'import trade',
+      'last_bar = input.int(0)',
+      'var strat = trade.ohlc(broker.new(), portfolio.new(initialCash = 1000.0))',
+      'm = strat.begin_bar(open, high, low, bar_index)',
+      'if bar_index == 0',
+      '    strat.entry("Long", trade.Direction.long, qty = 1.0, stop = 105.0)',
+      '    strat.exit("Stop", fromEntry = "Long", stop = 101.0, activateOnEntryBar = true)',
+      'strat.end_bar(close, bar_index == last_bar)',
+      'emit "output0" na(m.exit) ? -1.0 : m.exit.price',
+      'emit "output1" strat.position_quantity()',
+    ].join('\n');
+    const {sink} = await execute(
+      source,
+      [
+        'open,high,low,close',
+        '100,100,100,100',
+        '100,106,99,105',
+        '104,104,100,101',
+        '',
+      ].join('\n'),
+    );
+    expectNumbersClose(valuesFor(sink, 1), [-1, -1, 101]);
+    expectNumbersClose(valuesFor(sink, 2), [0, 1, 0]);
+  });
+
   test('applies the configured long-margin gate only when margin is enabled', async () => {
     const source = [
       '',
@@ -1394,6 +1426,68 @@ describe('Tea strategy components end to end', () => {
     expect(effectField(program, sink, 'OrderRejected', 0, 'reason')).toBe(
       'invalidAccountState',
     );
+  });
+
+  test('an exit for an unknown entry is rejected for the account state, before its prices', async () => {
+    // While flat there is no entry side, so stop 5 and target 30 cannot be
+    // judged; the missing entry is the reason.
+    const source = [
+      '',
+      'import broker',
+      'import portfolio',
+      'import trade',
+      'last_bar = input.int(0)',
+      'var strat = trade.ohlc(broker.new(), portfolio.new(initialCash = 1000.0))',
+      'strat.begin_bar(open, high, low, bar_index)',
+      'if bar_index == 0',
+      '    strat.exit("X", fromEntry = "Nobody", stop = 5.0, target = 30.0)',
+      'strat.end_bar(close, bar_index == last_bar)',
+    ].join('\n');
+    const {program, sink} = await execute(
+      source,
+      ['open,high,low,close', '10,10,10,10', '10,10,10,10', ''].join('\n'),
+    );
+    expect(effectField(program, sink, 'OrderRejected', 0, 'reason')).toBe(
+      'invalidAccountState',
+    );
+  });
+
+  test('cancelling a pending reversal entry also cancels its exit while a position is open', async () => {
+    // A short entry with its own stop waits while the long is open; cancelling
+    // it must not leave that stop attached, or a new exit for the long would
+    // be rejected as pending.
+    const source = [
+      '',
+      'import broker',
+      'import portfolio',
+      'import trade',
+      'last_bar = input.int(0)',
+      'var strat = trade.ohlc(broker.new(), portfolio.new(initialCash = 1000.0))',
+      'strat.begin_bar(open, high, low, bar_index)',
+      'if bar_index == 0',
+      '    strat.entry("Long", trade.Direction.long, qty = 1.0)',
+      'if bar_index == 1',
+      '    strat.entry("Short", trade.Direction.short, qty = 1.0, stop = 5.0)',
+      '    strat.exit("ShortStop", fromEntry = "Short", stop = 20.0)',
+      'cancelled = bar_index == 2 ? strat.cancel("Short") : 0',
+      'protect = bar_index == 2 ? strat.exit("LongStop", fromEntry = "Long", stop = 8.0) : na',
+      'strat.end_bar(close, bar_index == last_bar)',
+      'emit "output0" cancelled',
+      'emit "output1" na(protect) ? 0 : 1',
+    ].join('\n');
+    const {sink} = await execute(
+      source,
+      [
+        'open,high,low,close',
+        '10,10,10,10',
+        '10,10,10,10',
+        '10,10,10,10',
+        '10,10,10,10',
+        '',
+      ].join('\n'),
+    );
+    expect(valuesFor(sink, 1)).toEqual([0, 0, 2, 0]);
+    expect(valuesFor(sink, 2)).toEqual([0, 0, 1, 0]);
   });
 
   test('keeps commission inside a percent-of-equity cash budget when requested', async () => {

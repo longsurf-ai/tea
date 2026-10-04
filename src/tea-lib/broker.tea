@@ -423,7 +423,8 @@ export type Command
 	float stop = na
 	/**
 	 * For an exit, whether it may trigger on the bar its entry fills;
-	 * otherwise it starts on the next bar.
+	 * otherwise it starts on the next bar. With OHLC matching it applies only
+	 * when the entry filled at that bar's open.
 	 */
 	bool activateOnEntryBar = false
 	/** For an exit, the take-profit price. */
@@ -980,9 +981,11 @@ export interface ImmediateBroker
  * a tie), the other extreme, then `close`, and a stop entry fills on the
  * first segment that reaches its stop. An exit is live while its entry
  * holds the position, from the bar after the entry's fill, or from that bar
- * with `activateOnEntryBar`; on that bar the OHLC coordinator matches it
- * against the whole bar, prices before the entry's fill included, while the
- * path coordinator starts where the entry filled. A trailing stop activates
+ * with `activateOnEntryBar`. On that bar the OHLC coordinator matches it
+ * against the whole bar when the entry filled at the open, and from the next
+ * bar when a stop entry filled later in the bar, since the high and low
+ * cannot tell what came after the fill; the path coordinator starts where
+ * the entry filled. A trailing stop activates
  * when the path reaches `trailPrice` in the position's favor, then stays
  * `trailOffset` behind the best price since; with a fixed stop as well, the
  * tighter of the two applies.
@@ -1153,6 +1156,8 @@ export type BrokerEmulator
 	float trailStopPrice = na
 	/** Whether a path exit match is running, which permits trailing exits. */
 	bool matchingPathExit = false
+	/** Whether the latest OHLC match filled a stop entry inside the bar, after its open. */
+	bool entryFilledIntrabar = false
 
 	/** Whether a pending command or an attached exit is waiting. */
 	bool has_pending() const =>
@@ -1261,25 +1266,6 @@ export type BrokerEmulator
 	 */
 	float default_buy_quantity(float price, float buyingPower) const =>
 		this.commissionKind == CommissionKind.cashPerContract ? buyingPower / (price + this.commissionValue) : this.commissionKind == CommissionKind.cashPerOrder ? (buyingPower - this.commissionValue) / price : buyingPower / (price * (1.0 + this.commissionValue))
-
-	/**
-	 * Quantity whose notional plus commission equals `budget`.
-	 *
-	 * The same computation as
-	 * {@link broker.BrokerEmulator.budgeted_entry_quantity}. In the formula, C
-	 * is `budget`, p is `price` and c is `commissionValue`.
-	 * @param price execution price
-	 * @param budget cash to spend
-	 * @returns `float`: the quantity.
-	 * @formula
-	 * q = \begin{cases}
-	 * \dfrac{C}{p \cdot (1 + c)} & \text{rate} \\[2ex]
-	 * \dfrac{C}{p + c} & \text{cashPerContract} \\[2ex]
-	 * \dfrac{C - c}{p} & \text{cashPerOrder}
-	 * \end{cases}
-	 */
-	float budgeted_buy_quantity(float price, float budget) const =>
-		this.commissionKind == CommissionKind.cashPerContract ? budget / (price + this.commissionValue) : this.commissionKind == CommissionKind.cashPerOrder ? (budget - this.commissionValue) / price : budget / (price * (1.0 + this.commissionValue))
 
 	/**
 	 * Account equity with the position valued at `referencePrice`.
@@ -1403,12 +1389,11 @@ export type BrokerEmulator
 		orderedPrices = not stopPresent or not targetPresent or isLong and command.stop < command.target or not isLong and command.target < command.stop
 		pricesValid = (stopPresent or targetPresent or trailPresent) and trailPricePresent == trailOffsetPresent and (not stopPresent or command.stop > 0.0) and (not targetPresent or command.target > 0.0) and (not trailPresent or command.trailPrice > 0.0 and command.trailOffset > 0.0) and orderedPrices
 		canReplace = na(this.attachedExit) or this.attachedExit.commandId == command.commandId and this.attachedExit.fromEntry == command.fromEntry
-		if command.kind != CommandKind.exit
+		// The entry comes first: which prices are valid depends on its side.
+		if command.kind != CommandKind.exit or not entryMatches
 			emit.append "broker.OrderRejected" OrderRejected.new(command.commandId, command.side, command.signalBarIndex, Rejection.invalidAccountState)
 		else if not pricesValid
 			emit.append "broker.OrderRejected" OrderRejected.new(command.commandId, command.side, command.signalBarIndex, Rejection.invalidPrice)
-		else if not entryMatches
-			emit.append "broker.OrderRejected" OrderRejected.new(command.commandId, command.side, command.signalBarIndex, Rejection.invalidAccountState)
 		else if not canReplace
 			emit.append "broker.OrderRejected" OrderRejected.new(command.commandId, command.side, command.signalBarIndex, Rejection.pendingOrder)
 		else
@@ -1427,8 +1412,9 @@ export type BrokerEmulator
 	 * Cancels the pending command and the attached exit that have this command
 	 * id.
 	 *
-	 * Cancelling a pending entry also cancels the exit attached to it while no
-	 * position is open. Called by the coordinators' `cancel`.
+	 * Cancelling a pending entry also cancels the exit attached to it, unless
+	 * that exit protects the open position of the same entry id. Called by the
+	 * coordinators' `cancel`.
 	 * @param commandId command id to cancel
 	 * @returns `int`: the number of orders cancelled, at most `2`.
 	 */
@@ -1444,7 +1430,10 @@ export type BrokerEmulator
 			this.reversalOrderFeePaid := false
 			emit.append "broker.OrderCancelled" OrderCancelled.new(cancelledPending)
 			cancelled := cancelled + 1
-			if cancelledPending.kind == CommandKind.entry and na(this.activeEntryId) and not na(this.attachedExit) and this.attachedExit.fromEntry == cancelledPending.commandId
+			// Its exit goes with it, unless that exit also protects the open
+			// position, which a same-id entry would only have added to.
+			protectsPosition = not na(this.activeEntryId) and this.activeEntryId == cancelledPending.commandId
+			if cancelledPending.kind == CommandKind.entry and not protectsPosition and not na(this.attachedExit) and this.attachedExit.fromEntry == cancelledPending.commandId
 				cancelledExit = this.attachedExit
 				Order noDependentExit = na
 				this.attachedExit := noDependentExit
@@ -1645,6 +1634,8 @@ export type BrokerEmulator
 	 * \begin{cases}
 	 * \mathit{cashBudget} \le A & \text{cashBudget set} \\
 	 * P \le A & \text{equityPercent and commissionIncluded set} \\
+	 * P \cdot m / 100 + \mathit{fee} \le A & \text{equityPercent set} \\
+	 * \mathit{notional} \cdot m / 100 + \mathit{fee} \le A & \text{notional set} \\
 	 * q \cdot p \cdot m / 100 + \mathit{fee} \le A & \text{otherwise}
 	 * \end{cases} \\[1ex]
 	 * &\text{an entry without a size needs } A > 0 \\[1ex]
@@ -1852,6 +1843,7 @@ export type BrokerEmulator
 	 */
 	Fill match_pending(float openPrice, float highPrice, float lowPrice, Account account, int barIndex) =>
 		Fill execution = na
+		this.entryFilledIntrabar := false
 		if not na(this.pending)
 			deferredReversal = this.reversalPending and this.matchedBarIndex != barIndex
 			if deferredReversal
@@ -1864,6 +1856,7 @@ export type BrokerEmulator
 				triggered = isMarket or gapTriggered or intrabarTriggered
 				referencePrice = isMarket or gapTriggered ? openPrice : this.pending.stop
 				execution := this.execute(referencePrice, account, barIndex, false, triggered)
+				this.entryFilledIntrabar := not na(execution) and intrabarTriggered
 		execution
 
 	/**
@@ -2006,7 +1999,11 @@ export type BrokerEmulator
 			this.attachedExit := noPathExit
 			this.reset_trail()
 		else if not na(this.attachedExit) and not na(this.activeEntryId) and this.attachedExit.fromEntry == this.activeEntryId and account.positionQuantity != 0.0 and this.fillsThisBar < 2
-			activationAllowed = this.attachedExit.activateOnEntryBar or barIndex > this.activeEntryBar
+			// OHLC data cannot tell whether an exit's level came before or after a
+			// stop entry that filled inside this bar, so such an exit waits for the
+			// next bar; a path match continues from the entry's fill instead.
+			sameBarAllowed = this.attachedExit.activateOnEntryBar and (this.matchingPathExit or not this.entryFilledIntrabar)
+			activationAllowed = sameBarAllowed or barIndex > this.activeEntryBar
 			effectiveStop = this.effective_exit_stop(account)
 			stopPresent = not na(effectiveStop)
 			targetPresent = not na(this.attachedExit.target)

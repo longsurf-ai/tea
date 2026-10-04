@@ -1096,7 +1096,8 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 	 * already had two fills completes at this open.
 	 *
 	 * The exit is then checked against the whole bar, from the bar after its
-	 * entry filled, or from the entry's own bar with `activateOnEntryBar`. It
+	 * entry filled, or from the entry's own bar with `activateOnEntryBar` when
+	 * the entry filled at that bar's open. It
 	 * fills at the open when the bar opens at or past its stop or target,
 	 * otherwise at the level the range reaches, and closes the whole position.
 	 * When the range reaches both levels, the extreme nearer the open is taken
@@ -1251,9 +1252,11 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 	 * entry or the entry that opened the position. `begin_bar` checks the exit
 	 * from the bar after its entry fills, or from the entry's own bar with
 	 * `activateOnEntryBar`, and gives the fill prices. On the entry's own bar
-	 * it checks the whole bar, open included, even when a stop entry filled
-	 * later in the bar, so the exit can fill at an open that came before its
-	 * entry; {@link trade.PathTrade} checks only the rest of the bar. Adverse
+	 * it checks the whole bar only when the entry filled at the open: after a
+	 * stop entry that filled later in the bar, the high and low cannot tell
+	 * whether a level came before or after the entry, so the exit starts on
+	 * the next bar. {@link trade.PathTrade} checks the rest of the bar instead.
+	 * Adverse
 	 * slippage applies to exit fills too, so a target is not a limit price.
 	 *
 	 * One exit is attached at a time: resubmitting with the same `commandId`
@@ -1267,7 +1270,7 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 	 * @param stop Stop-loss price, or `na` for none.
 	 * @param target Take-profit price, or `na` for none.
 	 * @param activateOnEntryBar Whether the exit may fill on the bar its entry
-	 * fills.
+	 * fills; it applies when the entry fills at that bar's open.
 	 * @returns `broker.Order`: the accepted exit, or `na` when the broker
 	 * rejects it on submission.
 	 * @example
@@ -1419,8 +1422,8 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 	/**
 	 * Cancels the pending order or the attached exit named `commandId`.
 	 *
-	 * Cancelling a pending entry also cancels an exit attached to it while no
-	 * position is open.
+	 * Cancelling a pending entry also cancels an exit attached to it, unless
+	 * that exit protects the open position of the same entry id.
 	 * @param commandId Name the order or exit was submitted with.
 	 * @returns `int`: the number of orders cancelled, from `0` to `2`.
 	 * @example
@@ -2335,8 +2338,8 @@ export type PathTrade<B: broker.PathBroker, P: portfolio.NetLedger>
 	/**
 	 * Cancels the pending order or the attached exit named `commandId`.
 	 *
-	 * Cancelling a pending entry also cancels an exit attached to it while no
-	 * position is open.
+	 * Cancelling a pending entry also cancels an exit attached to it, unless
+	 * that exit protects the open position of the same entry id.
 	 * @param commandId Name the order or exit was submitted with.
 	 * @returns `int`: the number of orders cancelled, from `0` to `2`.
 	 * @example
