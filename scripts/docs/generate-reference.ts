@@ -853,7 +853,13 @@ function apiEntry(item: ApiExport, heading: string): Entry {
     signatures: [item.signature],
     params: apiParams(item.doc),
     returns: item.doc.returns,
-    body: joinBlocks(rest, apiExamples(item.doc)),
+    body: joinBlocks(
+      item.typeOnly
+        ? 'A type-only export: it names a type, and no value of that name exists at run time, so `new` and `instanceof` cannot use it.'
+        : undefined,
+      rest,
+      apiExamples(item.doc),
+    ),
     members: item.members.map(member => {
       const text = splitSummary(member.doc.text);
       return entry({
@@ -959,8 +965,13 @@ function constantTable(exports: readonly ApiExport[]): Entry[] {
 // ---- CLI page ---------------------------------------------------------------
 
 /** Flags in help text as code, which Mintlify would otherwise turn into dashes. */
+// Options, `input@line:col` names and wildcard names such as `request.*`
+// read as code, which also keeps Markdown from taking `*` for emphasis.
 function flags(text: string): string {
-  return text.replace(/(?<![`\w-])(--?[a-z][\w-]*)/g, '`$1`');
+  return text.replace(
+    /(?<![`\w-])(--?[A-Za-z][\w-]*(?:=\w+)?|input@\d+:\d+|[a-z]+\.[a-z_]*\*)/g,
+    '`$1`',
+  );
 }
 
 function cliPage(): Page {
@@ -1663,10 +1674,9 @@ function pineArticle(
         '- A collection is a value: assigning it or passing it to a function copies it, where Pine Script shares a reference (see [memory model](/memory-model)).',
         '- A request has no `lookahead` or `gaps` argument and never waits for a requested bar to close: each bar sees the newest requested bar that opened at or before it, so with completed daily data an intraday bar sees that day’s close (see [Request synchronization](/requests)).',
         '- A function called under a condition keeps its history only on the bars where it runs (see [values and control flow](/language-guide/values-and-control-flow)).',
+        '- A function name is declared once: Tea has no overloading by parameter types or count, so a Pine library that overloads a name needs one untyped function or separate names (see [declarations](/reference/language/declarations#functions)).',
       ].join('\n'),
-      missing.length === 0
-        ? undefined
-        : joinBlocks('## Libraries', ...missing),
+      missing.length === 0 ? undefined : joinBlocks('## Libraries', ...missing),
       staged.length === 0
         ? undefined
         : joinBlocks(
@@ -1676,7 +1686,10 @@ function pineArticle(
           ),
       differences.length === 0
         ? undefined
-        : joinBlocks('## Functions and values', table(['Name', 'In Tea'], differences)),
+        : joinBlocks(
+            '## Functions and values',
+            table(['Name', 'In Tea'], differences),
+          ),
     ),
   };
 }

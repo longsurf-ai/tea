@@ -32,6 +32,11 @@ export type Numeric = 'int' | 'float';
  * Reference values retain their managed identity; capture never clones a body.
  * Managed operations require an active step; output destinations detach values
  * for callers that retain them beyond execution.
+ *
+ * Build values with {@link int}, {@link float}, {@link bool}, {@link text} and
+ * the {@link array}, {@link map}, {@link matrix}, {@link tuple} and
+ * {@link struct} factories, and test a value's kind with `kind`, such as
+ * `value.kind === 'array'`.
  * @example `int(7).div(int(2)).value` is 3; dividing by float(2) produces 3.5.
  */
 export class Value<T, K extends string = string> {

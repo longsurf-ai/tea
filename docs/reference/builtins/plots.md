@@ -107,7 +107,10 @@ plot(
 **Returns:** `visual.Plot`: the description written to `id`. Pass it to [`fill`](./plots.md#fill) to shade between two plots.
 
 Each bar's description holds the arguments under the parameter names, with
-`null` for an `na` color.
+`NaN` for an `na` number, such as the `series` on a bar where it is `na`,
+and `null` for an `na` color. A bar where the call does not run, such as
+inside an `if` whose condition is false, writes no description: the output
+is `null`.
 
 **Example:** A 2-bar average, drawn green while the close is above it. Its `series` is
 `na` on the first bar, and its `color` is green only at index 1.

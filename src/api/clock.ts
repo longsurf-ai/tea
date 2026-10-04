@@ -53,7 +53,17 @@ export const M: Clock = (30n * d) as Clock;
 /** One year, fixed at 360 days. */
 export const y: Clock = (360n * d) as Clock;
 
-/** Convert one concrete Tea timeframe to its regular clock, or `i`. */
+/**
+ * Convert one concrete Tea timeframe to its regular clock, or `i`.
+ *
+ * It accepts two spellings: a positive whole number of minutes, such as
+ * `'60'` for {@link h} or `'240'` for four hours, and an optional positive
+ * count followed by `S`, `D`, `W` or `M`, where `M` is {@link M}, 30 days.
+ * Any other text, such as `'1H'`, `'1h'` or `''`, returns {@link i}, with no
+ * error.
+ * @example `timeframeClock('60') === h`, `timeframeClock('1D') === d` and
+ * `timeframeClock('1H') === i`.
+ */
 export function timeframeClock(timeframe: string): Clock {
   const match = /^([1-9]\d*)?([SDWM])$/.exec(timeframe);
   if (/^[1-9]\d*$/.test(timeframe)) {

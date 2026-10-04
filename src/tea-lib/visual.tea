@@ -59,7 +59,10 @@ struct Plot
  * Writes one value per bar, with options for drawing it, to a named output.
  *
  * Each bar's description holds the arguments under the parameter names, with
- * `null` for an `na` color.
+ * `NaN` for an `na` number, such as the `series` on a bar where it is `na`,
+ * and `null` for an `na` color. A bar where the call does not run, such as
+ * inside an `if` whose condition is false, writes no description: the output
+ * is `null`.
  *
  * @param id Name of the output this call writes.
  * @param series Value to plot on the current bar; may be `na`.

@@ -26,8 +26,9 @@ emit "hit" hit
   unsupported geometry; missing price data should skip evaluation. Inputs are
   Cartesian coordinates: the library assigns no market/time/pixel meaning.
 - `orient2d(ax,ay,bx,by,cx,cy)` returns a clockwise-positive determinant, the
-  opposite sign of Shewchuk's `orient2d`. Use its sign, not its magnitude: the
-  adaptive exact branch returns the leading nonzero expansion term.
+  opposite sign of Shewchuk's `orient2d`. Its sign is exact; its magnitude is
+  twice the area of the triangle A, B, C within about one part in a million,
+  so dividing it by the length from A to B gives C's distance from that line.
   Unsupported coordinates return `na`.
 - `segmentContact(ax,ay,bx,by,px,py,qx,qy)` includes endpoints, zero-length
   segments and bounded collinear overlap. Unsupported coordinates return false.
@@ -38,7 +39,11 @@ emit "hit" hit
   no contact (or unsupported input). Parameters are in `[0,1]`; a zero-length
   observation has parameter zero. An overlap returns its two observation
   interval endpoints, with `boundaryParameter = na` because there is no unique
-  inverse on a backtracking curve. A collapsed coincidence returns one contact.
+  inverse on a backtracking curve. Segments on one line that share only an
+  endpoint give one contact with `overlap = false` and real positions on both,
+  such as `boundaryParameter = 1, observationParameter = 0` for (0,0)-(1,0)
+  against (1,0)-(2,0); a quadratic coincidence that collapses to one point
+  gives one contact with `boundaryParameter = na`.
   Do not assume contact ordering. Arrays/results from different calls are
   independent and ordinary provisional rollback rules apply.
 - `transverse` distinguishes curve crossings from tangency, not shared-vertex

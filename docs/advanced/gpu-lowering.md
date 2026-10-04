@@ -74,6 +74,19 @@ numeric profile must remain visible to callers performing parity analysis.
 NaN is Tea's numeric missing value and crosses the GPU boundary through a
 canonical quiet-NaN bit pattern. Infinity is rejected.
 
+Every artifact states this profile in its `numeric` field:
+
+- `integerOverflow: 'wrap'`: i32 integers wrap on overflow, where CPU integers
+  do not. `2147483647 + bar_index` gives `-2147483648` on row 1 of a GPU run
+  and `2147483648` on the CPU.
+- `divideByZero: 'tea-na'` and `nonFiniteFloat: 'tea-na'`: division by zero
+  and non-finite float results are `na`, as on the CPU.
+- `cpuTolerance`: an absolute error of `1e-4` and a relative error of `2e-5`
+  to allow when comparing decoded results with the CPU's f64 results. Tea
+  publishes it for parity checks but does not apply it.
+
+Int constants outside the i32 range and any use of `%` fail lowering.
+
 ## Physical allocation
 
 Callers do not configure chunk size, effect capacity, or GPU memory budgets.
@@ -128,7 +141,16 @@ The GPU supports deterministic numeric programs with:
 
 It fails closed for unsupported references, collections, resources, strings,
 dynamic requests, request-child execution, drawings, and other builtin mappings
-that the backend cannot derive exactly.
+that the backend cannot derive exactly. `plot()` and the other visual calls
+build `visual.*` structs, so a script that uses them fails with
+`struct-reference-lowering-unimplemented`; write its numeric outputs with
+`emit` instead.
+
+Checking a script needs no device: `analyzeWgslEligibility(program)` returns
+the eligibility ledger, and `compileProgramToWgsl(program)` returns either the
+artifact or `status: 'staged-unsupported'` with issue codes. Neither, nor
+`createGpuExecution`, is a package entry yet: they live in the source tree, in
+`src/codegen/wgsl` and `src/runtime/gpu`.
 
 ## Verification
 

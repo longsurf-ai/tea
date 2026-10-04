@@ -295,8 +295,11 @@ The segment from `a` to `b` is the primitive and the segment from `p` to `q`
 is the observation. A crossing or a single shared point gives one
 [`geometry.Contact`](./geometry.md#contact). Segments that overlap along one line give two,
 marking the ends of the shared stretch, with `overlap` set to `true` and
-`boundaryParameter` set to `na`. Each call returns a new array, and the
-order of its contacts is not defined.
+`boundaryParameter` set to `na`. Segments on one line that share only an
+endpoint give one contact with real positions and `overlap` `false`:
+`(0, 0)` to `(1, 0)` against `(1, 0)` to `(2, 0)` gives a
+`boundaryParameter` of `1` and an `observationParameter` of `0`. Each call
+returns a new array, and the order of its contacts is not defined.
 
 Whether the segments touch is decided exactly, as in
 [`geometry.segmentContact`](./geometry.md#segmentcontact). The positions are then ordinary

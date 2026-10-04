@@ -12,8 +12,10 @@ import {Bool, Field, Float64, Schema, TimestampMillisecond} from 'apache-arrow';
  * - An `emit.append` output holds an array of the values appended on this
  *   step, in the order they were appended; it is empty when none were.
  * - A `plot()` output holds an object with the call's arguments under their
- *   parameter names, such as `series`, `title` and `color`. A color is an
- *   object `{r, g, b, a}` with values from 0 to 255, or `null` for `na`.
+ *   parameter names, such as `series`, `title` and `color`, or `null` when
+ *   the call did not run on this step. An `na` number in it, such as the
+ *   `series`, is `NaN`. A color is an object `{r, g, b, a}` with values from
+ *   0 to 255, or `null` for `na`.
  *
  * A Datum and its values are frozen copies, so they stay valid after later
  * steps.

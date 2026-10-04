@@ -10,6 +10,7 @@ Tea follows Pine Script v6: a name both have behaves the same way unless this pa
 - A collection is a value: assigning it or passing it to a function copies it, where Pine Script shares a reference (see [memory model](../memory-model.md)).
 - A request has no `lookahead` or `gaps` argument and never waits for a requested bar to close: each bar sees the newest requested bar that opened at or before it, so with completed daily data an intraday bar sees that day’s close (see [Request synchronization](../requests.md)).
 - A function called under a condition keeps its history only on the bars where it runs (see [values and control flow](../language-guide/values-and-control-flow.md)).
+- A function name is declared once: Tea has no overloading by parameter types or count, so a Pine library that overloads a name needs one untyped function or separate names (see [declarations](./language/declarations.md#functions)).
 
 ## Libraries
 

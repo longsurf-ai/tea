@@ -126,7 +126,10 @@ function fromCSV<T = Record<string, unknown>>(
 
 Cells decode to the schema's field types. An empty cell is `null` in a
 nullable field, `NaN` in a float field (Tea reads it as `na`), and an error
-in an integer, timestamp or bool field.
+in an integer, timestamp or bool field. A timestamp cell must hold numeric
+epoch milliseconds: text such as an ISO-8601 date fails the stream with a
+`TypeError` ("CSV field 'time' must be numeric"). Read such a column as
+`Utf8` and convert it, as the second example shows.
 
 ```ts
 import { Field, Float64, Schema } from "apache-arrow";
@@ -135,6 +138,35 @@ const prices = await fromCSV(
   new Schema([new Field("close", new Float64(), false)]),
 );
 prices.subscribe({ next: (row) => console.log(row.close) }); // CSV '12.5' becomes 12.5.
+```
+
+ISO-8601 times, read as text and converted to epoch milliseconds:
+
+```ts
+import {
+  Field,
+  Float64,
+  Schema,
+  TimestampMillisecond,
+  Utf8,
+} from "apache-arrow";
+import { map } from "rxjs";
+const text = await fromCSV<{ time: string; close: number }>(
+  "prices.csv",
+  new Schema([
+    new Field("time", new Utf8(), false),
+    new Field("close", new Float64(), false),
+  ]),
+);
+const prices = new DataStream(
+  new Schema([
+    new Field("time", new TimestampMillisecond(), false),
+    new Field("close", new Float64(), false),
+  ]),
+  text
+    .asObservable()
+    .pipe(map((row) => ({ time: Date.parse(row.time), close: row.close }))),
+);
 ```
 
 ### fromWS
@@ -428,6 +460,15 @@ Convert one concrete Tea timeframe to its regular clock, or `i`.
 ```ts
 function timeframeClock(timeframe: string): Clock;
 ```
+
+It accepts two spellings: a positive whole number of minutes, such as
+`'60'` for [`h`](./tea.md#constants) or `'240'` for four hours, and an optional positive
+count followed by `S`, `D`, `W` or `M`, where `M` is [`M`](./tea.md#constants), 30 days.
+Any other text, such as `'1H'`, `'1h'` or `''`, returns [`i`](./tea.md#constants), with no
+error.
+
+**Example:** `timeframeClock('60') === h`, `timeframeClock('1D') === d` and
+`timeframeClock('1H') === i`.
 
 ## Classes
 
@@ -898,8 +939,10 @@ interface Datum extends Readonly<Record<string, unknown>> {
 - An `emit.append` output holds an array of the values appended on this
   step, in the order they were appended; it is empty when none were.
 - A `plot()` output holds an object with the call's arguments under their
-  parameter names, such as `series`, `title` and `color`. A color is an
-  object `{r, g, b, a}` with values from 0 to 255, or `null` for `na`.
+  parameter names, such as `series`, `title` and `color`, or `null` when
+  the call did not run on this step. An `na` number in it, such as the
+  `series`, is `NaN`. A color is an object `{r, g, b, a}` with values from
+  0 to 255, or `null` for `na`.
 
 A Datum and its values are frozen copies, so they stay valid after later
 steps.

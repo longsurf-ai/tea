@@ -29,6 +29,8 @@ export interface ApiMember {
 export interface ApiExport {
   readonly name: string;
   readonly kind: ApiKind;
+  /** A class exported with `export type`: no value exists at run time. */
+  readonly typeOnly: boolean;
   readonly signature: string;
   readonly doc: ApiDoc;
   readonly members: readonly ApiMember[];
@@ -214,6 +216,11 @@ export function javascriptApi(): readonly ApiEntryPoint[] {
           ? checker.getAliasedSymbol(symbol)
           : symbol;
       const declarations = target.declarations ?? [];
+      const typeOnly = (symbol.declarations ?? []).some(
+        declaration =>
+          ts.isExportSpecifier(declaration) &&
+          (declaration.isTypeOnly || declaration.parent.parent.isTypeOnly),
+      );
       const signature = declarations
         .map(declaration => {
           const node = ts.isVariableDeclaration(declaration)
@@ -225,7 +232,11 @@ export function javascriptApi(): readonly ApiEntryPoint[] {
                   declaration.name,
                   declaration.typeParameters,
                   declaration.heritageClauses,
-                  declaration.members.filter(member => !isHidden(member)),
+                  declaration.members.filter(
+                    member =>
+                      !isHidden(member) &&
+                      !(typeOnly && ts.isConstructorDeclaration(member)),
+                  ),
                 )
               : declaration;
           return printed(node, declaration.getSourceFile());
@@ -258,9 +269,12 @@ export function javascriptApi(): readonly ApiEntryPoint[] {
           });
         }
       }
+      const kind = kindOf(declarations[0]!);
       return {
         name: symbol.name,
-        kind: kindOf(declarations[0]!),
+        // A class exported as a type only cannot be constructed or tested.
+        kind: typeOnly && kind === 'class' ? 'type' : kind,
+        typeOnly: typeOnly && kind === 'class',
         signature,
         // A re-export documented where it is re-exported (apache-arrow's
         // schema types in tea/runtime) carries its own doc.

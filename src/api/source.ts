@@ -131,7 +131,10 @@ async function inspectCSV(path: string): Promise<Schema> {
  *
  * Cells decode to the schema's field types. An empty cell is `null` in a
  * nullable field, `NaN` in a float field (Tea reads it as `na`), and an error
- * in an integer, timestamp or bool field.
+ * in an integer, timestamp or bool field. A timestamp cell must hold numeric
+ * epoch milliseconds: text such as an ISO-8601 date fails the stream with a
+ * `TypeError` ("CSV field 'time' must be numeric"). Read such a column as
+ * `Utf8` and convert it, as the second example shows.
  * @example
  * ```ts
  * import {Field, Float64, Schema} from 'apache-arrow';
@@ -139,6 +142,23 @@ async function inspectCSV(path: string): Promise<Schema> {
  *   new Field('close', new Float64(), false),
  * ]));
  * prices.subscribe({next: row => console.log(row.close)}); // CSV '12.5' becomes 12.5.
+ * ```
+ * @example
+ * ISO-8601 times, read as text and converted to epoch milliseconds:
+ * ```ts
+ * import {Field, Float64, Schema, TimestampMillisecond, Utf8} from 'apache-arrow';
+ * import {map} from 'rxjs';
+ * const text = await fromCSV<{time: string; close: number}>('prices.csv', new Schema([
+ *   new Field('time', new Utf8(), false),
+ *   new Field('close', new Float64(), false),
+ * ]));
+ * const prices = new DataStream(
+ *   new Schema([
+ *     new Field('time', new TimestampMillisecond(), false),
+ *     new Field('close', new Float64(), false),
+ *   ]),
+ *   text.asObservable().pipe(map(row => ({time: Date.parse(row.time), close: row.close}))),
+ * );
  * ```
  */
 export async function fromCSV<T = Record<string, unknown>>(

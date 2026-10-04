@@ -44,7 +44,13 @@ from that one on, takes these steps:
    raised to their highest high if it is below it. On the bar where the
    trend starts, there is only one previous bar.
 
-Step 2 compares the bar with the level from step 1, before step 4.
+Step 2 compares the bar with the level from step 1, before step 4. That
+level is not the one plotted on the previous bar: in an uptrend it is at or
+above it, so a low below the previous plotted level always turns the trend,
+a low a little above it can too, and a low equal to the step 1 level does
+not. The same holds for highs in a downtrend. On a bar that does not turn,
+the plotted level is the step 1 level, or lower after step 4 (higher in a
+downtrend).
 
 **Formula**
 

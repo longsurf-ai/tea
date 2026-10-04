@@ -40,20 +40,16 @@ bind it with [`Module.bind`](./runtime.md#module-module-bind), create a [`Contex
 | [`struct`](#struct-function)                    | Register generated class instances with the Context's managed Heap.                                                                                                                                                                                                                  |
 | [`text`](#text)                                 | Construct a captured Tea string; `null` is the missing string.                                                                                                                                                                                                                       |
 | [`tuple`](#tuple)                               | A tuple retains captured elements; missing tuples supply the same typed empties.                                                                                                                                                                                                     |
-| [`ArrayValue`](#arrayvalue)                     | Immutable array header over captured elements in the Heap. Mutations return another header; aliases retain their original contents. The empty element supplies the missing value and its generic type without a type-table lookup.                                                   |
 | [`Color`](#color-class)                         | An immutable Tea color with byte channels; alpha 255 is fully opaque. Missing colors are represented by null, never by a partially valid Color. Arrow publishes these own fields as Struct\<r:Uint8,g:Uint8,b:Uint8,a:Uint8>.                                                        |
 | [`Context`](#context)                           | The execution owner for one bound module. Generated programs specialize its four property types; storage mechanics and transactions stay in this library.                                                                                                                            |
 | [`Field`](#field)                               | Apache Arrow `Field`: one named, typed column. Tea facts such as `tea:type` and `tea:write` live in its metadata.                                                                                                                                                                    |
 | [`Float64`](#float64)                           | Apache Arrow `Float64`: the type of Tea int and float values, the `index` coordinate and resource ids.                                                                                                                                                                               |
 | [`Input`](#input)                               | A read-only series. Each history read captures a value at that exact point.                                                                                                                                                                                                          |
-| [`MapValue`](#mapvalue)                         | Insertion-ordered map with immutable backing. Empty key and element Values retain their generic types; actual keys cannot be missing.                                                                                                                                                |
-| [`MatrixValue`](#matrixvalue)                   | Fixed-shape row-major matrix; a write creates replacement Heap backing.                                                                                                                                                                                                              |
 | [`Module`](#module)                             | A compiled program's configuration and ordinary TypeScript entry function. Binding returns an independent configuration; execution state belongs to Context.                                                                                                                         |
 | [`Schema`](#schema)                             | Apache Arrow `Schema`: the ordered fields of a module's inputs or outputs.                                                                                                                                                                                                           |
 | [`Series`](#series)                             | One writable Tea binding. The execution owner applies persistence and commit; Series neither owns a second history buffer nor commits independently.                                                                                                                                 |
 | [`TimestampMillisecond`](#timestampmillisecond) | Apache Arrow `TimestampMillisecond`: the type of event time, such as the `time` coordinate.                                                                                                                                                                                          |
 | [`Uint8`](#uint8)                               | Apache Arrow `Uint8`: the type of each color channel (`r`, `g`, `b`, `a`).                                                                                                                                                                                                           |
-| [`Value`](#value)                               | One captured value. Rebinding a local or writing a Series cannot change it. Reference values retain their managed identity; capture never clones a body. Managed operations require an active step; output destinations detach values for callers that retain them beyond execution. |
 | [`Bool`](#bool-interface)                       | Apache Arrow `Bool`: the type of Tea bool values and the `timed` and `provisional` coordinates.                                                                                                                                                                                      |
 | [`Frame`](#frame)                               | Static bindings and written calls for the root or one function. Array indices are local slots and call slots; a child's fid indexes Module.state.frames. Context gives separate written calls independent state and histories, even when both use the same Frame definition.         |
 | [`List`](#list)                                 | Apache Arrow `List`: the type of Tea arrays, matrix values and append-output columns.                                                                                                                                                                                                |
@@ -64,9 +60,13 @@ bind it with [`Module.bind`](./runtime.md#module-module-bind), create a [`Contex
 | [`StepResult`](#stepresult)                     | Detached output cells from one accepted attempt.                                                                                                                                                                                                                                     |
 | [`Struct`](#struct-interface)                   | Apache Arrow `Struct`: the type of Tea colors, structs, tuples, matrices and resources.                                                                                                                                                                                              |
 | [`Utf8`](#utf8)                                 | Apache Arrow `Utf8`: the type of Tea strings and enum members.                                                                                                                                                                                                                       |
+| [`ArrayValue`](#arrayvalue)                     | Immutable array header over captured elements in the Heap. Mutations return another header; aliases retain their original contents. The empty element supplies the missing value and its generic type without a type-table lookup.                                                   |
+| [`MapValue`](#mapvalue)                         | Insertion-ordered map with immutable backing. Empty key and element Values retain their generic types; actual keys cannot be missing.                                                                                                                                                |
+| [`MatrixValue`](#matrixvalue)                   | Fixed-shape row-major matrix; a write creates replacement Heap backing.                                                                                                                                                                                                              |
 | [`ModuleInputs`](#moduleinputs)                 | A Module's data requirements, including named series and contextual builtins. Inspect the bound Module: parameters can change source names and history depths.                                                                                                                       |
 | [`Numeric`](#numeric)                           | Tea's numeric kind controls promotion and integer division.                                                                                                                                                                                                                          |
 | [`Scalar`](#scalar)                             | A plain JavaScript scalar: a parameter's value, default or option, or a fixed contextual builtin value passed to [`Module.bind`](./runtime.md#module-module-bind).                                                                                                                   |
+| [`Value`](#value)                               | One captured value. Rebinding a local or writing a Series cannot change it. Reference values retain their managed identity; capture never clones a body. Managed operations require an active step; output destinations detach values for callers that retain them beyond execution. |
 | [`colors`](#colors)                             | Colors reuse the canonical encoding also used by constant folding.                                                                                                                                                                                                                   |
 | [`math`](#math)                                 | Numeric intrinsics preserve Tea's result kind and normalize overflow to NA.                                                                                                                                                                                                          |
 | [`runtime`](#runtime)                           | `runtime.error(message)`: stops the run with an `ExecutionError` whose code is `RUNTIME_ERROR` and whose message is the script's.                                                                                                                                                    |
@@ -346,30 +346,6 @@ function tuple<T extends readonly Value<unknown>[]>(
 
 ## Classes
 
-### ArrayValue
-
-Immutable array header over captured elements in the Heap. Mutations return another header; aliases retain their original contents. The empty element supplies the missing value and its generic type without a type-table lookup.
-
-```ts
-class ArrayValue<T extends Value<unknown> = Value<unknown>> {
-  readonly element: T;
-  readonly storage: Ref<ArrayStorage>;
-  readonly length: number;
-  readonly capacity: number;
-  readonly kind = "array";
-  constructor(
-    element: T,
-    storage: Ref<ArrayStorage>,
-    length: number,
-    capacity?: number,
-  );
-}
-```
-
-```ts
-An empty int array retains int(NaN) as its element, even at length 0.
-```
-
 ### Color class
 
 An immutable Tea color with byte channels; alpha 255 is fully opaque. Missing colors are represented by null, never by a partially valid Color. Arrow publishes these own fields as Struct\<r:Uint8,g:Uint8,b:Uint8,a:Uint8>.
@@ -608,48 +584,6 @@ Read current state at zero or committed history at a positive offset.
 
 ```ts
 hist(offset?: number | Value<number, 'int'>): Value<T, K>;
-```
-
-### MapValue
-
-Insertion-ordered map with immutable backing. Empty key and element Values retain their generic types; actual keys cannot be missing.
-
-```ts
-class MapValue<
-  K extends Value<unknown> = Value<unknown>,
-  V extends Value<unknown> = Value<unknown>,
-> {
-  readonly key: K;
-  readonly element: V;
-  readonly storage: Ref<MapStorage>;
-  readonly size: number;
-  readonly kind = "map";
-  constructor(key: K, element: V, storage: Ref<MapStorage>, size: number);
-}
-```
-
-```ts
-Updating an existing key preserves its position in iteration order.
-```
-
-### MatrixValue
-
-Fixed-shape row-major matrix; a write creates replacement Heap backing.
-
-```ts
-class MatrixValue<T extends Value<unknown> = Value<unknown>> {
-  readonly element: T;
-  readonly storage: Ref<MatrixStorage>;
-  readonly rows: number;
-  readonly columns: number;
-  readonly kind = "matrix";
-  constructor(
-    element: T,
-    storage: Ref<MatrixStorage>,
-    rows: number,
-    columns: number,
-  );
-}
 ```
 
 ### Module
@@ -946,312 +880,6 @@ class Uint8 extends Int_<Type.Uint8> {
   constructor();
   get ArrayType(): Uint8ArrayConstructor;
 }
-```
-
-### Value
-
-One captured value. Rebinding a local or writing a Series cannot change it. Reference values retain their managed identity; capture never clones a body. Managed operations require an active step; output destinations detach values for callers that retain them beyond execution.
-
-```ts
-class Value<T, K extends string = string> {
-  readonly value: T;
-  readonly kind: K;
-  readonly ctor?: Function;
-  readonly element?: Value<unknown>;
-  readonly key?: Value<unknown>;
-  readonly elements?: readonly Value<unknown>[];
-  readonly enumValues?: readonly string[];
-  constructor(
-    value: T,
-    kind: K,
-    context?: Context | undefined,
-    metadata?: Pick<
-      Value<unknown>,
-      "ctor" | "element" | "key" | "elements" | "enumValues"
-    >,
-  );
-  get byteSize(): number;
-  sameType(other: Value<unknown>): boolean;
-  assertStored(value: RawValue, reader?: Pick<Heap, "read">): void;
-  withStored(
-    value: T,
-    context?: Context<object, object, object, object> | undefined,
-  ): Value<T, K>;
-  add<N extends Numeric, M extends Numeric>(
-    this: Value<number, N>,
-    other: Value<number, M>,
-  ): Value<number, N extends "float" ? "float" : M>;
-  sub<N extends Numeric, M extends Numeric>(
-    this: Value<number, N>,
-    other: Value<number, M>,
-  ): Value<number, N extends "float" ? "float" : M>;
-  mul<N extends Numeric, M extends Numeric>(
-    this: Value<number, N>,
-    other: Value<number, M>,
-  ): Value<number, N extends "float" ? "float" : M>;
-  div<N extends Numeric, M extends Numeric>(
-    this: Value<number, N>,
-    other: Value<number, M>,
-  ): Value<number, N extends "float" ? "float" : M>;
-  mod<N extends Numeric, M extends Numeric>(
-    this: Value<number, N>,
-    other: Value<number, M>,
-  ): Value<number, N extends "float" ? "float" : M>;
-  neg<N extends Numeric>(this: Value<number, N>): Value<number, N>;
-  concat(
-    this: Value<string | null, "string">,
-    other: Value<string | null, "string">,
-  ): Value<string | null, "string">;
-  eq(
-    other: Value<
-      T extends string ? string | null : T,
-      K extends Numeric ? Numeric : K
-    >,
-  ): Value<boolean, "bool">;
-  ne(
-    other: Value<
-      T extends string ? string | null : T,
-      K extends Numeric ? Numeric : K
-    >,
-  ): Value<boolean, "bool">;
-  lt(
-    this: Value<number, Numeric>,
-    other: Value<number, Numeric>,
-  ): Value<boolean, "bool">;
-  le(
-    this: Value<number, Numeric>,
-    other: Value<number, Numeric>,
-  ): Value<boolean, "bool">;
-  gt(
-    this: Value<number, Numeric>,
-    other: Value<number, Numeric>,
-  ): Value<boolean, "bool">;
-  ge(
-    this: Value<number, Numeric>,
-    other: Value<number, Numeric>,
-  ): Value<boolean, "bool">;
-  not(this: Value<boolean, "bool">): Value<boolean, "bool">;
-  require(this: Value<Ref<unknown> | null, K>): Value<T, K>;
-  field<
-    N extends Extract<
-      keyof (NonNullable<T> extends Ref<infer S> ? S : never),
-      string
-    >,
-  >(
-    name: N,
-  ): {
-    get(): (NonNullable<T> extends Ref<infer S> ? S : never)[N];
-    set(value: (NonNullable<T> extends Ref<infer S> ? S : never)[N]): void;
-  };
-  get<I extends number>(
-    ...args: T extends readonly Value<unknown>[]
-      ? [index: I]
-      : T extends ArrayValue
-        ? [index: Value<number, "int">]
-        : T extends MatrixValue
-          ? [row: Value<number, "int">, column: Value<number, "int">]
-          : T extends MapValue<infer Key>
-            ? [key: Key]
-            : never
-  ): T extends readonly Value<unknown>[]
-    ? T[I]
-    : T extends ArrayValue<infer E> | MatrixValue<infer E>
-      ? E
-      : T extends MapValue<Value<unknown>, infer E>
-        ? E
-        : never;
-  size(this: Value<ArrayValue | MapValue | null>): Value<number, "int">;
-  isEmpty(this: Value<ArrayValue | MapValue | null>): Value<boolean, "bool">;
-  first(
-    this: Value<ArrayValue | null, K>,
-  ): T extends ArrayValue<infer E> ? E : never;
-  last(
-    this: Value<ArrayValue | null, K>,
-  ): T extends ArrayValue<infer E> ? E : never;
-  copy(this: Value<ArrayValue | MatrixValue | MapValue | null, K>): Value<T, K>;
-  rows(this: Value<MatrixValue | null>): Value<number, "int">;
-  columns(this: Value<MatrixValue | null>): Value<number, "int">;
-  elementsCount(this: Value<MatrixValue | null>): Value<number, "int">;
-  row(
-    index: Value<number, "int">,
-  ): T extends MatrixValue<infer E>
-    ? Value<ArrayValue<E> | null, "array">
-    : never;
-  column(
-    index: Value<number, "int">,
-  ): T extends MatrixValue<infer E>
-    ? Value<ArrayValue<E> | null, "array">
-    : never;
-  contains(
-    key: T extends MapValue<infer Key> ? Key : never,
-  ): Value<boolean, "bool">;
-  keys(
-    this: Value<MapValue | null, K>,
-  ): T extends MapValue<infer Key>
-    ? Value<ArrayValue<Key> | null, "array">
-    : never;
-  values(
-    this: Value<MapValue | null, K>,
-  ): T extends MapValue<Value<unknown>, infer Item>
-    ? Value<ArrayValue<Item> | null, "array">
-    : never;
-  set(
-    ...args: T extends ArrayValue<infer E>
-      ? [index: Value<number, "int">, value: E]
-      : T extends MatrixValue<infer E>
-        ? [row: Value<number, "int">, column: Value<number, "int">, value: E]
-        : never
-  ): {
-    replacement: Value<T, K>;
-    result: undefined;
-  };
-  push(item: T extends ArrayValue<infer E> ? E : never): {
-    replacement: Value<T, K>;
-    result: undefined;
-  };
-  pop(this: Value<ArrayValue | null, K>): {
-    replacement: Value<T, K>;
-    result: T extends ArrayValue<infer E> ? E : never;
-  };
-  clear(this: Value<ArrayValue | MapValue | null, K>): {
-    replacement: Value<T, K>;
-    result: undefined;
-  };
-  fill(item: T extends MatrixValue<infer E> ? E : never): {
-    replacement: Value<T, K>;
-    result: undefined;
-  };
-  put(
-    ...args: T extends MapValue<infer Key, infer Item>
-      ? [key: Key, value: Item]
-      : never
-  ): {
-    replacement: Value<T, K>;
-    result: undefined;
-  };
-  remove(key: T extends MapValue<infer Key> ? Key : never): {
-    replacement: Value<T, K>;
-    result: T extends MapValue<Value<unknown>, infer Item> ? Item : never;
-  };
-  entries(): readonly (T extends ArrayValue<infer E>
-    ? E
-    : T extends MapValue<infer Key, infer Item>
-      ? readonly [Key, Item]
-      : never)[];
-}
-```
-
-**Example:** `int(7).div(int(2)).value` is 3; dividing by float(2) produces 3.5.
-
-#### Value Value byteSize
-
-Logical size of this value's carrier; child allocations are counted separately.
-
-```ts
-get byteSize(): number;
-```
-
-#### Value Value sameType
-
-Compare declared value domains without a numeric descriptor lookup.
-
-```ts
-sameType(other: Value<unknown>): boolean;
-```
-
-#### Value Value assertStored
-
-Validate raw values where they enter a declared binding or managed collection.
-
-```ts
-assertStored(value: RawValue, reader?: Pick<Heap, 'read'>): void;
-```
-
-#### Value Value add
-
-Add captured numbers. A float operand promotes the result; neither operand changes.
-
-```ts
-add<N extends Numeric, M extends Numeric>(this: Value<number, N>, other: Value<number, M>): Value<number, N extends 'float' ? 'float' : M>;
-```
-
-**Example:** `int(2).add(float(0.5)).value` is 2.5.
-
-#### Value Value div
-
-Divide using Tea rules: integer division truncates toward zero and zero yields NA.
-
-```ts
-div<N extends Numeric, M extends Numeric>(this: Value<number, N>, other: Value<number, M>): Value<number, N extends 'float' ? 'float' : M>;
-```
-
-**Example:** `int(-7).div(int(2)).value` is -3.
-
-#### Value Value eq
-
-Equality involving a missing value is false, including two missing values.
-
-```ts
-eq(other: Value<T extends string ? string | null : T, K extends Numeric ? Numeric : K>): Value<boolean, 'bool'>;
-```
-
-#### Value Value ne
-
-Inequality involving a missing value is also false. Use na() to test missingness.
-
-```ts
-ne(other: Value<T extends string ? string | null : T, K extends Numeric ? Numeric : K>): Value<boolean, 'bool'>;
-```
-
-#### Value Value require
-
-Validate the captured receiver before evaluating mutating method arguments.
-
-```ts
-require(this: Value<Ref<unknown> | null, K>): Value<T, K>;
-```
-
-#### Value Value field
-
-Capture a named field location. Null reads use the generated class's empty field value; mutation requires a non-null receiver before RHS evaluation.
-
-```ts
-field<N extends Extract<keyof (NonNullable<T> extends Ref<infer S> ? S : never), string>>(name: N): {
-    get(): (NonNullable<T> extends Ref<infer S> ? S : never)[N];
-    set(value: (NonNullable<T> extends Ref<infer S> ? S : never)[N]): void;
-};
-```
-
-**Example:** `point.require().field('x').set(float(2))` stages a field write.
-
-#### Value Value get
-
-Read a collection element or a tuple member as a captured value.
-
-```ts
-get<I extends number>(...args: T extends readonly Value<unknown>[] ? [
-    index: I
-] : T extends ArrayValue ? [
-    index: Value<number, 'int'>
-] : T extends MatrixValue ? [
-    row: Value<number, 'int'>,
-    column: Value<number, 'int'>
-] : T extends MapValue<infer Key> ? [
-    key: Key
-] : never): T extends readonly Value<unknown>[] ? T[I] : T extends ArrayValue<infer E> | MatrixValue<infer E> ? E : T extends MapValue<Value<unknown>, infer E> ? E : never;
-```
-
-**Example:** `prices.get(int(0))` reads the first array item; `pair.get(1)` reads a tuple member.
-
-#### Value Value entries
-
-Snapshot iteration membership before the loop; referenced struct bodies stay live.
-
-```ts
-entries(): readonly (T extends ArrayValue<infer E> ? E : T extends MapValue<infer Key, infer Item> ? readonly [
-    Key,
-    Item
-] : never)[];
 ```
 
 ## Interfaces
@@ -1562,6 +1190,65 @@ toString(): string;
 
 ## Types
 
+### ArrayValue
+
+Immutable array header over captured elements in the Heap. Mutations return another header; aliases retain their original contents. The empty element supplies the missing value and its generic type without a type-table lookup.
+
+```ts
+class ArrayValue<T extends Value<unknown> = Value<unknown>> {
+  readonly element: T;
+  readonly storage: Ref<ArrayStorage>;
+  readonly length: number;
+  readonly capacity: number;
+  readonly kind = "array";
+}
+```
+
+A type-only export: it names a type, and no value of that name exists at run time, so `new` and `instanceof` cannot use it.
+
+```ts
+An empty int array retains int(NaN) as its element, even at length 0.
+```
+
+### MapValue
+
+Insertion-ordered map with immutable backing. Empty key and element Values retain their generic types; actual keys cannot be missing.
+
+```ts
+class MapValue<
+  K extends Value<unknown> = Value<unknown>,
+  V extends Value<unknown> = Value<unknown>,
+> {
+  readonly key: K;
+  readonly element: V;
+  readonly storage: Ref<MapStorage>;
+  readonly size: number;
+  readonly kind = "map";
+}
+```
+
+A type-only export: it names a type, and no value of that name exists at run time, so `new` and `instanceof` cannot use it.
+
+```ts
+Updating an existing key preserves its position in iteration order.
+```
+
+### MatrixValue
+
+Fixed-shape row-major matrix; a write creates replacement Heap backing.
+
+```ts
+class MatrixValue<T extends Value<unknown> = Value<unknown>> {
+  readonly element: T;
+  readonly storage: Ref<MatrixStorage>;
+  readonly rows: number;
+  readonly columns: number;
+  readonly kind = "matrix";
+}
+```
+
+A type-only export: it names a type, and no value of that name exists at run time, so `new` and `instanceof` cannot use it.
+
 ### ModuleInputs
 
 A Module's data requirements, including named series and contextual builtins. Inspect the bound Module: parameters can change source names and history depths.
@@ -1590,6 +1277,310 @@ Colors, enum members and source series names travel as strings. Numbers are
 finite, except that a fixed builtin may be `NaN` for numeric na; `null` is a
 missing value, and as a parameter default it means the parameter has no
 usable default.
+
+### Value
+
+One captured value. Rebinding a local or writing a Series cannot change it. Reference values retain their managed identity; capture never clones a body. Managed operations require an active step; output destinations detach values for callers that retain them beyond execution.
+
+```ts
+class Value<T, K extends string = string> {
+  readonly value: T;
+  readonly kind: K;
+  readonly ctor?: Function;
+  readonly element?: Value<unknown>;
+  readonly key?: Value<unknown>;
+  readonly elements?: readonly Value<unknown>[];
+  readonly enumValues?: readonly string[];
+  get byteSize(): number;
+  sameType(other: Value<unknown>): boolean;
+  assertStored(value: RawValue, reader?: Pick<Heap, "read">): void;
+  withStored(
+    value: T,
+    context?: Context<object, object, object, object> | undefined,
+  ): Value<T, K>;
+  add<N extends Numeric, M extends Numeric>(
+    this: Value<number, N>,
+    other: Value<number, M>,
+  ): Value<number, N extends "float" ? "float" : M>;
+  sub<N extends Numeric, M extends Numeric>(
+    this: Value<number, N>,
+    other: Value<number, M>,
+  ): Value<number, N extends "float" ? "float" : M>;
+  mul<N extends Numeric, M extends Numeric>(
+    this: Value<number, N>,
+    other: Value<number, M>,
+  ): Value<number, N extends "float" ? "float" : M>;
+  div<N extends Numeric, M extends Numeric>(
+    this: Value<number, N>,
+    other: Value<number, M>,
+  ): Value<number, N extends "float" ? "float" : M>;
+  mod<N extends Numeric, M extends Numeric>(
+    this: Value<number, N>,
+    other: Value<number, M>,
+  ): Value<number, N extends "float" ? "float" : M>;
+  neg<N extends Numeric>(this: Value<number, N>): Value<number, N>;
+  concat(
+    this: Value<string | null, "string">,
+    other: Value<string | null, "string">,
+  ): Value<string | null, "string">;
+  eq(
+    other: Value<
+      T extends string ? string | null : T,
+      K extends Numeric ? Numeric : K
+    >,
+  ): Value<boolean, "bool">;
+  ne(
+    other: Value<
+      T extends string ? string | null : T,
+      K extends Numeric ? Numeric : K
+    >,
+  ): Value<boolean, "bool">;
+  lt(
+    this: Value<number, Numeric>,
+    other: Value<number, Numeric>,
+  ): Value<boolean, "bool">;
+  le(
+    this: Value<number, Numeric>,
+    other: Value<number, Numeric>,
+  ): Value<boolean, "bool">;
+  gt(
+    this: Value<number, Numeric>,
+    other: Value<number, Numeric>,
+  ): Value<boolean, "bool">;
+  ge(
+    this: Value<number, Numeric>,
+    other: Value<number, Numeric>,
+  ): Value<boolean, "bool">;
+  not(this: Value<boolean, "bool">): Value<boolean, "bool">;
+  require(this: Value<Ref<unknown> | null, K>): Value<T, K>;
+  field<
+    N extends Extract<
+      keyof (NonNullable<T> extends Ref<infer S> ? S : never),
+      string
+    >,
+  >(
+    name: N,
+  ): {
+    get(): (NonNullable<T> extends Ref<infer S> ? S : never)[N];
+    set(value: (NonNullable<T> extends Ref<infer S> ? S : never)[N]): void;
+  };
+  get<I extends number>(
+    ...args: T extends readonly Value<unknown>[]
+      ? [index: I]
+      : T extends ArrayValue
+        ? [index: Value<number, "int">]
+        : T extends MatrixValue
+          ? [row: Value<number, "int">, column: Value<number, "int">]
+          : T extends MapValue<infer Key>
+            ? [key: Key]
+            : never
+  ): T extends readonly Value<unknown>[]
+    ? T[I]
+    : T extends ArrayValue<infer E> | MatrixValue<infer E>
+      ? E
+      : T extends MapValue<Value<unknown>, infer E>
+        ? E
+        : never;
+  size(this: Value<ArrayValue | MapValue | null>): Value<number, "int">;
+  isEmpty(this: Value<ArrayValue | MapValue | null>): Value<boolean, "bool">;
+  first(
+    this: Value<ArrayValue | null, K>,
+  ): T extends ArrayValue<infer E> ? E : never;
+  last(
+    this: Value<ArrayValue | null, K>,
+  ): T extends ArrayValue<infer E> ? E : never;
+  copy(this: Value<ArrayValue | MatrixValue | MapValue | null, K>): Value<T, K>;
+  rows(this: Value<MatrixValue | null>): Value<number, "int">;
+  columns(this: Value<MatrixValue | null>): Value<number, "int">;
+  elementsCount(this: Value<MatrixValue | null>): Value<number, "int">;
+  row(
+    index: Value<number, "int">,
+  ): T extends MatrixValue<infer E>
+    ? Value<ArrayValue<E> | null, "array">
+    : never;
+  column(
+    index: Value<number, "int">,
+  ): T extends MatrixValue<infer E>
+    ? Value<ArrayValue<E> | null, "array">
+    : never;
+  contains(
+    key: T extends MapValue<infer Key> ? Key : never,
+  ): Value<boolean, "bool">;
+  keys(
+    this: Value<MapValue | null, K>,
+  ): T extends MapValue<infer Key>
+    ? Value<ArrayValue<Key> | null, "array">
+    : never;
+  values(
+    this: Value<MapValue | null, K>,
+  ): T extends MapValue<Value<unknown>, infer Item>
+    ? Value<ArrayValue<Item> | null, "array">
+    : never;
+  set(
+    ...args: T extends ArrayValue<infer E>
+      ? [index: Value<number, "int">, value: E]
+      : T extends MatrixValue<infer E>
+        ? [row: Value<number, "int">, column: Value<number, "int">, value: E]
+        : never
+  ): {
+    replacement: Value<T, K>;
+    result: undefined;
+  };
+  push(item: T extends ArrayValue<infer E> ? E : never): {
+    replacement: Value<T, K>;
+    result: undefined;
+  };
+  pop(this: Value<ArrayValue | null, K>): {
+    replacement: Value<T, K>;
+    result: T extends ArrayValue<infer E> ? E : never;
+  };
+  clear(this: Value<ArrayValue | MapValue | null, K>): {
+    replacement: Value<T, K>;
+    result: undefined;
+  };
+  fill(item: T extends MatrixValue<infer E> ? E : never): {
+    replacement: Value<T, K>;
+    result: undefined;
+  };
+  put(
+    ...args: T extends MapValue<infer Key, infer Item>
+      ? [key: Key, value: Item]
+      : never
+  ): {
+    replacement: Value<T, K>;
+    result: undefined;
+  };
+  remove(key: T extends MapValue<infer Key> ? Key : never): {
+    replacement: Value<T, K>;
+    result: T extends MapValue<Value<unknown>, infer Item> ? Item : never;
+  };
+  entries(): readonly (T extends ArrayValue<infer E>
+    ? E
+    : T extends MapValue<infer Key, infer Item>
+      ? readonly [Key, Item]
+      : never)[];
+}
+```
+
+A type-only export: it names a type, and no value of that name exists at run time, so `new` and `instanceof` cannot use it.
+
+Build values with [`int`](./runtime.md#int), [`float`](./runtime.md#float), [`bool`](./runtime.md#bool-function), [`text`](./runtime.md#text) and
+the [`array`](./runtime.md#array), [`map`](./runtime.md#map), [`matrix`](./runtime.md#matrix), [`tuple`](./runtime.md#tuple) and
+[`struct`](./runtime.md#struct-function) factories, and test a value's kind with `kind`, such as
+`value.kind === 'array'`.
+
+**Example:** `int(7).div(int(2)).value` is 3; dividing by float(2) produces 3.5.
+
+#### Value Value byteSize
+
+Logical size of this value's carrier; child allocations are counted separately.
+
+```ts
+get byteSize(): number;
+```
+
+#### Value Value sameType
+
+Compare declared value domains without a numeric descriptor lookup.
+
+```ts
+sameType(other: Value<unknown>): boolean;
+```
+
+#### Value Value assertStored
+
+Validate raw values where they enter a declared binding or managed collection.
+
+```ts
+assertStored(value: RawValue, reader?: Pick<Heap, 'read'>): void;
+```
+
+#### Value Value add
+
+Add captured numbers. A float operand promotes the result; neither operand changes.
+
+```ts
+add<N extends Numeric, M extends Numeric>(this: Value<number, N>, other: Value<number, M>): Value<number, N extends 'float' ? 'float' : M>;
+```
+
+**Example:** `int(2).add(float(0.5)).value` is 2.5.
+
+#### Value Value div
+
+Divide using Tea rules: integer division truncates toward zero and zero yields NA.
+
+```ts
+div<N extends Numeric, M extends Numeric>(this: Value<number, N>, other: Value<number, M>): Value<number, N extends 'float' ? 'float' : M>;
+```
+
+**Example:** `int(-7).div(int(2)).value` is -3.
+
+#### Value Value eq
+
+Equality involving a missing value is false, including two missing values.
+
+```ts
+eq(other: Value<T extends string ? string | null : T, K extends Numeric ? Numeric : K>): Value<boolean, 'bool'>;
+```
+
+#### Value Value ne
+
+Inequality involving a missing value is also false. Use na() to test missingness.
+
+```ts
+ne(other: Value<T extends string ? string | null : T, K extends Numeric ? Numeric : K>): Value<boolean, 'bool'>;
+```
+
+#### Value Value require
+
+Validate the captured receiver before evaluating mutating method arguments.
+
+```ts
+require(this: Value<Ref<unknown> | null, K>): Value<T, K>;
+```
+
+#### Value Value field
+
+Capture a named field location. Null reads use the generated class's empty field value; mutation requires a non-null receiver before RHS evaluation.
+
+```ts
+field<N extends Extract<keyof (NonNullable<T> extends Ref<infer S> ? S : never), string>>(name: N): {
+    get(): (NonNullable<T> extends Ref<infer S> ? S : never)[N];
+    set(value: (NonNullable<T> extends Ref<infer S> ? S : never)[N]): void;
+};
+```
+
+**Example:** `point.require().field('x').set(float(2))` stages a field write.
+
+#### Value Value get
+
+Read a collection element or a tuple member as a captured value.
+
+```ts
+get<I extends number>(...args: T extends readonly Value<unknown>[] ? [
+    index: I
+] : T extends ArrayValue ? [
+    index: Value<number, 'int'>
+] : T extends MatrixValue ? [
+    row: Value<number, 'int'>,
+    column: Value<number, 'int'>
+] : T extends MapValue<infer Key> ? [
+    key: Key
+] : never): T extends readonly Value<unknown>[] ? T[I] : T extends ArrayValue<infer E> | MatrixValue<infer E> ? E : T extends MapValue<Value<unknown>, infer E> ? E : never;
+```
+
+**Example:** `prices.get(int(0))` reads the first array item; `pair.get(1)` reads a tuple member.
+
+#### Value Value entries
+
+Snapshot iteration membership before the loop; referenced struct bodies stay live.
+
+```ts
+entries(): readonly (T extends ArrayValue<infer E> ? E : T extends MapValue<infer Key, infer Item> ? readonly [
+    Key,
+    Item
+] : never)[];
+```
 
 ## Constants
 

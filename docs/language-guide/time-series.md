@@ -18,10 +18,13 @@ values is not evidence that the threshold was crossed. Preserve missingness
 until the calculation is meaningful; replacing it with zero changes signals.
 
 The current `ta.sma(source, length)` uses the current sample plus the preceding
-`length - 1` samples. It needs a complete window; missing samples in that window
-produce a missing average. `ta.highest` and `ta.lowest` also include the current
-sample. To compare against _previous_ bars, compute the rolling value every
-step and use that result's `[1]` history. `ta.ema` seeds from its first source
+`length - 1` samples. Missing samples in that window are left out, so the
+average is over its known samples; it is missing only on the first
+`length - 1` steps the call runs, or when every sample in the window is
+missing. A call that runs under a condition records a missing sample for each
+step it skips. `ta.highest` and `ta.lowest` also include the current sample.
+To compare against _previous_ bars, compute the rolling value every step and
+use that result's `[1]` history. `ta.ema` seeds from its first source
 value, while `ta.rma` seeds from a window of nonmissing values. Their startup
 behavior is not interchangeable.
 

@@ -70,18 +70,24 @@ emit "range" barRange // the range of the current bar
 ### `/** */`
 
 A block comment that starts with `/**` is a documentation comment. The
-compiler treats it as an ordinary block comment. The libraries that ship with
-Tea use these blocks to document their declarations, and the
-[built-in](../builtins/core.md) and [library](../libraries/trade.md) reference
-pages are generated from them. Other comments never appear in the reference.
+compiler treats it as an ordinary block comment; the editor and the reference
+read it.
 
-- A doc comment documents the declaration on the line directly below it: the
-  `library(...)` header, an exported function, type, enum or interface, or a
-  field, method or enum member inside an exported type or enum.
-- Its closing `*/` ends its line, and nothing separates it from the
-  declaration. A `*` at the start of each inner line is optional.
+- In the editor, hover, completion and signature help show the doc comment
+  directly above a function, type, enum, interface, field, method, enum member
+  or top-level variable, in your own scripts too, exported or not. Parameters
+  and local variables get none.
+- The [built-in](../builtins/core.md) and [library](../libraries/trade.md)
+  reference pages are generated from the doc comments of the libraries that
+  ship with Tea: the `library(...)` header, exported declarations, and the
+  members of exported types and enums. Comments in your own scripts never
+  appear in the reference.
+- A doc comment documents the declaration on the line directly below it. Its
+  closing `*/` ends its line, and nothing separates it from the declaration.
+  A `*` at the start of each inner line is optional.
 - The first paragraph is the summary; later paragraphs are Markdown.
-- Tags follow the prose: `@param name text`, `@returns text` and
+- Tags follow the prose: `@param name text`, `@returns text`,
+  `@formula` (TeX), `@warmup`, `@example`, `@pine`, `@see name` and
   `@category Name`. `{@link name}` links to another documented name.
 
 ```tea

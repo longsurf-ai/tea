@@ -311,7 +311,10 @@ items.get(int(0)); // Value<number, 'int'> containing NaN
 ```
 
 `ArrayValue`, `MatrixValue` and `MapValue` are frozen header classes over
-persistent Heap backing. Array and matrix elements, map keys and values, and
+persistent Heap backing. `tea/runtime` exports them, and `Value`, as types
+only: build values with `int`, `float`, `bool`, `text` and the `array`, `map`,
+`matrix`, `tuple` and `struct` factories, and test a value's kind with
+`value.kind`, such as `value.kind === 'array'`, rather than `instanceof`. Array and matrix elements, map keys and values, and
 tuple members are captured Values. Mutations allocate replacement backing;
 copying a collection does not deep-copy referenced structs. Bounds, ownership,
 nominal identity and logical memory limits remain runtime checks.

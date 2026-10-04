@@ -22,6 +22,13 @@ It is a [`ta.wma`](./wma.md) over `math.floor(math.sqrt(length))` bars of
 `length / 2` rounded down. Each of the three averages leaves out `na`
 values.
 
+The difference first exists on the bar where `ta.wma(source, length)`
+fills, and the result waits until the outer average holds
+`math.floor(math.sqrt(length))` differences, so it starts
+`math.floor(math.sqrt(length)) - 1` bars after `ta.wma(source, length)`:
+at index 8 rather than 7 for a `length` of 8. The formula applies from
+then on.
+
 **Formula**
 
 $$

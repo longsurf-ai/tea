@@ -4,9 +4,11 @@ description: Variables and assignment, functions, struct and enum types, methods
 ---
 
 A declaration introduces a name. A variable is visible from its declaration to
-the end of the block that declares it, including nested blocks. Functions,
-types, enums, interfaces and imports are declared at the top level, and their
-names are visible throughout the file.
+the end of the block that declares it, including nested blocks; a function
+body sees the top-level variables declared above each call to it (see
+[functions](#functions)). Functions, types, enums, interfaces and
+imports are declared at the top level, and their names are visible throughout
+the file.
 
 ## Variables
 
@@ -209,11 +211,20 @@ name(parameters) =>
 
 - Functions are declared at the top level of a file and are visible
   throughout it, including above the declaration.
+- A function name is declared once per file: Tea has no overloading, so a
+  second `f` with other parameter types or counts is an error (`'f' is
+already declared in this scope`). An untyped parameter serves every
+  argument type; otherwise use another name. The methods of one type need
+  distinct names too.
 - The body is one expression, or an indented block whose value is the value of
   its last statement. [`return`](./control-flow.md#return) leaves earlier.
 - The result type is inferred and cannot be written. Every `return` value and
   the final value must share a type (`int` and `float` give `float`); a
   function cannot return a value on one path and none on another.
+- The body is checked at each call, against the top-level variables declared
+  above that call. `f() => level * 2` may sit above `level = close + 1` when
+  every call to `f` comes after that line; a call above it reports
+  `undeclared name 'level'` in the body.
 - A function reads variables declared outside it but cannot reassign them or
   update collections stored in them; in a library, functions may update the
   library's own `var` variables. A function can change fields of structs it
@@ -262,8 +273,9 @@ qualifier Type name
 - A [qualifier](./types.md#qualifiers-in-annotations) caps how variable the
   argument may be: `simple int length` rejects a `series` argument. A
   qualifier needs a type after it.
-- `= default` makes the parameter optional. The default is evaluated for each
-  call that omits the argument, and may use earlier parameters and variables
+- `= default` makes the parameter optional. With a type, the default must
+  convert to it. The default is evaluated for each call that omits the
+  argument, and may use earlier parameters and variables
   declared outside the function.
 - Parameter names are unique within one declaration.
 - A parameter is a local variable: the body may reassign it without affecting
