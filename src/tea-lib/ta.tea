@@ -4,11 +4,15 @@
 // site state falls out of function semantics (var locals, param history).
 // Implicitly imported into every script under its declared name.
 //
-// Coverage tracks Pine v6's ta.* functions. Not yet expressible:
+// Coverage tracks Pine v6's ta.* functions; the library doc's @pine lists
+// what is missing and why readers cannot use it yet:
 //   - median, mode, percentile_*, valuewhen: need collections (array slice).
 //   - ta.vwap: needs a session anchor.
 //   - ta.tr as a variable: it would share its name with the ta.tr function.
 // Ambient reads (volume, high, low, close) are pine prelude input aliases.
+// Count guards read `not (length >= 1)`, so an na count fails too: every
+// comparison with na is false. A constant count folds, so a valid one leaves
+// no guard behind and an invalid one is a compile error at the call.
 
 /**
  * Technical-analysis functions and variables: moving averages, oscillators,
@@ -108,8 +112,8 @@ library("ta")
  * @see ta.wma
  * @category Moving averages
  */
-export sma(source, int length) =>
-	if length < 1
+export sma(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.sma: length must be at least 1")
 	var int bars = 0
 	bars += 1
@@ -171,8 +175,8 @@ export sma(source, int length) =>
  * @see ta.sma
  * @category Moving averages
  */
-export ema(source, int length) =>
-	if length < 1
+export ema(float source, simple int length) =>
+	if not (length >= 1)
 		runtime.error("ta.ema: length must be at least 1")
 	alpha = 2.0 / (length + 1)
 	var float e = na
@@ -237,8 +241,8 @@ export ema(source, int length) =>
  * @see ta.rsi
  * @category Moving averages
  */
-export rma(source, int length) =>
-	if length < 1
+export rma(float source, simple int length) =>
+	if not (length >= 1)
 		runtime.error("ta.rma: length must be at least 1")
 	alpha = 1.0 / length
 	var float r = na
@@ -298,8 +302,8 @@ export rma(source, int length) =>
  * @see ta.hma
  * @category Moving averages
  */
-export wma(source, int length) =>
-	if length < 1
+export wma(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.wma: length must be at least 1")
 	var int bars = 0
 	bars += 1
@@ -365,8 +369,8 @@ export wma(source, int length) =>
  * @see ta.wma
  * @category Moving averages
  */
-export vwma(source, int length) =>
-	if length < 1
+export vwma(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.vwma: length must be at least 1")
 	var int bars = 0
 	bars += 1
@@ -432,8 +436,8 @@ export vwma(source, int length) =>
  * @see ta.ema
  * @category Moving averages
  */
-export hma(source, int length) =>
-	if length < 2
+export hma(float source, simple int length) =>
+	if not (length >= 2)
 		runtime.error("ta.hma: length must be at least 2")
 	var int bars = 0
 	bars += 1
@@ -487,19 +491,19 @@ export hma(source, int length) =>
  * @see ta.sma
  * @category Moving averages
  */
-export swma(source) =>
+export swma(float source) =>
 	source[3] / 6.0 + source[2] * 2 / 6.0 + source[1] * 2 / 6.0 + source / 6.0
 
 /**
  * Arnaud Legoux moving average: the mean of the last `length` values of
- * `source`, weighted by a bell curve.
+ * `series`, weighted by a bell curve.
  *
  * The weights follow a Gaussian curve across the window. Its peak sits
  * `offset * (length - 1)` positions after the oldest value, and its standard
  * deviation is `length / sigma` bars. The weighted sum is divided by the sum
  * of the weights. An `na` value in the window makes the result `na`.
  *
- * @param source Series to average, usually {@link close}.
+ * @param series Series to average, usually {@link close}.
  * @param length Number of bars in the window, at least 1.
  * @param offset Position of the peak weight, from 0 (the oldest value) to 1
  * (the newest).
@@ -513,7 +517,7 @@ export swma(source) =>
  * \begin{aligned}
  * \mathrm{alma}_t &= \frac
  * {\sum_{j=0}^{\mathit{length}-1} w_j
- * \cdot \mathit{source}_{t-\mathit{length}+1+j}}
+ * \cdot \mathit{series}_{t-\mathit{length}+1+j}}
  * {\sum_{j=0}^{\mathit{length}-1} w_j},
  * \qquad w_j = \exp\left(-\frac{(j - m)^2}{2 s^2}\right) \\
  * \text{where}\quad m &= \begin{cases}
@@ -551,15 +555,12 @@ export swma(source) =>
  * 10,21
  * 11,24
  * ```
- * @pine The first parameter is named `source`; Pine's manual names it
- * `series`. A call that passes it by name writes `source = close`, not
- * `series = close`.
  * @see ta.wma
  * @see ta.sma
  * @category Moving averages
  */
-export alma(source, int length, offset, sigma, bool floor = false) =>
-	if length < 1
+export alma(float series, int length, simple float offset, simple float sigma, simple bool floor = false) =>
+	if not (length >= 1)
 		runtime.error("ta.alma: length must be at least 1")
 	m = floor ? math.floor(offset * (length - 1)) : offset * (length - 1)
 	s = float(length) / sigma
@@ -568,7 +569,7 @@ export alma(source, int length, offset, sigma, bool floor = false) =>
 	for i = 0 to length - 1
 		weight = math.exp(-math.pow(i - m, 2) / (2 * math.pow(s, 2)))
 		norm += weight
-		sum += weight * source[length - 1 - i]
+		sum += weight * series[length - 1 - i]
 	sum / norm
 
 /**
@@ -627,9 +628,9 @@ export alma(source, int length, offset, sigma, bool floor = false) =>
  * @see ta.correlation
  * @category Moving averages
  */
-export linreg(source, int length, int offset) =>
-	if length < 1
-		runtime.error("ta.linreg: length must be at least 1")
+export linreg(float source, int length, simple int offset) =>
+	if not (length >= 2)
+		runtime.error("ta.linreg: length must be at least 2")
 	sumX = 0.0
 	sumY = 0.0
 	sumXY = 0.0
@@ -690,8 +691,8 @@ export linreg(source, int length, int offset) =>
  * @see ta.stoch
  * @category Momentum
  */
-export cog(source, int length) =>
-	if length < 1
+export cog(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.cog: length must be at least 1")
 	var int bars = 0
 	bars += 1
@@ -742,7 +743,7 @@ export cog(source, int length) =>
  * @category Momentum
  */
 export change(source, int length = 1) =>
-	if length < 1
+	if not (length >= 1)
 		runtime.error("ta.change: length must be at least 1")
 	source - source[length]
 
@@ -773,14 +774,12 @@ export change(source, int length = 1) =>
  * 5,20
  * 6,19
  * ```
- * @pine Pine's manual gives the result as `float`; Tea returns an `int` for
- * an `int` source.
  * @see ta.change
  * @see ta.roc
  * @category Momentum
  */
-export mom(source, int length) =>
-	if length < 1
+export mom(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.mom: length must be at least 1")
 	source - source[length]
 
@@ -819,8 +818,8 @@ export mom(source, int length) =>
  * @see ta.mom
  * @category Momentum
  */
-export roc(source, int length) =>
-	if length < 1
+export roc(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.roc: length must be at least 1")
 	100.0 * (source - source[length]) / source[length]
 
@@ -875,26 +874,26 @@ export roc(source, int length) =>
  * @see ta.mfi
  * @category Momentum
  */
-export rsi(source, int length) =>
-	if length < 1
+export rsi(float source, simple int length) =>
+	if not (length >= 1)
 		runtime.error("ta.rsi: length must be at least 1")
 	up = rma(math.max(change(source), 0), length)
 	down = rma(math.max(-change(source), 0), length)
 	down == 0 ? 100.0 : up == 0 ? 0.0 : 100.0 - 100.0 / (1 + up / down)
 
 /**
- * Chande Momentum Oscillator (CMO) of `source`, from `-100` to `100`.
+ * Chande Momentum Oscillator (CMO) of `series`, from `-100` to `100`.
  *
  * Over the last `length` bar-to-bar changes, it is the sum of the gains minus
  * the sum of the losses, as a percentage of their total. A change that
  * involves an `na` value is left out.
  *
- * @param source Series to measure, usually {@link close}.
+ * @param series Series to measure, usually {@link close}.
  * @param length Number of bar-to-bar changes in the window, at least 1.
  * @returns `float`: the oscillator.
  * @formula
  * \begin{aligned}
- * \Delta_t &= \mathit{source}_t - \mathit{source}_{t-1} \\
+ * \Delta_t &= \mathit{series}_t - \mathit{series}_{t-1} \\
  * K_t &= \{\, i : 0 \le i < \mathit{length},\
  * \Delta_{t-i} \ne \text{na} \,\} \\
  * G_t &= \sum_{i \in K_t} \max(\Delta_{t-i}, 0), \qquad
@@ -923,21 +922,19 @@ export rsi(source, int length) =>
  * 7,15
  * 8,17
  * ```
- * @pine Pine names the first parameter `series`; Tea names it `source`, so a
- * named argument reads `source = close`.
  * @see ta.rsi
  * @see ta.tsi
  * @category Momentum
  */
-export cmo(source, int length) =>
-	if length < 1
+export cmo(float series, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.cmo: length must be at least 1")
 	var int bars = 0
 	bars += 1
 	sumUp = 0.0
 	sumDown = 0.0
 	for i = 0 to length - 1
-		delta = source[i] - source[i + 1]
+		delta = series[i] - series[i + 1]
 		if not na(delta)
 			sumUp += math.max(delta, 0)
 			sumDown += math.max(-delta, 0)
@@ -987,13 +984,16 @@ export cmo(source, int length) =>
  * @see ta.cmo
  * @category Momentum
  */
-export tsi(source, int short_length, int long_length) =>
-	if short_length < 1
+export tsi(float source, simple int short_length, simple int long_length) =>
+	if not (short_length >= 1)
 		runtime.error("ta.tsi: short_length must be at least 1")
-	if long_length < 1
+	if not (long_length >= 1)
 		runtime.error("ta.tsi: long_length must be at least 1")
 	diff = change(source)
-	ema(ema(diff, long_length), short_length) / ema(ema(math.abs(diff), long_length), short_length)
+	// A bar whose change is unknown is skipped by the outer averages too, as
+	// the inner ones skip it, so it moves nothing.
+	known = not na(diff)
+	ema(known ? ema(diff, long_length) : na, short_length) / ema(known ? ema(math.abs(diff), long_length) : na, short_length)
 
 /**
  * Stochastic oscillator, the fast %K: where `source` sits between the lowest
@@ -1046,8 +1046,8 @@ export tsi(source, int short_length, int long_length) =>
  * @see ta.lowest
  * @category Momentum
  */
-export stoch(source, h, l, int length) =>
-	if length < 1
+export stoch(float source, float h, float l, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.stoch: length must be at least 1")
 	lowestLow = lowest(l, length)
 	100.0 * (source - lowestLow) / (highest(h, length) - lowestLow)
@@ -1093,8 +1093,8 @@ export stoch(source, h, l, int length) =>
  * @see ta.dev
  * @category Momentum
  */
-export cci(source, int length) =>
-	if length < 1
+export cci(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.cci: length must be at least 1")
 	mean = sma(source, length)
 	md = 0.0
@@ -1152,28 +1152,28 @@ export cci(source, int length) =>
  * @category Momentum
  */
 export wpr(int length) =>
-	if length < 1
+	if not (length >= 1)
 		runtime.error("ta.wpr: length must be at least 1")
 	upper = highest(high, length)
 	lower = lowest(low, length)
 	100 * (close - upper) / (upper - lower)
 
 /**
- * Money Flow Index (MFI) of `source`, from `0` to `100`.
+ * Money Flow Index (MFI) of `series`, from `0` to `100`.
  *
- * Each bar's money flow is `source` times {@link volume}. Over the last
- * `length` bars, the flows of bars where `source` rose and of bars where it
+ * Each bar's money flow is `series` times {@link volume}. Over the last
+ * `length` bars, the flows of bars where `series` rose and of bars where it
  * fell are summed separately, and the index compares the two. A bar whose
- * change or flow involves an `na` value is left out, and a bar where `source`
+ * change or flow involves an `na` value is left out, and a bar where `series`
  * did not change counts toward neither sum.
  *
- * @param source Price series, usually {@link hlc3}.
+ * @param series Price series, usually {@link hlc3}.
  * @param length Number of bars in the window, at least 1.
  * @returns `float`: the index.
  * @formula
  * \begin{aligned}
- * \Delta_t &= \mathit{source}_t - \mathit{source}_{t-1}, \qquad
- * F_t = \mathit{source}_t \cdot \mathit{volume}_t \\
+ * \Delta_t &= \mathit{series}_t - \mathit{series}_{t-1}, \qquad
+ * F_t = \mathit{series}_t \cdot \mathit{volume}_t \\
  * K_t &= \{\, i : 0 \le i < \mathit{length},\
  * \Delta_{t-i} \ne \text{na},\ F_{t-i} \ne \text{na} \,\} \\
  * P_t &= \sum_{i \in K_t,\ \Delta_{t-i} > 0} F_{t-i}, \qquad
@@ -1203,22 +1203,20 @@ export wpr(int length) =>
  * 6,13,100
  * 7,12,100
  * ```
- * @pine Pine names the first parameter `series`; Tea names it `source`, so a
- * named argument reads `source = hlc3`.
  * @see ta.rsi
  * @see ta.cmo
  * @category Momentum
  */
-export mfi(source, int length) =>
-	if length < 1
+export mfi(float series, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.mfi: length must be at least 1")
 	var int bars = 0
 	bars += 1
 	upper = 0.0
 	lower = 0.0
 	for i = 0 to length - 1
-		delta = source[i] - source[i + 1]
-		flow = volume[i] * source[i]
+		delta = series[i] - series[i + 1]
+		flow = volume[i] * series[i]
 		if not na(delta) and not na(flow)
 			upper += delta > 0 ? flow : 0.0
 			lower += delta < 0 ? flow : 0.0
@@ -1273,17 +1271,19 @@ export mfi(source, int length) =>
  * @see ta.ema
  * @category Momentum
  */
-export macd(source, int fastlen, int slowlen, int siglen) =>
-	if fastlen < 1
+export macd(float source, simple int fastlen, simple int slowlen, simple int siglen) =>
+	if not (fastlen >= 1)
 		runtime.error("ta.macd: fastlen must be at least 1")
-	if slowlen < 1
+	if not (slowlen >= 1)
 		runtime.error("ta.macd: slowlen must be at least 1")
-	if siglen < 1
+	if not (siglen >= 1)
 		runtime.error("ta.macd: siglen must be at least 1")
 	fast = ema(source, fastlen)
 	slow = ema(source, slowlen)
 	macdLine = fast - slow
-	signalLine = ema(macdLine, siglen)
+	// The averages keep their values on a bar whose source is missing; the
+	// signal skips that bar too instead of counting the held line again.
+	signalLine = ema(na(source) ? na : macdLine, siglen)
 	[macdLine, signalLine, macdLine - signalLine]
 
 /**
@@ -1360,16 +1360,21 @@ export macd(source, int fastlen, int slowlen, int siglen) =>
  * @see ta.rma
  * @category Momentum
  */
-export dmi(int diLength, int adxSmoothing) =>
-	if diLength < 1
+export dmi(simple int diLength, simple int adxSmoothing) =>
+	if not (diLength >= 1)
 		runtime.error("ta.dmi: diLength must be at least 1")
-	if adxSmoothing < 1
+	if not (adxSmoothing >= 1)
 		runtime.error("ta.dmi: adxSmoothing must be at least 1")
 	up = change(high)
 	down = -change(low)
-	trur = rma(tr(true), diLength)
-	rawPlus = 100 * rma(up > down and up > 0 ? up : 0.0, diLength) / trur
-	rawMinus = 100 * rma(down > up and down > 0 ? down : 0.0, diLength) / trur
+	trueRange = tr(false)
+	// A bar counts toward all three averages or none: only when both moves
+	// and the true range are known. The true range is at least either move,
+	// so +DI and -DI stay within 0 and 100.
+	known = not (na(up) or na(down) or na(trueRange))
+	trur = rma(known ? trueRange : na, diLength)
+	rawPlus = 100 * rma(known ? (up > down and up > 0 ? up : 0.0) : na, diLength) / trur
+	rawMinus = 100 * rma(known ? (down > up and down > 0 ? down : 0.0) : na, diLength) / trur
 	var float plus = na
 	var float minus = na
 	plus := na(rawPlus) ? plus : rawPlus
@@ -1390,7 +1395,8 @@ export dmi(int diLength, int adxSmoothing) =>
  * {@link ta.atr} averages it.
  *
  * @param handle_na Result when the previous close is `na`, as on the first
- * bar: `true`, the default, gives `high - low`; `false` gives `na`.
+ * bar: `true` gives `high - low`; `false` gives `na`. Pine Script's
+ * variable `ta.tr` is `ta.tr(false)`.
  * @returns `float`: the true range.
  * @formula
  * \mathrm{tr}_t = \begin{cases}
@@ -1408,13 +1414,13 @@ export dmi(int diLength, int adxSmoothing) =>
  * @example
  * At index 2 the bar is above the previous close of 11, so the true range is
  * `15 - 11 = 4`, more than `high - low`. Index 0, and index 4 after the
- * missing close, have no previous close: `ta.tr()` gives `high - low` and
+ * missing close, have no previous close: `ta.tr(true)` gives `high - low` and
  * `ta.tr(false)` gives `na`.
  * ```tea
  * emit "high" high
  * emit "low" low
  * emit "close" close
- * emit "tr" ta.tr()
+ * emit "tr" ta.tr(true)
  * emit "tr(false)" ta.tr(false)
  * ```
  * ```csv
@@ -1426,13 +1432,11 @@ export dmi(int diLength, int adxSmoothing) =>
  * 4,13,11,12
  * 5,10,8,9
  * ```
- * @pine `handle_na` defaults to `true`; Pine's manual gives it no default.
- * Pine's variable `ta.tr` is `ta.tr(false)` in Tea, not `ta.tr()`.
  * @see ta.atr
  * @see ta.kc
  * @category Volatility and bands
  */
-export tr(handle_na = true) =>
+export tr(simple bool handle_na) =>
 	prevClose = close[1]
 	na(prevClose) ? (handle_na ? high - low : na) : math.max(high - low, math.abs(high - prevClose), math.abs(low - prevClose))
 
@@ -1461,7 +1465,7 @@ export tr(handle_na = true) =>
  * emit "high" high
  * emit "low" low
  * emit "close" close
- * emit "tr" ta.tr()
+ * emit "tr" ta.tr(true)
  * emit "atr" ta.atr(4)
  * ```
  * ```csv
@@ -1480,8 +1484,8 @@ export tr(handle_na = true) =>
  * @see ta.supertrend
  * @category Volatility and bands
  */
-export atr(int length) =>
-	if length < 1
+export atr(simple int length) =>
+	if not (length >= 1)
 		runtime.error("ta.atr: length must be at least 1")
 	rma(tr(true), length)
 
@@ -1530,8 +1534,8 @@ export atr(int length) =>
  * @see ta.cci
  * @category Statistics
  */
-export dev(source, int length) =>
-	if length < 1
+export dev(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.dev: length must be at least 1")
 	mean = sma(source, length)
 	sum = 0.0
@@ -1597,8 +1601,8 @@ export dev(source, int length) =>
  * @see ta.dev
  * @category Statistics
  */
-export variance(source, int length, biased = true) =>
-	if length < 1
+export variance(float source, int length, bool biased = true) =>
+	if not (length >= 1)
 		runtime.error("ta.variance: length must be at least 1")
 	var int bars = 0
 	bars += 1
@@ -1668,8 +1672,8 @@ export variance(source, int length, biased = true) =>
  * @see ta.dev
  * @category Statistics
  */
-export stdev(source, int length, biased = true) =>
-	if length < 1
+export stdev(float source, int length, bool biased = true) =>
+	if not (length >= 1)
 		runtime.error("ta.stdev: length must be at least 1")
 	math.sqrt(variance(source, length, biased))
 
@@ -1715,12 +1719,12 @@ export stdev(source, int length, biased = true) =>
  * @category Statistics
  */
 export range(source, int length) =>
-	if length < 1
+	if not (length >= 1)
 		runtime.error("ta.range: length must be at least 1")
 	highest(source, length) - lowest(source, length)
 
 /**
- * Bollinger Bands: the simple moving average of `source`, with bands `mult`
+ * Bollinger Bands: the simple moving average of `series`, with bands `mult`
  * standard deviations above and below it.
  *
  * The middle band is {@link ta.sma} and the distance is `mult` times the
@@ -1728,18 +1732,18 @@ export range(source, int length) =>
  * over the last `length` values. {@link ta.bbw} gives the distance between
  * the bands relative to the middle band.
  *
- * @param source Series to measure, usually {@link close}.
+ * @param series Series to measure, usually {@link close}.
  * @param length Number of bars in the window, at least 1.
  * @param mult Band distance in standard deviations, such as `2`.
  * @returns `[float, float, float]`: the middle band, the upper band and the
  * lower band.
  * @formula
  * \begin{aligned}
- * \mathit{middle}_t &= \mathrm{sma}(\mathit{source}, \mathit{length})_t \\
+ * \mathit{middle}_t &= \mathrm{sma}(\mathit{series}, \mathit{length})_t \\
  * \mathit{upper}_t &= \mathit{middle}_t
- *   + \mathit{mult} \cdot \mathrm{stdev}(\mathit{source}, \mathit{length})_t \\
+ *   + \mathit{mult} \cdot \mathrm{stdev}(\mathit{series}, \mathit{length})_t \\
  * \mathit{lower}_t &= \mathit{middle}_t
- *   - \mathit{mult} \cdot \mathrm{stdev}(\mathit{source}, \mathit{length})_t
+ *   - \mathit{mult} \cdot \mathrm{stdev}(\mathit{series}, \mathit{length})_t
  * \end{aligned}
  * @warmup All three are `na` on the first `length - 1` bars, and when every
  * value in the window is `na`. Other `na` values are left out of the window.
@@ -1766,18 +1770,16 @@ export range(source, int length) =>
  * 7,12
  * 8,14
  * ```
- * @pine Pine names the first parameter `series`; Tea names it `source`, so a
- * named argument is written `source = close`.
  * @see ta.bbw
  * @see ta.kc
  * @see ta.stdev
  * @category Volatility and bands
  */
-export bb(source, int length, mult) =>
-	if length < 1
+export bb(float series, int length, simple float mult) =>
+	if not (length >= 1)
 		runtime.error("ta.bb: length must be at least 1")
-	basis = sma(source, length)
-	spread = mult * stdev(source, length, true)
+	basis = sma(series, length)
+	spread = mult * stdev(series, length, true)
 	[basis, basis + spread, basis - spread]
 
 /**
@@ -1787,14 +1789,14 @@ export bb(source, int length, mult) =>
  * It is small when the values in the window are close together. Unlike
  * {@link ta.kcw}, it is multiplied by `100`.
  *
- * @param source Series to measure, usually {@link close}.
+ * @param series Series to measure, usually {@link close}.
  * @param length Number of bars in the window, at least 1.
  * @param mult Band distance in standard deviations, such as `2`.
  * @returns `float`: the width in percent of the middle band.
  * @formula
  * \mathrm{bbw}_t = 100 \cdot \frac{2 \cdot \mathit{mult}
- *   \cdot \mathrm{stdev}(\mathit{source}, \mathit{length})_t}
- *   {\mathrm{sma}(\mathit{source}, \mathit{length})_t}
+ *   \cdot \mathrm{stdev}(\mathit{series}, \mathit{length})_t}
+ *   {\mathrm{sma}(\mathit{series}, \mathit{length})_t}
  * @warmup `na` on the first `length - 1` bars, when every value in the window
  * is `na`, and when the middle band is `0`. Other `na` values are left out of
  * the window.
@@ -1817,28 +1819,26 @@ export bb(source, int length, mult) =>
  * 6,25
  * 7,25
  * ```
- * @pine Pine names the first parameter `series`; Tea names it `source`, so a
- * named argument is written `source = close`.
  * @see ta.bb
  * @see ta.kcw
  * @category Volatility and bands
  */
-export bbw(source, int length, mult) =>
-	if length < 1
+export bbw(float series, int length, simple float mult) =>
+	if not (length >= 1)
 		runtime.error("ta.bbw: length must be at least 1")
-	basis = sma(source, length)
-	2 * mult * stdev(source, length, true) / basis * 100
+	basis = sma(series, length)
+	2 * mult * stdev(series, length, true) / basis * 100
 
 /**
- * Keltner Channels: the exponential moving average of `source`, with bands
+ * Keltner Channels: the exponential moving average of `series`, with bands
  * `mult` average ranges above and below it.
  *
- * The middle line is {@link ta.ema} of `source`. The distance is `mult` times
+ * The middle line is {@link ta.ema} of `series`. The distance is `mult` times
  * the {@link ta.ema}, over the same `length`, of each bar's range: its true
  * range ({@link ta.tr}), or `high - low` when `useTrueRange` is `false`. This
  * average range is an exponential average, not {@link ta.atr}.
  *
- * @param source Series to average, usually {@link close}.
+ * @param series Series to average, usually {@link close}.
  * @param length Smoothing length in bars for both averages, at least 1.
  * @param mult Band distance in average ranges, such as `2`.
  * @param useTrueRange `true`, the default, measures each bar's range with
@@ -1847,7 +1847,7 @@ export bbw(source, int length, mult) =>
  * lower band.
  * @formula
  * \begin{aligned}
- * \mathit{middle}_t &= \mathrm{ema}(\mathit{source}, \mathit{length})_t \\
+ * \mathit{middle}_t &= \mathrm{ema}(\mathit{series}, \mathit{length})_t \\
  * \mathit{upper}_t &= \mathit{middle}_t
  *   + \mathit{mult} \cdot \mathrm{ema}(r, \mathit{length})_t \\
  * \mathit{lower}_t &= \mathit{middle}_t
@@ -1857,11 +1857,11 @@ export bbw(source, int length, mult) =>
  *   \mathit{high}_t - \mathit{low}_t & \text{otherwise}
  * \end{cases}
  * \end{aligned}
- * @warmup The middle line is `na` until the first `source` value that is not
+ * @warmup The middle line is `na` until the first `series` value that is not
  * `na`. The bands are also `na` until the first range that is not `na`. The
  * range is `na` when the high or low is `na`, and with `useTrueRange` also
  * when the previous close is `na`, as on the first bar. After that, a bar
- * where `source` is `na` keeps the middle line, and a bar where the range is
+ * where `series` is `na` keeps the middle line, and a bar where the range is
  * `na` keeps the average range.
  * @example
  * The middle line starts at the first close and moves halfway to each new
@@ -1885,17 +1885,15 @@ export bbw(source, int length, mult) =>
  * 4,14,12,13
  * 5,16,14,15
  * ```
- * @pine Pine names the first parameter `series`; Tea names it `source`, so a
- * named argument is written `source = close`.
  * @see ta.kcw
  * @see ta.bb
  * @see ta.atr
  * @category Volatility and bands
  */
-export kc(source, int length, mult, useTrueRange = true) =>
-	if length < 1
+export kc(float series, simple int length, simple float mult, simple bool useTrueRange = true) =>
+	if not (length >= 1)
 		runtime.error("ta.kc: length must be at least 1")
-	basis = ema(source, length)
+	basis = ema(series, length)
 	span = useTrueRange ? tr(false) : high - low
 	spanEma = ema(span, length)
 	[basis, basis + spanEma * mult, basis - spanEma * mult]
@@ -1906,7 +1904,7 @@ export kc(source, int length, mult, useTrueRange = true) =>
  *
  * Unlike {@link ta.bbw}, it is not multiplied by `100`.
  *
- * @param source Series to average, usually {@link close}.
+ * @param series Series to average, usually {@link close}.
  * @param length Smoothing length in bars for both averages, at least 1.
  * @param mult Band distance in average ranges, such as `2`.
  * @param useTrueRange `true`, the default, measures each bar's range with
@@ -1916,7 +1914,7 @@ export kc(source, int length, mult, useTrueRange = true) =>
  * \mathrm{kcw}_t = \frac{\mathit{upper}_t - \mathit{lower}_t}{\mathit{middle}_t}
  * \quad\text{where}\quad
  * [\mathit{middle}, \mathit{upper}, \mathit{lower}]
- *   = \mathrm{kc}(\mathit{source}, \mathit{length}, \mathit{mult},
+ *   = \mathrm{kc}(\mathit{series}, \mathit{length}, \mathit{mult},
  *   \mathit{useTrueRange})
  * @warmup `na` where {@link ta.kc} gives `na` bands, as on the first bar when
  * `useTrueRange` is `true`, and where the middle line is `0`.
@@ -1941,16 +1939,14 @@ export kc(source, int length, mult, useTrueRange = true) =>
  * 4,14,12,13
  * 5,16,14,15
  * ```
- * @pine Pine names the first parameter `series`; Tea names it `source`, so a
- * named argument is written `source = close`.
  * @see ta.kc
  * @see ta.bbw
  * @category Volatility and bands
  */
-export kcw(source, int length, mult, useTrueRange = true) =>
-	if length < 1
+export kcw(float series, simple int length, simple float mult, simple bool useTrueRange = true) =>
+	if not (length >= 1)
 		runtime.error("ta.kcw: length must be at least 1")
-	[kcMid, kcUp, kcLow] = kc(source, length, mult, useTrueRange)
+	[kcMid, kcUp, kcLow] = kc(series, length, mult, useTrueRange)
 	(kcUp - kcLow) / kcMid
 
 /**
@@ -2030,8 +2026,8 @@ export kcw(source, int length, mult, useTrueRange = true) =>
  * @see ta.sar
  * @category Trailing stops
  */
-export supertrend(factor, int atrPeriod) =>
-	if atrPeriod < 1
+export supertrend(float factor, simple int atrPeriod) =>
+	if not (atrPeriod >= 1)
 		runtime.error("ta.supertrend: atrPeriod must be at least 1")
 	src = hl2
 	atrValue = atr(atrPeriod)
@@ -2150,55 +2146,71 @@ export supertrend(factor, int atrPeriod) =>
  * @see ta.supertrend
  * @category Trailing stops
  */
-export sar(start, inc, max) =>
+export sar(simple float start, simple float inc, simple float max) =>
 	var float result = na
 	var float maxMin = na
 	var float acceleration = na
 	var isBelow = false
-	firstTrendBar = false
-	if bar_index == 1
-		if close > close[1]
-			isBelow := true
-			maxMin := high
-			result := low[1]
-		else
-			isBelow := false
-			maxMin := low
-			result := high[1]
-		firstTrendBar := true
-		acceleration := start
-	result := result + acceleration * (maxMin - result)
-	if isBelow
-		if result > low
-			firstTrendBar := true
-			isBelow := false
-			result := math.max(high, maxMin)
-			maxMin := low
-			acceleration := start
-	else
-		if result < high
-			firstTrendBar := true
-			isBelow := true
-			result := math.min(low, maxMin)
-			maxMin := high
-			acceleration := start
-	if not firstTrendBar
-		if isBelow
-			if high > maxMin
+	// The two latest earlier bars whose high, low and close are all known,
+	// newest first. A bar with a missing price is left out: the level holds
+	// on it, and the next bars look past it.
+	var float high1 = na
+	var float low1 = na
+	var float close1 = na
+	var float high2 = na
+	var float low2 = na
+	if not (na(high) or na(low) or na(close))
+		firstTrendBar = false
+		// The second bar with known prices starts the first trend.
+		if na(acceleration) and not na(close1)
+			if close > close1
+				isBelow := true
 				maxMin := high
-				acceleration := math.min(acceleration + inc, max)
-		else
-			if low < maxMin
+				result := low1
+			else
+				isBelow := false
 				maxMin := low
-				acceleration := math.min(acceleration + inc, max)
-	if isBelow
-		result := math.min(result, low[1])
-		if bar_index > 1
-			result := math.min(result, low[2])
-	else
-		result := math.max(result, high[1])
-		if bar_index > 1
-			result := math.max(result, high[2])
+				result := high1
+			firstTrendBar := true
+			acceleration := start
+		if not na(acceleration)
+			result := result + acceleration * (maxMin - result)
+			if isBelow
+				if result > low
+					firstTrendBar := true
+					isBelow := false
+					result := math.max(high, maxMin)
+					maxMin := low
+					acceleration := start
+			else
+				if result < high
+					firstTrendBar := true
+					isBelow := true
+					result := math.min(low, maxMin)
+					maxMin := high
+					acceleration := start
+			if not firstTrendBar
+				if isBelow
+					if high > maxMin
+						maxMin := high
+						acceleration := math.min(acceleration + inc, max)
+				else
+					if low < maxMin
+						maxMin := low
+						acceleration := math.min(acceleration + inc, max)
+			if isBelow
+				result := math.min(result, low1)
+				if not na(low2)
+					result := math.min(result, low2)
+			else
+				result := math.max(result, high1)
+				if not na(high2)
+					result := math.max(result, high2)
+		high2 := high1
+		low2 := low1
+		high1 := high
+		low1 := low
+		close1 := close
 	result
 
 // ---- crosses and conditions -------------------------------------------------
@@ -2247,7 +2259,7 @@ export sar(start, inc, max) =>
  * @see ta.cross
  * @category Crosses and conditions
  */
-export crossover(source1, source2) =>
+export crossover(float source1, float source2) =>
 	source1 > source2 and source1[1] <= source2[1]
 
 /**
@@ -2294,7 +2306,7 @@ export crossover(source1, source2) =>
  * @see ta.cross
  * @category Crosses and conditions
  */
-export crossunder(source1, source2) =>
+export crossunder(float source1, float source2) =>
 	source1 < source2 and source1[1] >= source2[1]
 
 /**
@@ -2343,7 +2355,7 @@ export crossunder(source1, source2) =>
  * @see ta.crossunder
  * @category Crosses and conditions
  */
-export cross(source1, source2) =>
+export cross(float source1, float source2) =>
 	// Both calls run on every bar: `or` would skip crossunder after a
 	// crossover, and a skipped call records na history for the next bar.
 	up = crossover(source1, source2)
@@ -2394,8 +2406,8 @@ export cross(source1, source2) =>
  * @see ta.highest
  * @category Crosses and conditions
  */
-export rising(source, int length) =>
-	if length < 1
+export rising(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.rising: length must be at least 1")
 	var int bars = 0
 	bars += 1
@@ -2452,8 +2464,8 @@ export rising(source, int length) =>
  * @see ta.lowest
  * @category Crosses and conditions
  */
-export falling(source, int length) =>
-	if length < 1
+export falling(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.falling: length must be at least 1")
 	var int bars = 0
 	bars += 1
@@ -2504,7 +2516,7 @@ export falling(source, int length) =>
  * @see ta.highestbars
  * @category Crosses and conditions
  */
-export barssince(condition) =>
+export barssince(bool condition) =>
 	var int count = na
 	count := condition ? 0 : na(count) ? na : count + 1
 	count
@@ -2554,8 +2566,8 @@ export barssince(condition) =>
  * @see ta.highestbars
  * @category Highs, lows and pivots
  */
-export highest(source, int length) =>
-	if length < 1
+export highest(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.highest: length must be at least 1")
 	var int bars = 0
 	bars += 1
@@ -2605,8 +2617,8 @@ export highest(source, int length) =>
  * @see ta.lowestbars
  * @category Highs, lows and pivots
  */
-export lowest(source, int length) =>
-	if length < 1
+export lowest(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.lowest: length must be at least 1")
 	var int bars = 0
 	bars += 1
@@ -2662,8 +2674,8 @@ export lowest(source, int length) =>
  * @see ta.lowestbars
  * @category Highs, lows and pivots
  */
-export highestbars(source, int length) =>
-	if length < 1
+export highestbars(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.highestbars: length must be at least 1")
 	var int bars = 0
 	bars += 1
@@ -2720,8 +2732,8 @@ export highestbars(source, int length) =>
  * @see ta.highestbars
  * @category Highs, lows and pivots
  */
-export lowestbars(source, int length) =>
-	if length < 1
+export lowestbars(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.lowestbars: length must be at least 1")
 	var int bars = 0
 	bars += 1
@@ -2797,17 +2809,25 @@ export lowestbars(source, int length) =>
  * @see ta.highest
  * @category Highs, lows and pivots
  */
-export pivothigh(source, int leftbars, int rightbars) =>
-	if leftbars < 0
+export pivothigh(float source, int leftbars, int rightbars) =>
+	if not (leftbars >= 0)
 		runtime.error("ta.pivothigh: leftbars must not be negative")
-	if rightbars < 0
+	if not (rightbars >= 0)
 		runtime.error("ta.pivothigh: rightbars must not be negative")
+	var int bars = 0
+	bars += 1
 	pivot = source[rightbars]
+	known = 0
 	confirmed = true
 	for i = 0 to leftbars + rightbars
-		if i != rightbars and source[i] >= pivot
-			confirmed := false
-	confirmed ? pivot : na
+		if i != rightbars and not na(source[i])
+			known += 1
+			if source[i] >= pivot
+				confirmed := false
+	// The window must have filled, and a pivot needs a known neighbor to
+	// stand out from, unless it has none by asking for zero bars.
+	filled = bars > leftbars + rightbars
+	confirmed and filled and (known > 0 or leftbars + rightbars == 0) ? pivot : na
 
 /**
  * Pivot low: the value `rightbars` bars back when it is lower than the
@@ -2872,17 +2892,25 @@ export pivothigh(source, int leftbars, int rightbars) =>
  * @see ta.lowest
  * @category Highs, lows and pivots
  */
-export pivotlow(source, int leftbars, int rightbars) =>
-	if leftbars < 0
+export pivotlow(float source, int leftbars, int rightbars) =>
+	if not (leftbars >= 0)
 		runtime.error("ta.pivotlow: leftbars must not be negative")
-	if rightbars < 0
+	if not (rightbars >= 0)
 		runtime.error("ta.pivotlow: rightbars must not be negative")
+	var int bars = 0
+	bars += 1
 	pivot = source[rightbars]
+	known = 0
 	confirmed = true
 	for i = 0 to leftbars + rightbars
-		if i != rightbars and source[i] <= pivot
-			confirmed := false
-	confirmed ? pivot : na
+		if i != rightbars and not na(source[i])
+			known += 1
+			if source[i] <= pivot
+				confirmed := false
+	// The window must have filled, and a pivot needs a known neighbor to
+	// stand out from, unless it has none by asking for zero bars.
+	filled = bars > leftbars + rightbars
+	confirmed and filled and (known > 0 or leftbars + rightbars == 0) ? pivot : na
 
 // ---- accumulation and statistics --------------------------------------------
 
@@ -2924,7 +2952,7 @@ export pivotlow(source, int leftbars, int rightbars) =>
  * @see ta.max
  * @category Statistics
  */
-export cum(source) =>
+export cum(float source) =>
 	var float total = na
 	if not na(source)
 		total := na(total) ? source : total + source
@@ -2966,7 +2994,7 @@ export cum(source) =>
  * @see ta.highest
  * @category Statistics
  */
-export max(source) =>
+export max(float source) =>
 	var float m = na
 	if not na(source)
 		m := na(m) ? source : math.max(m, source)
@@ -3008,7 +3036,7 @@ export max(source) =>
  * @see ta.lowest
  * @category Statistics
  */
-export min(source) =>
+export min(float source) =>
 	var float m = na
 	if not na(source)
 		m := na(m) ? source : math.min(m, source)
@@ -3068,9 +3096,9 @@ export min(source) =>
  * @see ta.stdev
  * @category Statistics
  */
-export correlation(source1, source2, int length) =>
-	if length < 1
-		runtime.error("ta.correlation: length must be at least 1")
+export correlation(float source1, float source2, int length) =>
+	if not (length >= 2)
+		runtime.error("ta.correlation: length must be at least 2")
 	var int bars = 0
 	bars += 1
 	// Center each series on a value of the window, as variance does, so a
@@ -3155,8 +3183,8 @@ export correlation(source1, source2, int length) =>
  * @see ta.stoch
  * @category Statistics
  */
-export percentrank(source, int length) =>
-	if length < 1
+export percentrank(float source, int length) =>
+	if not (length >= 1)
 		runtime.error("ta.percentrank: length must be at least 1")
 	count = 0
 	missing = na(source)

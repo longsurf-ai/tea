@@ -847,15 +847,8 @@ class Noder {
       stmt.x,
       tv.type.kind === TypeKind.Na ? VoidType : null,
     );
-    // A fully-folded statement expression is pure and dead, and so is an `if`
-    // whose constant condition is false and that has no `else`.
-    if (
-      x.kind === IrKind.Const ||
-      (x.kind === IrKind.IfExpr &&
-        x.cond.kind === IrKind.Const &&
-        x.cond.value === false &&
-        x.else === null)
-    ) {
+    // A fully-folded statement expression is pure and dead.
+    if (x.kind === IrKind.Const) {
       return [];
     }
     return [x];
@@ -1501,17 +1494,11 @@ class Noder {
   }
 
   private nodeIf(e: syntax.IfExpr, tv: TypeAndValue): IrExpr {
-    // A statement `if` whose condition is a constant never runs the other
-    // branch, so that branch is not part of the program. A guard such as
-    // `if length < 1` in a call with a valid constant length then leaves no
-    // `runtime.error` for a backend to lower.
-    const condValue = this.tvOf(e.cond).value;
-    const constant =
-      tv.type.kind === TypeKind.Void && typeof condValue === 'boolean'
-        ? condValue
-        : null;
+    // Both branches are noded even when the condition is a constant: the
+    // program keeps every output and call site the checker saw, and a backend
+    // may skip the branch that never runs.
     let elseBlock: BlockExpr | null = null;
-    if (e.else !== null && constant !== true) {
+    if (e.else !== null) {
       elseBlock =
         e.else.kind === NodeKind.IfExpr
           ? this.blockify(e.else, tv.type)
@@ -1523,17 +1510,7 @@ class Noder {
       type: tv.type,
       qualifier: tv.qualifier,
       cond: this.nodeExpr(e.cond),
-      then:
-        constant === false
-          ? {
-              kind: IrKind.BlockExpr,
-              pos: e.then.pos,
-              type: VoidType,
-              qualifier: Qualifier.Const,
-              stmts: [],
-              value: null,
-            }
-          : this.nodeBlock(e.then, tv.type),
+      then: this.nodeBlock(e.then, tv.type),
       else: elseBlock,
     };
   }

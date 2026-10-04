@@ -263,7 +263,8 @@ describe('shipped Tea library documentation', () => {
           expectCompiles(source, `${library.name}-${index}-${example}.tea`),
         ),
       );
-    });
+      // A strategy example compiles broker, portfolio and trade each time.
+    }, 120_000);
   }
 });
 

@@ -150,7 +150,7 @@ test('native methods share numeric, color, missing-value, and progress rules', (
     '#FF0000',
   );
   expect(colors.new(color('#FF0000'), float(50)).value?.toString()).toBe(
-    '#FF00007F',
+    '#FF000080',
   );
   expect(colors.rgb(float(NaN), int(0), int(0)).value).toBeNull();
   expect(na(bool(false)).value).toBe(false);

@@ -14,6 +14,11 @@ name e#1: var series float depth=none
 name x: perBar series float depth=none
 func ta.ema(source: series float, length: const int): series float
   body: BlockExpr: series float
+    IfExpr: series void
+      cond: Const false: const bool
+      then: BlockExpr: const void
+        CallNative runtime.error write: series void
+          Const "ta.ema: length must be at least 1": const string
     Assign
       target: Read name:alpha: const float
       value: Const 0.2: const float
@@ -43,6 +48,11 @@ func ta.ema(source: series float, length: const int): series float
     value: Read name:e: series float
 func ta.ema(source#1: series float, length#1: const int): series float
   body: BlockExpr: series float
+    IfExpr: series void
+      cond: Const false: const bool
+      then: BlockExpr: const void
+        CallNative runtime.error write: series void
+          Const "ta.ema: length must be at least 1": const string
     Assign
       target: Read name:alpha#1: const float
       value: Const 0.09090909090909091: const float

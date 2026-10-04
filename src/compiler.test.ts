@@ -243,9 +243,10 @@ describe('errors inside a library body', () => {
   };
 
   test('are reported on the call in the script that caused them', () => {
-    const [line] = report('e = ta.ema("a", 14)\n');
+    // ta.change takes any source, so a string reaches its subtraction.
+    const [line] = report('e = ta.change("a")\n');
     expect(line).toMatch(
-      /^script\.tea:1:5: in ta\.ema \(tea-lib\/ta\.tea:\d+:\d+\): operator '\*' requires numeric operands/,
+      /^script\.tea:1:5: in ta\.change \(tea-lib\/ta\.tea:\d+:\d+\): operator '-' requires numeric operands/,
     );
     // Any error the body reports moves, not only one at an invalid expression.
     expect(report('fill("f", close, open)\n')).toEqual([

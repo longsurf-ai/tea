@@ -268,10 +268,11 @@ describe('completion: after a dot', () => {
     expect(item('x = ta.|', 'ema')).toEqual({
       label: 'ema',
       kind: CompletionItemKind.Function,
-      detail: 'ema(source, int length)',
+      detail: 'ema(float source, simple int length)',
       documentation: {
         kind: 'markdown',
-        value: 'Exponential moving average of `source`.',
+        value:
+          'Exponential moving average of `source`: a running average that gives recent values more weight.',
       },
       sortText: '00',
     });
@@ -519,8 +520,8 @@ describe('signature help', () => {
     expect(help('x = ta.ema(close, |')).toMatchObject({
       signatures: [
         {
-          label: 'ema(source, int length)',
-          parameters: [{label: 'source'}, {label: 'int length'}],
+          label: 'ema(float source, simple int length)',
+          parameters: [{label: 'float source'}, {label: 'simple int length'}],
         },
       ],
       activeParameter: 1,
@@ -590,11 +591,12 @@ describe('signature help', () => {
     const library = help('x = ta.sma(close, |')?.signatures[0];
     expect(library?.documentation).toEqual({
       kind: 'markdown',
-      value: 'Simple moving average of the last `length` values of `source`.',
+      value:
+        'Simple moving average: the mean of the last `length` values of `source`.',
     });
     expect(library?.parameters?.[1].documentation).toEqual({
       kind: 'markdown',
-      value: 'Number of bars, a positive `int`.',
+      value: 'Number of bars in the window, at least 1.',
     });
     const native = help('x = nz(close, |')?.signatures[0];
     expect(native?.parameters?.[1].documentation).toMatchObject({

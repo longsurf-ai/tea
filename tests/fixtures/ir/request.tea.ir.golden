@@ -19,9 +19,10 @@ request[0] name="daily" mode=sample context_order=0,1 capture=float result=float
     func ta.ema(source: series float, length: input int): series float
       body: BlockExpr: series float
         IfExpr: series void
-          cond: Binary Lt: input bool
-            Read name:length: input int
-            Const 1: const int
+          cond: Unary Not: input bool
+            Binary Ge: input bool
+              Read name:length: input int
+              Const 1: const int
           then: BlockExpr: const void
             CallNative runtime.error write: series void
               Const "ta.ema: length must be at least 1": const string

@@ -6,12 +6,12 @@ param sigLenInput: int title="Signal length" default=9 {min=1} depth=none
 param oscTypeInput: string title="Oscillator MA type" default="EMA" {options=["EMA", "SMA"]} depth=none
 param sigTypeInput: string title="Signal MA type" default="EMA" {options=["EMA", "SMA"]} depth=none
 series close: series float depth=none
-output[0] "output0" set: Hline @ tea-lib/visual.tea:123:5
+output[0] "output0" set: Hline @ tea-lib/visual.tea:173:5
 output[1] "output1" set: float @ macd.tea:27:1
 output[2] "output2" set: float @ macd.tea:28:1
 output[3] "output3" set: float @ macd.tea:29:1
-output[4] "output4" append: Alert @ tea-lib/visual.tea:365:9
-output[5] "output5" append: Alert @ tea-lib/visual.tea:365:9
+output[4] "output4" append: Alert @ tea-lib/visual.tea:483:9
+output[5] "output5" append: Alert @ tea-lib/visual.tea:483:9
 name maFast: perBar series float depth=none
 name source: perBar series float depth=none
 name length: perBar input int depth=none
@@ -80,9 +80,10 @@ func ma(source: series float, length: input int, maType: input string): series f
 func ta.ema(source#1: series float, length#1: input int): series float
   body: BlockExpr: series float
     IfExpr: series void
-      cond: Binary Lt: input bool
-        Read name:length#1: input int
-        Const 1: const int
+      cond: Unary Not: input bool
+        Binary Ge: input bool
+          Read name:length#1: input int
+          Const 1: const int
       then: BlockExpr: const void
         CallNative runtime.error write: series void
           Const "ta.ema: length must be at least 1": const string
@@ -122,9 +123,10 @@ func ta.ema(source#1: series float, length#1: input int): series float
 func ta.sma(source#2: series float, length#2: input int): series float
   body: BlockExpr: series float
     IfExpr: series void
-      cond: Binary Lt: input bool
-        Read name:length#2: input int
-        Const 1: const int
+      cond: Unary Not: input bool
+        Binary Ge: input bool
+          Read name:length#2: input int
+          Const 1: const int
       then: BlockExpr: const void
         CallNative runtime.error write: series void
           Const "ta.sma: length must be at least 1": const string

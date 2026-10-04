@@ -31,6 +31,7 @@ import {
 } from '../loader/loader';
 import {parse} from '../syntax/syntax';
 import {buildProgram} from './noder';
+import {generate} from '../codegen/codegen';
 import {buildText, mustBuild} from './testing';
 import {DEFAULT_MAX_BARS_BACK} from './depth';
 
@@ -211,6 +212,26 @@ for i = 0 to 1
 // A control structure in statement position has its value discarded, so an na
 // its blocks end in has no consumer to take a type from. These are valid Tea
 // and common mid-typing states; each must node without an InternalError.
+describe('if statements that never run', () => {
+  test('a call inside one takes no call-site slot, so the program generates', () => {
+    // `p` is the constant 0 here, so the `if` is constantly false; its block
+    // ends in an assignment, so the `if` has a value nobody reads.
+    const program = mustBuild(
+      [
+        'g(float x) => x * 2',
+        'h() => 1.0',
+        'f(int p = 0) =>',
+        '    float y = na',
+        '    if p > 0',
+        '        y := g(p)',
+        '    y + h()',
+        'emit "x" f()',
+      ].join('\n'),
+    );
+    expect(generate(program).length).toBeGreaterThan(0);
+  });
+});
+
 describe('na results nobody consumes', () => {
   const ARRAY = 'a = array.new<float>(3, 0.0)\n';
   const COUNTER = 'var int n = 0\n';

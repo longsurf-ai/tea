@@ -134,13 +134,15 @@ describe('ta Wilder indicators', () => {
     finiteAt(2, 3, 80);
     finiteAt(2, 7, 68.10073452256033);
 
-    expect(values(3).slice(0, 2).every(Number.isNaN)).toBe(true);
-    expect(values(4).slice(0, 2).every(Number.isNaN)).toBe(true);
-    finiteAt(3, 2, 22.222222222222218);
-    finiteAt(4, 2, 22.222222222222218);
-    expect(values(5).slice(0, 4).every(Number.isNaN)).toBe(true);
-    finiteAt(5, 4, 16.988416988416986);
-    finiteAt(5, 7, 36.30022485980952);
+    // Bar 0 has no moves and no true range, so DMI's averages start from
+    // bars 1 to 3: +DM 2, 0, 2; -DM 0, 2, 0; true range 3, 4, 4.
+    expect(values(3).slice(0, 3).every(Number.isNaN)).toBe(true);
+    expect(values(4).slice(0, 3).every(Number.isNaN)).toBe(true);
+    finiteAt(3, 3, 400 / 11);
+    finiteAt(4, 3, 200 / 11);
+    expect(values(5).slice(0, 5).every(Number.isNaN)).toBe(true);
+    finiteAt(5, 5, 30.292397660818715);
+    finiteAt(5, 7, 35.16584146669999);
   });
 });
 

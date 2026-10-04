@@ -1654,6 +1654,17 @@ class WgslEmitter {
           expr.pos,
         );
       case IrKind.IfExpr: {
+        // A constant condition runs one branch, so only that one is lowered:
+        // a guard a constant argument never trips, such as ta's length check,
+        // asks nothing of the GPU.
+        if (expr.cond.kind === IrKind.Const) {
+          const live = expr.cond.value === true ? expr.then : expr.else;
+          if (live === null) return this.empty(expr.type);
+          const value = this.emitBlock(live, ctx, out);
+          return value === null
+            ? this.empty(expr.type)
+            : this.coerce(value, live.value?.type ?? live.type, expr.type);
+        }
         const condition = this.capture(expr.cond, ctx, out);
         const result = this.fresh();
         out.push(

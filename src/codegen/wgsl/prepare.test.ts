@@ -30,10 +30,8 @@ describe('generic WGSL capability boundary', () => {
       seriesInputCount: 2,
       builtinInputCount: 1,
       persistentRootCount: 1,
-      // end_bar(close, false) never runs BrokerEmulator.finish, so the
-      // program does not contain it.
-      functionCount: 37,
-      mutableMethodCount: 14,
+      functionCount: 38,
+      mutableMethodCount: 15,
       callSiteSlotCount: 14,
       outputCount: 13,
       resultChannelCount: 8,
@@ -62,7 +60,8 @@ describe('generic WGSL capability boundary', () => {
         code: 'series-row-count-unavailable',
       },
       // A length known only at bind time keeps ta's runtime.error guard,
-      // which has no GPU rule yet; a constant length leaves none.
+      // which has no GPU rule yet; a constant length makes the guard's
+      // condition constant, and the GPU lowers only the branch that runs.
       {
         source: '\nlength = input.int(2)\nemit "output0" ta.sma(close, length)',
         code: 'native-call-lowering-unimplemented',

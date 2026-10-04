@@ -99,11 +99,11 @@ describe('hover documentation', () => {
 
   test('a library function shows its doc comment, parameters and result', () => {
     const docs = docsAt('x = ta.ema(close, 9)', 'ema');
-    expect(docs).toMatch(/^Exponential moving average of `source`\./);
+    expect(docs).toMatch(/^Exponential moving average of `source`/);
     expect(docs).toContain('**Parameters**\n- `source` — Series to average');
-    expect(docs).toContain('**Returns** The average;');
+    expect(docs).toContain('**Returns** `float`: the average.');
     // `{@link ta.rma}` becomes code: an editor has no page to link to.
-    expect(docs).toContain('Compare `ta.rma`');
+    expect(docs).toContain('`ta.rma` moves by');
   });
 
   test('a native shows its catalog docs', () => {
@@ -118,7 +118,7 @@ describe('hover documentation', () => {
   test('an input alias, a library name, a type and an enum member are documented', () => {
     expect(docsAt('x = close', 'close')).toMatch(/^Closing price/);
     const source = 'import trade\nx = trade.Direction.long';
-    expect(docsAt(source, 'trade', 1)).toMatch(/^Coordinators/);
+    expect(docsAt(source, 'trade', 1)).toMatch(/^Trade coordinators/);
     expect(docsAt(source, 'Direction', 1)).toMatch(/^Side of a new position/);
     expect(docsAt(source, 'long', 1)).toMatch(/^A long position/);
   });

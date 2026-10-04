@@ -1,0 +1,14 @@
+//@version=1
+library("nested")
+
+// Untyped on purpose: a number that reaches `inner` fails inside it, two
+// library calls away from the script.
+inner(x) => x - "z"
+
+export outer(x) => inner(x)
+
+// Fails on two lines when given a number.
+export broken(x) =>
+    a = x - "z"
+    b = x * "z"
+    a + b
