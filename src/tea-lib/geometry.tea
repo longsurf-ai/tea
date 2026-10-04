@@ -28,9 +28,9 @@
  * Everything else is ordinary floating-point arithmetic: the positions in a
  * {@link geometry.Contact}, the points that
  * {@link geometry.rectangleContacts} returns, and every result for quadratic
- * curves. Positions are least accurate for nearly parallel shapes: where two
- * nearly parallel segments cross, a position can be off by more than a tenth
- * of a segment's length.
+ * curves. The size of {@link geometry.orient2d} is within about one part in
+ * a million of the exact value, so the crossing of two segments, even nearly
+ * parallel ones, is placed within about two millionths of a segment's length.
  *
  * A script that calls a geometry function cannot be compiled for the GPU; it
  * runs on the CPU. See [geometry](/geometry) for the algorithms and numerical
@@ -203,11 +203,18 @@ orientationExact(float ax, float ay, float bx, float by, float cx, float cy) =>
 	p = expansionSum(expansionSum(twoProduct(by, cx), twoProduct(-cy, bx)), expansionSum(twoProduct(ay, bx), twoProduct(-by, ax)))
 	n = expansionSum(twoProduct(ay, cx), twoProduct(-cy, ax))
 	d = expansionSum(p, n, -1.0)
-	d.get(d.size() - 1)
+	// The components are nonoverlapping and increase in magnitude, so their
+	// sum from the smallest is close to the exact value. Its sign is the top
+	// component's, which rounding could lose, so that one stands in then.
+	top = d.get(d.size() - 1)
+	total = 0.0
+	for component in d
+		total += component
+	total * top > 0.0 ? total : top
 
-// Signed determinant, clockwise positive like robust-orientation. Only its
-// sign is meaningful; the exact branch returns the leading expansion term.
-// Unsupported input returns na, never an invented orientation.
+// Signed determinant, clockwise positive like robust-orientation. The sign is
+// exact and the size within 2^-20 of the exact value. Unsupported input
+// returns na, never an invented orientation.
 /**
  * Tells whether three points turn clockwise, turn counterclockwise or lie on one line.
  *
@@ -217,9 +224,8 @@ orientationExact(float ax, float ay, float bx, float by, float cx, float cy) =>
  * opposite sign of Shewchuk's `orient2d`, where counterclockwise is positive.
  *
  * The sign is exact for the binary values the coordinates are stored as. The
- * magnitude approximates twice the area of the triangle `a`, `b`, `c`, but
- * for points nearly on one line it can be off by a factor of two, so use only
- * the sign.
+ * magnitude is twice the area of the triangle `a`, `b`, `c`, within about one
+ * part in a million of the exact value.
  *
  * @param ax `x` of the first point, `a`.
  * @param ay `y` of `a`.
@@ -258,7 +264,9 @@ export orient2d(float ax, float ay, float bx, float by, float cx, float cy) =>
 		r = (ax - cx) * (by - cy)
 		det = l - r
 		s = math.abs(l + r)
-		tol = 3.3306690738754716e-16 * s
+		// Shewchuk's error bound for the sign, widened by 2^20 so that the
+		// exact branch also runs where det could be off by more than 2^-20.
+		tol = 3.3306690738754716e-16 * 1048576.0 * s
 		result := det
 		if ((l > 0.0 and r > 0.0) or (l < 0.0 and r < 0.0)) and det < tol and det > -tol
 			result := orientationExact(ax, ay, bx, by, cx, cy)
@@ -354,9 +362,9 @@ clampUnit(float value) => math.max(0.0, math.min(1.0, value))
  * floating-point results. For segments that cross, not on one line, they
  * follow the formula, where `orient2d(a, p, q)` stands for
  * `geometry.orient2d(ax, ay, px, py, qx, qy)`. Because the magnitudes of
- * {@link geometry.orient2d} are approximate, the crossing of two nearly
- * parallel segments can be placed more than a tenth of a segment's length
- * away from the true point.
+ * {@link geometry.orient2d} are within about one part in a million of the
+ * exact values, a crossing is placed within about two millionths of a
+ * segment's length of the true point, even for nearly parallel segments.
  *
  * @param ax `x` of the primitive's start, `a`.
  * @param ay `y` of `a`.

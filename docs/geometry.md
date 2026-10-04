@@ -65,10 +65,12 @@ ordered zero-eliminating expansion merges. Sum and subtraction share the same
 merge with an explicit sign. **robust-segment-intersect 1.0.1** supplies the
 four orientation tests and collinear bounding-box decision. Only hit parameters
 use division after the exact existence decision. They are ordinary Float64
-quotients of `orient2d` values, whose magnitudes are approximate: near a line
-the exact branch returns only the leading expansion term, which can be off by
-a factor of two. The crossing of two nearly parallel segments can therefore be
-placed more than a tenth of a segment's length away from the true point.
+quotients of `orient2d` values. `orient2d` widens the error bound by 2^20, so
+it takes the exact branch wherever the Float64 determinant could be off by
+more than 2^-20, and that branch returns the sum of the exact expansion. The
+magnitude is therefore within about one part in a million of the exact value,
+and the crossing of two segments, even nearly parallel ones, is placed within
+about two millionths of a segment's length.
 
 Quadratic construction follows **kld-intersections 0.7.0**: substitute Bézier's
 power-basis coefficients into the observation's supporting line. Solve the

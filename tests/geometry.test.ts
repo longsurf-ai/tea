@@ -493,3 +493,22 @@ test('quadratic intersections agree with KLD on deterministic noncoincident curv
     }
   });
 });
+
+test('the crossing of nearly parallel segments is placed accurately', () => {
+  // The two segments differ in slope by about 1e-4. Exact rational
+  // arithmetic over the stored values places the crossing at u =
+  // 0.3234567901234568 on the first segment and v = 0.32098765432098764 on
+  // the second; the leading expansion term alone gave u = 0.483.
+  const [row] = execute(
+    `import geometry
+emit "contacts" geometry.segmentContacts(736.0, 135.55157142857144, 1301.0, 172.9222857142857, 739.0, 135.75, 1299.0, 172.79)
+`,
+    [{close: 0}],
+  );
+  const [contact] = row.contacts as {
+    boundaryParameter: number;
+    observationParameter: number;
+  }[];
+  expect(contact.boundaryParameter).toBeCloseTo(0.3234567901234568, 6);
+  expect(contact.observationParameter).toBeCloseTo(0.32098765432098764, 6);
+});
