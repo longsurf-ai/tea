@@ -1630,7 +1630,7 @@ function pineArticle(
   const missing = libraries.flatMap(library =>
     library.doc?.pine == null
       ? []
-      : [`**${library.name}:** ${library.doc.pine}`],
+      : [joinBlocks(`### ${library.name}`, library.doc.pine)],
   );
   const staged = [...CATALOG.funcs].flatMap(([name, overloads]) => {
     const params = [
@@ -1666,7 +1666,7 @@ function pineArticle(
       ].join('\n'),
       missing.length === 0
         ? undefined
-        : joinBlocks('## Not in Tea yet', ...missing),
+        : joinBlocks('## Libraries', ...missing),
       staged.length === 0
         ? undefined
         : joinBlocks(
@@ -1676,7 +1676,7 @@ function pineArticle(
           ),
       differences.length === 0
         ? undefined
-        : joinBlocks('## Differences', table(['Name', 'In Tea'], differences)),
+        : joinBlocks('## Functions and values', table(['Name', 'In Tea'], differences)),
     ),
   };
 }
@@ -1858,8 +1858,8 @@ async function manual(
       id: route,
       title:
         made?.title ??
-        frontMatterValue(source!, 'sidebarTitle') ??
-        frontMatterValue(source!, 'title'),
+        (frontMatterValue(source!, 'sidebarTitle') ||
+          frontMatterValue(source!, 'title')),
       description:
         made?.description ?? frontMatterValue(source!, 'description'),
       markdown: text(

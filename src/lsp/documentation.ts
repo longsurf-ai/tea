@@ -116,7 +116,8 @@ export function nativeValueDocs(name: string): DocComment | null {
 
 /**
  * A doc comment as hover Markdown: the summary, the parameters and the
- * result, then {@link docSections} without example outputs.
+ * result, then {@link docSections} with each example's program but neither
+ * its CSV nor its output, which the reference shows.
  *
  * @example
  * ```ts
@@ -133,7 +134,12 @@ export function docMarkdown(doc: DocComment): string {
           .map(([name, text]) => `- \`${name}\` — ${editorText(text)}`)
           .join('\n')}`,
     doc.returns === null ? undefined : `**Returns** ${editorText(doc.returns)}`,
-    editorText(docSections(doc)),
+    editorText(
+      docSections({
+        ...doc,
+        examples: doc.examples.map(example => ({...example, csv: null})),
+      }),
+    ),
   );
 }
 
