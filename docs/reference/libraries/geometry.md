@@ -62,7 +62,14 @@ evaluation when data is missing, such as `close[1]` on the first row.
 Tells whether three points turn clockwise, turn counterclockwise or lie on one line.
 
 ```tea
-geometry.orient2d(float ax, float ay, float bx, float by, float cx, float cy)
+geometry.orient2d(
+    float ax,
+    float ay,
+    float bx,
+    float by,
+    float cx,
+    float cy
+)
 ```
 
 | Parameter | Type    | Description                        |
@@ -96,7 +103,7 @@ geometry.segmentContact(
     float px,
     float py,
     float qx,
-    float qy,
+    float qy
 )
 ```
 
@@ -140,7 +147,7 @@ geometry.segmentContacts(
     float px,
     float py,
     float qx,
-    float qy,
+    float qy
 )
 ```
 
@@ -181,7 +188,7 @@ geometry.quadraticContacts(
     float px,
     float py,
     float qx,
-    float qy,
+    float qy
 )
 ```
 
@@ -227,7 +234,7 @@ geometry.rectangleContacts(
     float left,
     float bottom,
     float right,
-    float top,
+    float top
 )
 ```
 
@@ -265,7 +272,7 @@ One place where an observation segment meets a segment or curve.
 type Contact
 ```
 
-| Member                       | Description                                                                                                                                                                                                                                                |
+| Field                        | Description                                                                                                                                                                                                                                                |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `float boundaryParameter`    | Position on the primitive, from `0` at its start to `1` at its end. `na` at either end of an overlap, and for every contact of a quadratic curve that lies along the observation's line.                                                                   |
 | `float observationParameter` | Position on the observation, from `0` at `p` to `1` at `q`. `0` when the observation is a single point.                                                                                                                                                    |
@@ -286,7 +293,7 @@ A point on the plane, as returned by [`geometry.rectangleContacts`](./geometry.m
 type Point
 ```
 
-| Member    | Description            |
+| Field     | Description            |
 | --------- | ---------------------- |
 | `float x` | Horizontal coordinate. |
 | `float y` | Vertical coordinate.   |

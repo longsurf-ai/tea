@@ -177,36 +177,33 @@ const program = compileToProgram(["rsi.tea"], errors);
 if (program === null) console.error(errors.flushErrors());
 ```
 
-**`Errors.errorAt`**
+#### Errors Errors errorAt
+
+Queue `msg` at `pos`. A report on the same file and line as the previously queued one is dropped, so a parser that recovers poorly on one line adds a single error for it.
 
 ```ts
 errorAt(pos: Pos, msg: string): void;
 ```
 
-Queue `msg` at `pos`. A report on the same file and line as the
-previously queued one is dropped, so a parser that recovers poorly on one
-line adds a single error for it.
-
 **Example:** `errors.errorAt(pos, "expected expression, found 'newline'")`
 
-**`Errors.count`**
+#### Errors Errors count
+
+The number of errors queued since the last flush.
 
 ```ts
 get count(): number;
 ```
 
-The number of errors queued since the last flush.
-
 **Example:** `errors.count > 0` after a failed stage.
 
-**`Errors.flushErrors`**
+#### Errors Errors flushErrors
+
+Return the queued errors sorted by filename, line and column, with exact duplicates removed, and empty the queue.
 
 ```ts
 flushErrors(): ErrorMsg[];
 ```
-
-Return the queued errors sorted by filename, line and column, with exact
-duplicates removed, and empty the queue.
 
 **Example:** After `compileForTooling` on `x = 1 +\ny = close + "a"\n`,
 `errors.flushErrors()` returns the line 1 parse error, then the line 2
@@ -244,46 +241,45 @@ interface Compilation {
 }
 ```
 
-**`Compilation.files`**
+#### Compilation Compilation files
+
+The parsed entry files; partial where the parser recovered.
 
 ```ts
 readonly files: readonly File[];
 ```
 
-The parsed entry files; partial where the parser recovered.
+#### Compilation Compilation dependencies
 
-**`Compilation.dependencies`**
+Files reached by import resolution, including missing or invalid libraries.
 
 ```ts
 readonly dependencies: readonly string[];
 ```
 
-Files reached by import resolution, including missing or invalid libraries.
+#### Compilation Compilation checked
 
-**`Compilation.checked`**
+Semantic facts, present even when parsing or checking reported errors.
 
 ```ts
 readonly checked: CheckedPackage;
 ```
 
-Semantic facts, present even when parsing or checking reported errors.
+#### Compilation Compilation program
 
-**`Compilation.program`**
+Null unless parse, check and noding all finished without an error.
 
 ```ts
 readonly program: Program | null;
 ```
 
-Null unless parse, check and noding all finished without an error.
+#### Compilation Compilation sources
 
-**`Compilation.sources`**
+Every text this run parsed, by filename: the entry files and each library, compiler-shipped ones included. Tooling reads doc comments here.
 
 ```ts
 readonly sources: ReadonlyMap<string, string>;
 ```
-
-Every text this run parsed, by filename: the entry files and each
-library, compiler-shipped ones included. Tooling reads doc comments here.
 
 ### CompileOptions
 

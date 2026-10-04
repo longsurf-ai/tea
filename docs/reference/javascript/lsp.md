@@ -97,49 +97,45 @@ interface Analysis {
 }
 ```
 
-**`Analysis.file`**
+#### Analysis Analysis file
+
+The parsed document, partial where the parser recovered.
 
 ```ts
 readonly file: File;
 ```
 
-The parsed document, partial where the parser recovered.
+#### Analysis Analysis dependencies
 
-**`Analysis.dependencies`**
+The compiler's file dependencies, including failed import attempts.
 
 ```ts
 readonly dependencies: readonly string[];
 ```
 
-The compiler's file dependencies, including failed import attempts.
+#### Analysis Analysis checked
 
-**`Analysis.checked`**
+Semantic facts of the document and of every library it imports.
 
 ```ts
 readonly checked: CheckedPackage;
 ```
 
-Semantic facts of the document and of every library it imports.
+#### Analysis Analysis diagnostics
 
-**`Analysis.diagnostics`**
+The compilation's errors as this document shows them, ordered by position. An error the checker positions in another file, inside a library function the document called with a signature its body rejects, is shown on the call in this document that reached it.
 
 ```ts
 readonly diagnostics: readonly Diagnostic[];
 ```
 
-The compilation's errors as this document shows them, ordered by
-position. An error the checker positions in another file, inside a library
-function the document called with a signature its body rejects, is shown
-on the call in this document that reached it.
+#### Analysis Analysis names
 
-**`Analysis.names`**
+Every `Name` in the document with a non-empty spelling, sorted by position; names never overlap, so a position finds at most one entry.
 
 ```ts
 readonly names: readonly IndexedName[];
 ```
-
-Every `Name` in the document with a non-empty spelling, sorted by
-position; names never overlap, so a position finds at most one entry.
 
 Facts are collected from every semantic context: the package root, each
 library package, each function instance (so a parameter of a function
@@ -152,21 +148,18 @@ name `high` carries the `FieldObject`, in `syminfo.ticker` the name
 `ticker` carries the `BuiltinObject`, and in `ta.ema` the name `ema`
 carries the exported function, while `ta` carries the package name.
 
-**`Analysis.definitions`**
+#### Analysis Analysis definitions
+
+Where each object is defined: its defining `Name`s, from `Info.defs` of whichever context owns them, this document's or a library's. A parameter of a function called with two signatures is two objects with one name.
 
 ```ts
 readonly definitions: ReadonlyMap<Object, readonly Name[]>;
 ```
 
-Where each object is defined: its defining `Name`s, from `Info.defs` of
-whichever context owns them, this document's or a library's. A parameter
-of a function called with two signatures is two objects with one name.
+#### Analysis Analysis lines
 
-**`Analysis.lines`**
+The lines of every text the compilation parsed, by filename: this document and each library it reached. Doc comments are read from them.
 
 ```ts
 readonly lines: ReadonlyMap<string, readonly string[]>;
 ```
-
-The lines of every text the compilation parsed, by filename: this
-document and each library it reached. Doc comments are read from them.

@@ -14,7 +14,7 @@ Functions and constants in the `color` namespace.
 Returns a color with its transparency replaced.
 
 ```tea
-color.new(color: color, transp: int | float) → color
+color color.new(series color color, series int | float transp)
 ```
 
 | Parameter | Type                  | Description                                               |
@@ -26,9 +26,37 @@ color.new(color: color, transp: int | float) → color
 
 A constant `transp` outside 0 to 100 is a compile error; a value computed while the script runs is clamped to that range.
 
+**Example:**
+
 ```tea
 faded = color.new(color.blue, 80)
 plot("close", close, color = faded)
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  close
+0      {"id":"close","series":9,"title":"","color":{"r":33,"g":150,"b":243,"a":51},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+1      {"id":"close","series":11,"title":"","color":{"r":33,"g":150,"b":243,"a":51},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+2      {"id":"close","series":10,"title":"","color":{"r":33,"g":150,"b":243,"a":51},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+3      {"id":"close","series":12,"title":"","color":{"r":33,"g":150,"b":243,"a":51},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+4      {"id":"close","series":9,"title":"","color":{"r":33,"g":150,"b":243,"a":51},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+5      {"id":"close","series":14,"title":"","color":{"r":33,"g":150,"b":243,"a":51},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+6      {"id":"close","series":10,"title":"","color":{"r":33,"g":150,"b":243,"a":51},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+7      {"id":"close","series":15,"title":"","color":{"r":33,"g":150,"b":243,"a":51},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
 ```
 
 ### rgb
@@ -36,7 +64,12 @@ plot("close", close, color = faded)
 Builds a color from red, green and blue components.
 
 ```tea
-color.rgb(red: int | float, green: int | float, blue: int | float, transp?: int | float) → color
+color color.rgb(
+    series int | float red,
+    series int | float green,
+    series int | float blue,
+    series int | float transp = …
+)
 ```
 
 | Parameter | Type                  | Description                                                        |
@@ -50,9 +83,37 @@ color.rgb(red: int | float, green: int | float, blue: int | float, transp?: int 
 
 Components are rounded to whole numbers. Constants outside their range are compile errors; values computed while the script runs are clamped.
 
+**Example:**
+
 ```tea
 amber = color.rgb(255, 191, 0)
 plot("close", close, color = amber)
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  close
+0      {"id":"close","series":9,"title":"","color":{"r":255,"g":191,"b":0,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+1      {"id":"close","series":11,"title":"","color":{"r":255,"g":191,"b":0,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+2      {"id":"close","series":10,"title":"","color":{"r":255,"g":191,"b":0,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+3      {"id":"close","series":12,"title":"","color":{"r":255,"g":191,"b":0,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+4      {"id":"close","series":9,"title":"","color":{"r":255,"g":191,"b":0,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+5      {"id":"close","series":14,"title":"","color":{"r":255,"g":191,"b":0,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+6      {"id":"close","series":10,"title":"","color":{"r":255,"g":191,"b":0,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+7      {"id":"close","series":15,"title":"","color":{"r":255,"g":191,"b":0,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
 ```
 
 ## Palette
@@ -85,7 +146,35 @@ Each constant is a `const color`.
 
 The values belong to Tea, not to the host application’s theme. Use [`color.new`](./color.md#new) for a transparent version.
 
+**Example:**
+
 ```tea
 falling = close < close[1]
 plot("close", close, color = falling ? color.red : color.green)
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  close
+0      {"id":"close","series":9,"title":"","color":{"r":76,"g":175,"b":80,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+1      {"id":"close","series":11,"title":"","color":{"r":76,"g":175,"b":80,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+2      {"id":"close","series":10,"title":"","color":{"r":255,"g":82,"b":82,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+3      {"id":"close","series":12,"title":"","color":{"r":76,"g":175,"b":80,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+4      {"id":"close","series":9,"title":"","color":{"r":255,"g":82,"b":82,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+5      {"id":"close","series":14,"title":"","color":{"r":76,"g":175,"b":80,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+6      {"id":"close","series":10,"title":"","color":{"r":255,"g":82,"b":82,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+7      {"id":"close","series":15,"title":"","color":{"r":76,"g":175,"b":80,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
 ```

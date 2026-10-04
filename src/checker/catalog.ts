@@ -1316,17 +1316,18 @@ export function formatNativeTypeRef(ref: NativeTypeRef): string {
 }
 
 /**
- * One overload as a single display line: the one spelling of a native
- * signature, shared by the generated reference and editor hovers. Staged
- * parameters are left out, `?` marks an optional parameter and `...` a
- * variadic one. Captured request results depend on the checked expression,
- * so their catalog placeholder is never presented as the return type.
+ * One overload as Tea declares a function: the one spelling of a native
+ * signature, shared by the generated reference and editor tooling. The result
+ * type comes first, with its qualifier only when that qualifier is fixed;
+ * otherwise the result is as variable as the most variable argument. A
+ * request's and a first-argument result depend on the call, so neither shows
+ * a type. Staged parameters are left out (see {@link formatNativeParam}).
  *
  * @example
  * ```ts
  * nativeFuncs('math.max')!.map(formatNativeSignature);
- * // ['math.max(number: int, ...number1: int) → int',
- * //  'math.max(number: int | float, ...number1: int | float) → float']
+ * // ['int math.max(series int number, series int ...number1)',
+ * //  'float math.max(series int | float number, series int | float ...number1)']
  * ```
  */
 export function formatNativeSignature(func: NativeFunc): string {
@@ -1338,16 +1339,33 @@ export function formatNativeSignature(func: NativeFunc): string {
           .join(', ')}>`;
   const params = func.params
     .filter(parameter => parameter.availability === 'supported')
-    .map(parameter => {
-      const variadic = parameter.variadic ? '...' : '';
-      const optional = parameter.required ? '' : '?';
-      return `${variadic}${parameter.name}${optional}: ${formatNativeTypeRef(parameter.type)}`;
-    })
+    .map(formatNativeParam)
     .join(', ');
-  const result = func.params.some(parameter => parameter.capture)
-    ? 'request-dependent result'
-    : func.result === FirstArgumentResult
-      ? 'type of first argument'
+  const type =
+    func.result === FirstArgumentResult ||
+    func.params.some(parameter => parameter.capture)
+      ? null
       : formatNativeTypeRef(func.result);
-  return `${func.name}${typeParams}(${params}) → ${result}`;
+  const result =
+    type === null
+      ? ''
+      : func.resultQualifier === JoinResult || type === 'void'
+        ? `${type} `
+        : `${func.resultQualifier} ${type} `;
+  return `${result}${func.name}${typeParams}(${params})`;
+}
+
+/**
+ * One parameter as Tea declares it: the latest qualifier it accepts, its
+ * type and its name, then `= …` when it is optional; `...` marks a parameter
+ * that takes the remaining arguments.
+ *
+ * @example
+ * ```ts
+ * formatNativeParam(nativeFuncs('nz')![0]!.params[1]!);
+ * // 'series int replacement = …'
+ * ```
+ */
+export function formatNativeParam(param: NativeParam): string {
+  return `${param.qualifierCap} ${formatNativeTypeRef(param.type)} ${param.variadic ? '...' : ''}${param.name}${param.required ? '' : ' = …'}`;
 }

@@ -59,7 +59,7 @@ tea run <file> --input <file> [--trace] [--<input name> <value>...]
 | `-i, --input <file>` | CSV dataset to bind as input series. Required.                         |
 | `--trace`            | Print the machine trace format (golden-compatible) instead of a table. |
 
-Compile and execute a Tea script over a CSV dataset. Override an input default with a flag named after the variable that declares it, such as --length 20 for length = input.int(14).
+Compile and execute a Tea script over a CSV dataset. Override an input default with a flag named after the variable that declares it, such as `--length` 20 for length = input.int(14).
 
 ### tea build
 

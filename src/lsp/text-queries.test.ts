@@ -6,7 +6,12 @@ import {
   type CompletionItem,
   type SignatureHelp,
 } from 'vscode-languageserver';
-import {CATALOG, formatNativeSignature, nativeFuncs} from '../checker/catalog';
+import {
+  CATALOG,
+  formatNativeParam,
+  formatNativeSignature,
+  nativeFuncs,
+} from '../checker/catalog';
 import {KEYWORDS} from '../syntax/tokens';
 import {analyze} from './analysis';
 import {completion, signatureHelp} from './text-queries';
@@ -347,7 +352,7 @@ describe('completion: after a dot', () => {
     const push = item('var a = array.new<float>()\nx = a.|', 'push');
     expect(push).toMatchObject({
       kind: CompletionItemKind.Method,
-      detail: 'a.push(value: T) → void',
+      detail: 'void a.push(series T value)',
       documentation: {
         kind: 'markdown',
         value: expect.stringContaining('Appends'),
@@ -413,7 +418,7 @@ describe('signature help', () => {
         label: formatNativeSignature(overload),
         documentation: {kind: 'markdown', value: expect.any(String)},
         parameters: overload.params.map(param => ({
-          label: expect.stringContaining(`${param.name}: `),
+          label: formatNativeParam(param),
           documentation: {kind: 'markdown', value: expect.any(String)},
         })),
         activeParameter: 0,
@@ -440,7 +445,7 @@ describe('signature help', () => {
     );
     // `array.new()` takes nothing, so the overload with a `size` is active.
     expect(found).toMatchObject({activeSignature: 1, activeParameter: 0});
-    expect(found?.signatures[1].parameters?.[0].label).toBe('size: int');
+    expect(found?.signatures[1].parameters?.[0].label).toBe('series int size');
     // No overload takes a second argument: the first signature stands.
     expect(help('x = str.tostring(1, |')).toMatchObject({
       activeSignature: 0,
@@ -550,11 +555,16 @@ describe('signature help', () => {
 
   test('a native called as a method leaves out its receiver', () => {
     expect(help('var a = array.new<float>()\na.push(|')).toMatchObject({
-      signatures: [{label: 'a.push(value: T) → void'}],
+      signatures: [{label: 'void a.push(series T value)'}],
       activeParameter: 0,
     });
     expect(help('var m = matrix.new<int>(2, 2, 0)\nm.set(0, |')).toMatchObject({
-      signatures: [{label: 'm.set(row: int, column: int, value: T) → void'}],
+      signatures: [
+        {
+          label:
+            'void m.set(series int row, series int column, series T value)',
+        },
+      ],
       activeParameter: 1,
     });
   });
@@ -570,7 +580,7 @@ describe('signature help', () => {
     // so the second positional argument matches nothing shown.
     const positional = help('indicator("x", |');
     expect(positional?.signatures[0].label).toBe(
-      'indicator(title: string, overlay?: bool) → void',
+      'void indicator(const string title, const bool overlay = …)',
     );
     expect(positional?.activeParameter).toBe(2);
     expect(help('indicator("x", overlay = |')?.activeParameter).toBe(1);

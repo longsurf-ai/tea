@@ -25,7 +25,7 @@ Functions available in every script without an import.
 Declares a file as a library and names it.
 
 ```tea
-library(title: string) → void
+void library(const string title)
 ```
 
 | Parameter | Type           | Description                                                                                                                                                                                                 |
@@ -45,7 +45,7 @@ export upper(float source, float width) => source + width
 Declares the script’s title and whether a host draws it over the price chart.
 
 ```tea
-indicator(title: string, overlay?: bool) → void
+void indicator(const string title, const bool overlay = …)
 ```
 
 | Parameter | Type           | Description                                                                                                                                       |
@@ -55,9 +55,37 @@ indicator(title: string, overlay?: bool) → void
 
 It must be the script’s first statement and appear at most once, and a library cannot declare it. The header only informs the host; it never changes how the script runs.
 
+**Example:**
+
 ```tea
 indicator("Bar range", overlay = false)
 plot("range", high - low, "Range")
+```
+
+```csv
+time,high,low
+0,10,8
+1,12,9
+2,11,7
+3,13,9
+4,12,8
+5,15,10
+6,14,9
+7,16,11
+```
+
+**Output:**
+
+```text
+index  range
+0      {"id":"range","series":2,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+1      {"id":"range","series":3,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+2      {"id":"range","series":4,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+3      {"id":"range","series":4,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+4      {"id":"range","series":4,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+5      {"id":"range","series":5,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+6      {"id":"range","series":5,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+7      {"id":"range","series":5,"title":"Range","color":null,"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
 ```
 
 ## Missing values
@@ -67,7 +95,7 @@ plot("range", high - low, "Range")
 Tests whether a value is missing.
 
 ```tea
-na(x: nullable value) → bool
+bool na(series nullable value x)
 ```
 
 | Parameter | Type                    | Description                                                                    |
@@ -78,9 +106,37 @@ na(x: nullable value) → bool
 
 Every comparison involving a missing value is `false`, even `!=`, and `x == na` is a compile error, so test with `na(x)`. Arithmetic without a defined result, such as division by zero or the square root of a negative number, gives `na`. An `na` array, matrix or map is no collection at all, unlike an empty one, and an `na` struct refers to no struct.
 
+**Example:**
+
 ```tea
 previous = close[1]
 emit "has_previous" not na(previous) // false on the first bar
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  has_previous
+0      false
+1      true
+2      true
+3      true
+4      true
+5      true
+6      true
+7      true
 ```
 
 ### nz
@@ -88,9 +144,9 @@ emit "has_previous" not na(previous) // false on the first bar
 Replaces a missing value with a fallback.
 
 ```tea
-nz(source: int, replacement?: int) → int
-nz(source: float, replacement?: float) → float
-nz(source: color, replacement?: color) → color
+int nz(series int source, series int replacement = …)
+float nz(series float source, series float replacement = …)
+color nz(series color source, series color replacement = …)
 ```
 
 | Parameter     | Type                                     | Description                                                                                                                 |
@@ -100,9 +156,37 @@ nz(source: color, replacement?: color) → color
 
 **Returns:** `source` when it is not `na`, otherwise the replacement.
 
+**Example:**
+
 ```tea
 change = close - close[1]
 emit "change" nz(change) // 0 on the first bar
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  change
+0      0
+1      2
+2      -1
+3      2
+4      -3
+5      5
+6      -4
+7      5
 ```
 
 ## Conversions
@@ -112,7 +196,7 @@ emit "change" nz(change) // 0 on the first bar
 Converts a number to an integer by dropping its fractional part.
 
 ```tea
-int(x: int | float) → int
+int int(series int | float x)
 ```
 
 | Parameter | Type                  | Description            |
@@ -126,7 +210,7 @@ int(x: int | float) → int
 Converts a number to a `float`.
 
 ```tea
-float(x: int | float) → float
+float float(series int | float x)
 ```
 
 | Parameter | Type                  | Description            |
@@ -142,7 +226,7 @@ float(x: int | float) → float
 Converts a value to text.
 
 ```tea
-str.tostring(value: scalar | enum | resource) → string
+string str.tostring(series scalar | enum | resource value)
 ```
 
 | Parameter | Type                                | Description           |
@@ -153,8 +237,36 @@ str.tostring(value: scalar | enum | resource) → string
 
 Numbers use the shortest form that reads back as the same number: `3.0` gives `"3"`, `0.1 + 0.2` gives `"0.30000000000000004"`, and very large or small numbers use exponent notation such as `"1e+21"`. There is no format argument; round with [`math.round`](./math.md#round) first to limit the decimals. A `bool` gives `"true"` or `"false"`, a color its hex code such as `"#FF5252"` (with two more digits when it is transparent), and an enum member its title, or its name when it has no title.
 
+**Example:**
+
 ```tea
 emit "label" "Close: " + str.tostring(math.round(close, 2))
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  label
+0      Close: 9
+1      Close: 11
+2      Close: 10
+3      Close: 12
+4      Close: 9
+5      Close: 14
+6      Close: 10
+7      Close: 15
 ```
 
 ## Script control
@@ -164,7 +276,7 @@ emit "label" "Close: " + str.tostring(math.round(close, 2))
 Stops the script with an error message.
 
 ```tea
-runtime.error(message: string) → void
+void runtime.error(series string message)
 ```
 
 | Parameter | Type            | Description        |
@@ -173,8 +285,11 @@ runtime.error(message: string) → void
 
 When a call runs, the run stops: no output is published for that bar or any later one, and the host receives the message. When the conditions around a call are all constants that make it run, it is a compile error at the call instead, so `ta.sma(close, 0)` is rejected where it is written. A call inside a loop, inside a `switch`, or after a statement that can leave the block early is only checked when it runs.
 
+This script stops on its first bar when the host sets `length` below 2:
+
 ```tea
 length = input.int(14)
 if length < 2
     runtime.error("length must be at least 2")
+emit "average" ta.sma(close, length)
 ```

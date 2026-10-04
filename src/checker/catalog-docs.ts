@@ -3,7 +3,10 @@
 // Signatures, parameter types, qualifiers and constant values stay in
 // catalog.ts; this file adds only what a reader needs to know beyond them.
 // The reference tests fail when a catalog name, a supported parameter, or a
-// constant lacks documentation here, and they compile every example.
+// constant lacks documentation here, and they compile every example; the
+// reference generator runs each one and shows what it writes.
+
+import type {DocExample} from '../syntax/doc-comments';
 
 /** Documentation for one native function name, shared by all its overloads. */
 export interface NativeFunctionDoc {
@@ -15,8 +18,16 @@ export interface NativeFunctionDoc {
   readonly returns?: string;
   /** Further Markdown paragraphs. */
   readonly details?: string;
-  /** A complete Tea program; the reference tests compile it. */
-  readonly example?: string;
+  /** TeX for one display-math block, without `$` delimiters. */
+  readonly formula?: string;
+  /** When the result is `na` at the start, and how `na` arguments propagate. */
+  readonly warmup?: string;
+  /** Complete programs the reference runs; build each with `example()`. */
+  readonly examples?: readonly DocExample[];
+  /** A difference from Pine Script v6 that remains. */
+  readonly pine?: string;
+  /** Related documented names. */
+  readonly see?: readonly string[];
   /** The section of its reference page. */
   readonly category: string;
 }
@@ -30,8 +41,12 @@ export interface NativeValueDoc {
   readonly summary: string;
   /** Further Markdown paragraphs. */
   readonly details?: string;
-  /** A complete Tea program; the reference tests compile it. */
-  readonly example?: string;
+  /** Complete programs the reference runs; build each with `example()`. */
+  readonly examples?: readonly DocExample[];
+  /** A difference from Pine Script v6 that remains. */
+  readonly pine?: string;
+  /** Related documented names. */
+  readonly see?: readonly string[];
   /** The section of its reference page. */
   readonly category: string;
   /** For a family: notes on individual constants, by full name. */
@@ -40,6 +55,20 @@ export interface NativeValueDoc {
 
 function lines(...source: string[]): string {
   return source.join('\n');
+}
+
+/** A program `details` shows without running it, such as one that needs request data. */
+function program(source: string): string {
+  return `\`\`\`tea\n${source}\n\`\`\``;
+}
+
+/** An example: a caption, a program, and the CSV it runs on, if it reads any. */
+function example(
+  caption: string,
+  source: string,
+  csv: string | null = null,
+): DocExample {
+  return {caption, source, csv};
 }
 
 // The input page shows these parameters once, so every input function must
@@ -107,13 +136,16 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         title:
           'The library’s name, which importing scripts use as its namespace. It must be an identifier: letters, digits and underscores, not starting with a digit, and not a keyword.',
       },
-      details:
+      details: [
         'It must be the file’s first statement and appear only once. A script that imports the file uses this name unless it renames the import with `as`. See [Imports](/imports).',
-      example: lines(
-        'library("bands")',
-        '',
-        'export upper(float source, float width) => source + width',
-      ),
+        program(
+          lines(
+            'library("bands")',
+            '',
+            'export upper(float source, float width) => source + width',
+          ),
+        ),
+      ].join('\n\n'),
       category: 'Script declarations',
     },
     indicator: {
@@ -126,10 +158,26 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       },
       details:
         'It must be the script’s first statement and appear at most once, and a library cannot declare it. The header only informs the host; it never changes how the script runs.',
-      example: lines(
-        'indicator("Bar range", overlay = false)',
-        'plot("range", high - low, "Range")',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'indicator("Bar range", overlay = false)',
+            'plot("range", high - low, "Range")',
+          ),
+          lines(
+            'time,high,low',
+            '0,10,8',
+            '1,12,9',
+            '2,11,7',
+            '3,13,9',
+            '4,12,8',
+            '5,15,10',
+            '6,14,9',
+            '7,16,11',
+          ),
+        ),
+      ],
       category: 'Script declarations',
     },
     na: {
@@ -140,10 +188,26 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       returns: '`true` when `x` is `na`, otherwise `false`.',
       details:
         'Every comparison involving a missing value is `false`, even `!=`, and `x == na` is a compile error, so test with `na(x)`. Arithmetic without a defined result, such as division by zero or the square root of a negative number, gives `na`. An `na` array, matrix or map is no collection at all, unlike an empty one, and an `na` struct refers to no struct.',
-      example: lines(
-        'previous = close[1]',
-        'emit "has_previous" not na(previous) // false on the first bar',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'previous = close[1]',
+            'emit "has_previous" not na(previous) // false on the first bar',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Missing values',
     },
     nz: {
@@ -154,10 +218,26 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
           'The value to use when `source` is `na`. Without it, the fallback is `0` for numbers and fully transparent black for colors.',
       },
       returns: '`source` when it is not `na`, otherwise the replacement.',
-      example: lines(
-        'change = close - close[1]',
-        'emit "change" nz(change) // 0 on the first bar',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'change = close - close[1]',
+            'emit "change" nz(change) // 0 on the first bar',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Missing values',
     },
     int: {
@@ -182,21 +262,40 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       returns: 'The text form of `value`; `"NaN"` when `value` is `na`.',
       details:
         'Numbers use the shortest form that reads back as the same number: `3.0` gives `"3"`, `0.1 + 0.2` gives `"0.30000000000000004"`, and very large or small numbers use exponent notation such as `"1e+21"`. There is no format argument; round with {@link math.round} first to limit the decimals. A `bool` gives `"true"` or `"false"`, a color its hex code such as `"#FF5252"` (with two more digits when it is transparent), and an enum member its title, or its name when it has no title.',
-      example: lines(
-        'emit "label" "Close: " + str.tostring(math.round(close, 2))',
-      ),
+      examples: [
+        example(
+          '',
+          lines('emit "label" "Close: " + str.tostring(math.round(close, 2))'),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Conversions',
     },
     'runtime.error': {
       summary: 'Stops the script with an error message.',
       params: {message: 'The error message.'},
-      details:
+      details: [
         'When a call runs, the run stops: no output is published for that bar or any later one, and the host receives the message. When the conditions around a call are all constants that make it run, it is a compile error at the call instead, so `ta.sma(close, 0)` is rejected where it is written. A call inside a loop, inside a `switch`, or after a statement that can leave the block early is only checked when it runs.',
-      example: lines(
-        'length = input.int(14)',
-        'if length < 2',
-        '    runtime.error("length must be at least 2")',
-      ),
+        'This script stops on its first bar when the host sets `length` below 2:',
+        program(
+          lines(
+            'length = input.int(14)',
+            'if length < 2',
+            '    runtime.error("length must be at least 2")',
+            'emit "average" ta.sma(close, length)',
+          ),
+        ),
+      ].join('\n\n'),
       category: 'Script control',
     },
 
@@ -219,10 +318,26 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       },
       returns: INPUT_RESULT,
       details: `${NUMBER_RULES} See {@link input} for how inputs are named and when they are fixed.`,
-      example: lines(
-        'length = input.int(14, "Length", minval = 1, maxval = 200)',
-        'emit "average" ta.sma(close, length)',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'length = input.int(14, "Length", minval = 1, maxval = 200)',
+            'emit "average" ta.sma(close, length)',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Numbers',
     },
     'input.float': {
@@ -243,10 +358,26 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       },
       returns: INPUT_RESULT,
       details: NUMBER_RULES,
-      example: lines(
-        'width = input.float(2.0, "Band width", minval = 0.5, step = 0.5)',
-        'emit "upper" ta.sma(close, 20) + width * ta.stdev(close, 20)',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'width = input.float(2.0, "Band width", minval = 0.5, step = 0.5)',
+            'emit "upper" ta.sma(close, 20) + width * ta.stdev(close, 20)',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Numbers',
     },
     'input.bool': {
@@ -263,11 +394,27 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       },
       returns: INPUT_RESULT,
       details: HIDDEN_BY_DEFAULT,
-      example: lines(
-        'smooth = input.bool(true, "Smooth")',
-        'average = ta.sma(close, 5)',
-        'emit "value" smooth ? average : close',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'smooth = input.bool(true, "Smooth")',
+            'average = ta.sma(close, 5)',
+            'emit "value" smooth ? average : close',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Text and choices',
     },
     'input.string': {
@@ -285,12 +432,28 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         active: INPUT_ACTIVE,
       },
       returns: INPUT_RESULT,
-      example: lines(
-        'kind = input.string("SMA", "Average", options = ["SMA", "EMA"])',
-        'sma = ta.sma(close, 20)',
-        'ema = ta.ema(close, 20)',
-        'emit "average" kind == "SMA" ? sma : ema',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'kind = input.string("SMA", "Average", options = ["SMA", "EMA"])',
+            'sma = ta.sma(close, 20)',
+            'ema = ta.ema(close, 20)',
+            'emit "average" kind == "SMA" ? sma : ema',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Text and choices',
     },
     'input.color': {
@@ -307,10 +470,26 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       },
       returns: INPUT_RESULT,
       details: `A host supplies the color as \`#RRGGBB\` or \`#RRGGBBAA\` text. ${HIDDEN_BY_DEFAULT}`,
-      example: lines(
-        'lineColor = input.color(color.blue, "Line color")',
-        'plot("close", close, color = lineColor)',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'lineColor = input.color(color.blue, "Line color")',
+            'plot("close", close, color = lineColor)',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Colors, symbols and time',
     },
     'input.timeframe': {
@@ -327,13 +506,16 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         active: INPUT_ACTIVE,
       },
       returns: INPUT_RESULT,
-      details:
+      details: [
         'Tea does not check that the text is a valid timeframe. A common use is the `timeframe` of {@link request.security}.',
-      example: lines(
-        'higher = input.timeframe("D", "Higher timeframe")',
-        'higherClose = request.security(syminfo.tickerid, higher, close)',
-        'emit "higher_close" higherClose',
-      ),
+        program(
+          lines(
+            'higher = input.timeframe("D", "Higher timeframe")',
+            'higherClose = request.security(syminfo.tickerid, higher, close)',
+            'emit "higher_close" higherClose',
+          ),
+        ),
+      ].join('\n\n'),
       category: 'Colors, symbols and time',
     },
     'input.symbol': {
@@ -350,13 +532,16 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         active: INPUT_ACTIVE,
       },
       returns: INPUT_RESULT,
-      details:
+      details: [
         'Tea does not check the symbol. A common use is the `symbol` of {@link request.security}.',
-      example: lines(
-        'other = input.symbol("NASDAQ:QQQ", "Compare with")',
-        'otherClose = request.security(other, timeframe.period, close)',
-        'emit "ratio" close / otherClose',
-      ),
+        program(
+          lines(
+            'other = input.symbol("NASDAQ:QQQ", "Compare with")',
+            'otherClose = request.security(other, timeframe.period, close)',
+            'emit "ratio" close / otherClose',
+          ),
+        ),
+      ].join('\n\n'),
       category: 'Colors, symbols and time',
     },
     'input.price': {
@@ -407,10 +592,15 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       },
       returns: INPUT_RESULT,
       details: `Tea treats the value as a plain \`int\`; give it in milliseconds since the Unix epoch so it compares directly with {@link time}. ${HIDDEN_BY_DEFAULT}`,
-      example: lines(
-        'start = input.time(1704067200000, "Start") // 2024-01-01 00:00 UTC',
-        'emit "started" time >= start',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'start = input.time(1704067200000, "Start") // 2024-01-01 00:00 UTC',
+            'emit "started" time >= start',
+          ),
+        ),
+      ],
       category: 'Colors, symbols and time',
     },
     'input.text_area': {
@@ -445,10 +635,26 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       returns: 'The chosen series’ value on the current bar.',
       details:
         'The host supplies the name of a series, such as `"high"`, and must bind a data stream that has it. The result can be used like {@link close}, including its history. A source input cannot be declared inside a request expression.',
-      example: lines(
-        'source = input.source(close, "Source")',
-        'emit "average" ta.sma(source, 10)',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'source = input.source(close, "Source")',
+            'emit "average" ta.sma(source, 10)',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Series inputs',
     },
     'input.enum': {
@@ -469,16 +675,32 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       returns: INPUT_RESULT,
       details:
         'A host supplies the member’s name, such as `"ema"`, not its title.',
-      example: lines(
-        'enum Average',
-        '    sma = "Simple"',
-        '    ema = "Exponential"',
-        '',
-        'kind = input.enum(Average.sma, "Average")',
-        'sma = ta.sma(close, 20)',
-        'ema = ta.ema(close, 20)',
-        'emit "average" kind == Average.sma ? sma : ema',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'enum Average',
+            '    sma = "Simple"',
+            '    ema = "Exponential"',
+            '',
+            'kind = input.enum(Average.sma, "Average")',
+            'sma = ta.sma(close, 20)',
+            'ema = ta.ema(close, 20)',
+            'emit "average" kind == Average.sma ? sma : ema',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Text and choices',
     },
     input: {
@@ -500,11 +722,27 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         '',
         'A `bool` or `color` input is hidden by default (`display.none`).',
       ),
-      example: lines(
-        'length = input(14, "Length")',
-        'source = input(close, "Source")',
-        'emit "average" ta.sma(source, length)',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'length = input(14, "Length")',
+            'source = input(close, "Source")',
+            'emit "average" ta.sma(source, length)',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Any type',
     },
     'input.series': {
@@ -517,10 +755,23 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         'The series’ value on the current row; `na` when the row has none.',
       details:
         'Every call with the same name reads the same series. A script can call it only at its top level, and a library only as an exported alias such as `export vwap = input.series("vwap")`, which is how {@link close} and the other price series are defined. Unlike {@link input.source}, the name is fixed in the source and is not a setting.',
-      example: lines(
-        'vwap = input.series("vwap")',
-        'emit "distance" close - vwap',
-      ),
+      examples: [
+        example(
+          '',
+          lines('vwap = input.series("vwap")', 'emit "distance" close - vwap'),
+          lines(
+            'time,close,vwap',
+            '0,9,9.5',
+            '1,11,11.2',
+            '2,10,10.4',
+            '3,12,11.6',
+            '4,9,10.1',
+            '5,14,12.8',
+            '6,10,11.0',
+            '7,15,13.4',
+          ),
+        ),
+      ],
       category: 'Series inputs',
     },
 
@@ -565,10 +816,26 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         'An `int` without `precision` and a `float` with it; `na` when an argument is `na`.',
       details:
         'Halves round up, toward positive infinity: `math.round(2.5)` is `3` and `math.round(-2.5)` is `-2`. Decimal rounding works on binary floating-point values, so `math.round(1.005, 2)` is `1.0`, not `1.01`, because `1.005` is stored as slightly less than written.',
-      example: lines(
-        'emit "whole" math.round(close)',
-        'emit "cents" math.round(close, 2)',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'emit "whole" math.round(close)',
+            'emit "cents" math.round(close, 2)',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Rounding',
     },
     'math.sqrt': {
@@ -643,11 +910,15 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         fill: 'What the result holds on a bar where no new requested value arrived since the previous bar: `"carry"`, the default, repeats the latest value, and `"sparse"` gives `na`. It must be known when the script is bound.',
       },
       returns: `The expression’s value from the requested data for the current bar, with the expression’s type; the type’s ${EMPTY_VALUE} until the requested data has produced a value.`,
-      details: `${requestPlacement('daily = request.security(...)')} When both data streams carry event times, each bar receives the newest requested value that opened at or before it; otherwise requested values are paired with bars in order. History inside \`expression\` refers to the requested data, so \`close[1]\` there is its previous bar. ${REQUEST_CONTEXT} To get several values, declare one request for each. See [Requests](/requests) for binding and synchronization.`,
-      example: lines(
-        'daily = request.security(syminfo.tickerid, "D", close[1])',
-        'emit "previous_daily_close" daily',
-      ),
+      details: [
+        `${requestPlacement('daily = request.security(...)')} When both data streams carry event times, each bar receives the newest requested value that opened at or before it; otherwise requested values are paired with bars in order. History inside \`expression\` refers to the requested data, so \`close[1]\` there is its previous bar. ${REQUEST_CONTEXT} To get several values, declare one request for each. See [Requests](/requests) for binding and synchronization.`,
+        program(
+          lines(
+            'daily = request.security(syminfo.tickerid, "D", close[1])',
+            'emit "previous_daily_close" daily',
+          ),
+        ),
+      ].join('\n\n'),
       category: 'Requests',
     },
     'request.security_lower_tf': {
@@ -660,11 +931,15 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       },
       returns:
         'An array of the expression’s values that belong to the current bar, oldest first; empty when there are none.',
-      details: `${requestPlacement('ranges = request.security_lower_tf(...)')} When both data streams carry event times, a bar collects the requested values that opened after the previous bar and up to its own time. Without event times, a bar collects a fixed number of values when both streams have regular periods that divide evenly, and one value otherwise. ${REQUEST_CONTEXT} See [Requests](/requests).`,
-      example: lines(
-        'ranges = request.security_lower_tf(syminfo.tickerid, "15", high - low)',
-        'emit "intraday_bars" ranges.size()',
-      ),
+      details: [
+        `${requestPlacement('ranges = request.security_lower_tf(...)')} When both data streams carry event times, a bar collects the requested values that opened after the previous bar and up to its own time. Without event times, a bar collects a fixed number of values when both streams have regular periods that divide evenly, and one value otherwise. ${REQUEST_CONTEXT} See [Requests](/requests).`,
+        program(
+          lines(
+            'ranges = request.security_lower_tf(syminfo.tickerid, "15", high - low)',
+            'emit "intraday_bars" ranges.size()',
+          ),
+        ),
+      ].join('\n\n'),
       category: 'Requests',
     },
 
@@ -679,10 +954,26 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         'The color with the given transparency; `na` when either argument is `na`.',
       details:
         'A constant `transp` outside 0 to 100 is a compile error; a value computed while the script runs is clamped to that range.',
-      example: lines(
-        'faded = color.new(color.blue, 80)',
-        'plot("close", close, color = faded)',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'faded = color.new(color.blue, 80)',
+            'plot("close", close, color = faded)',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Creating colors',
     },
     'color.rgb': {
@@ -697,10 +988,26 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       returns: 'The color; `na` when any argument is `na`.',
       details:
         'Components are rounded to whole numbers. Constants outside their range are compile errors; values computed while the script runs are clamped.',
-      example: lines(
-        'amber = color.rgb(255, 191, 0)',
-        'plot("close", close, color = amber)',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'amber = color.rgb(255, 191, 0)',
+            'plot("close", close, color = amber)',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Creating colors',
     },
 
@@ -713,11 +1020,16 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       },
       returns: 'A new array.',
       details: `Write the element type in angle brackets, as in \`array.new<float>(3)\`, unless \`initial\` gives it. A negative size stops the run with an error. ${LIMIT}; a larger size also stops the run. A variable declared as \`array<float> values = na\` holds no array, and calling a function on it stops the run with an error.`,
-      example: lines(
-        'zeros = array.new(3, 0.0)',
-        'missing = array.new<float>(2) // two na elements',
-        'emit "sizes" zeros.size() + missing.size() // 5',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'zeros = array.new(3, 0.0)',
+            'missing = array.new<float>(2) // two na elements',
+            'emit "sizes" zeros.size() + missing.size() // 5',
+          ),
+        ),
+      ],
       category: 'Creating and copying',
     },
     'array.from': {
@@ -726,10 +1038,15 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       returns: 'A new array.',
       details:
         'The element type comes from the values; integers mixed with floats make a `float` array. With no values, or only `na`, write the type: `array.from<float>()`.',
-      example: lines(
-        'levels = array.from(1, 2.5, 4) // an array<float>',
-        'emit "first" levels.get(0) // 1',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'levels = array.from(1, 2.5, 4) // an array<float>',
+            'emit "first" levels.get(0) // 1',
+          ),
+        ),
+      ],
       category: 'Creating and copying',
     },
     'array.copy': {
@@ -761,10 +1078,15 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       returns: 'The element. A struct element is the same struct, not a copy.',
       details:
         'An index that is negative, `na`, or not less than the size stops the run with an error; negative indexes do not count from the end.',
-      example: lines(
-        'values = array.from(10, 20, 30)',
-        'emit "second" values.get(1) // 20',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'values = array.from(10, 20, 30)',
+            'emit "second" values.get(1) // 20',
+          ),
+        ),
+      ],
       category: 'Reading',
     },
     'array.first': {
@@ -799,12 +1121,28 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         value: 'The value to append.',
       },
       details: `Appending to one variable does not change array values already assigned to other variables or committed to history. A struct element is stored by reference. ${LIMIT}; pushing past that stops the run with an error.`,
-      example: lines(
-        'values = array.new<float>()',
-        'values.push(open)',
-        'values.push(close)',
-        'emit "count" values.size() // 2',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'values = array.new<float>()',
+            'values.push(open)',
+            'values.push(close)',
+            'emit "count" values.size() // 2',
+          ),
+          lines(
+            'time,open,close',
+            '0,9,9',
+            '1,10,11',
+            '2,10,10',
+            '3,10,12',
+            '4,12,9',
+            '5,10,14',
+            '6,14,10',
+            '7,11,15',
+          ),
+        ),
+      ],
       category: 'Changing',
     },
     'array.pop': {
@@ -830,11 +1168,27 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       },
       returns: 'A new matrix.',
       details: `Without arguments the matrix has no rows or columns, and the element type must be written: \`matrix.new<float>()\`. A matrix keeps its shape; no function adds or removes rows or columns. A negative dimension stops the run with an error. ${LIMIT}; a larger matrix also stops the run.`,
-      example: lines(
-        'grid = matrix.new<float>(2, 3, 0.0)',
-        'grid.set(1, 2, close)',
-        'emit "cells" grid.elements_count() // 6',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'grid = matrix.new<float>(2, 3, 0.0)',
+            'grid.set(1, 2, close)',
+            'emit "cells" grid.elements_count() // 6',
+          ),
+          lines(
+            'time,close',
+            '0,9',
+            '1,11',
+            '2,10',
+            '3,12',
+            '4,9',
+            '5,14',
+            '6,10',
+            '7,15',
+          ),
+        ),
+      ],
       category: 'Creating and copying',
     },
     'matrix.copy': {
@@ -918,12 +1272,28 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       returns: 'A new map with no entries.',
       details:
         'Write the key and value types in angle brackets, as in `map.new<string, float>()`. Keys can be `int`, `float`, `bool`, `string`, `color` or an enum. A map keeps its keys in the order they were added. A variable declared as `map<string, float> prices = na` holds no map, and calling a function on it stops the run with an error.',
-      example: lines(
-        'latest = map.new<string, float>()',
-        'latest.put("close", close)',
-        'emit "close" latest.get("close")',
-        'emit "open" latest.get("open") // na: no such key',
-      ),
+      examples: [
+        example(
+          '',
+          lines(
+            'latest = map.new<string, float>()',
+            'latest.put("close", close)',
+            'emit "close" latest.get("close")',
+            'emit "open" latest.get("open") // na: no such key',
+          ),
+          lines(
+            'time,open,close',
+            '0,9,9',
+            '1,10,11',
+            '2,10,10',
+            '3,10,12',
+            '4,12,9',
+            '5,10,14',
+            '6,14,10',
+            '7,11,15',
+          ),
+        ),
+      ],
       category: 'Creating and copying',
     },
     'map.copy': {
@@ -1146,12 +1516,17 @@ export const NATIVE_VALUE_DOCS: Readonly<Record<string, NativeValueDoc>> = {
     summary: 'Whether the current update is the bar’s final one.',
     details:
       'It is `false` on provisional updates of a live bar and `true` on its final update. Rows that are not marked provisional are final, so historical bars are always confirmed. Inside a request expression it describes the requested data’s update. Use it to act only on completed bars.',
-    example: lines(
-      'var int completed = 0',
-      'if barstate.isconfirmed',
-      '    completed := completed + 1',
-      'emit "completed_bars" completed',
-    ),
+    examples: [
+      example(
+        '',
+        lines(
+          'var int completed = 0',
+          'if barstate.isconfirmed',
+          '    completed := completed + 1',
+          'emit "completed_bars" completed',
+        ),
+      ),
+    ],
     category: 'Bar state',
   },
   'barstate.isnew': {
@@ -1166,10 +1541,26 @@ export const NATIVE_VALUE_DOCS: Readonly<Record<string, NativeValueDoc>> = {
     summary: 'Tea’s standard palette of named colors.',
     details:
       'The values belong to Tea, not to the host application’s theme. Use {@link color.new} for a transparent version.',
-    example: lines(
-      'falling = close < close[1]',
-      'plot("close", close, color = falling ? color.red : color.green)',
-    ),
+    examples: [
+      example(
+        '',
+        lines(
+          'falling = close < close[1]',
+          'plot("close", close, color = falling ? color.red : color.green)',
+        ),
+        lines(
+          'time,close',
+          '0,9',
+          '1,11',
+          '2,10',
+          '3,12',
+          '4,9',
+          '5,14',
+          '6,10',
+          '7,15',
+        ),
+      ),
+    ],
     category: 'Palette',
   },
 
@@ -1193,14 +1584,30 @@ export const NATIVE_VALUE_DOCS: Readonly<Record<string, NativeValueDoc>> = {
       'plot.style_areabr':
         'Like `plot.style_area`, but with a gap wherever the value is `na`.',
     },
-    example: 'plot("volume", volume, style = plot.style_columns)',
+    examples: [
+      example(
+        '',
+        'plot("volume", volume, style = plot.style_columns)',
+        lines(
+          'time,volume',
+          '0,100',
+          '1,150',
+          '2,120',
+          '3,180',
+          '4,90',
+          '5,200',
+          '6,110',
+          '7,160',
+        ),
+      ),
+    ],
     category: 'Style constants',
   },
   'hline.style_*': {
     summary: 'Line styles for the `linestyle` argument of {@link hline}.',
     details:
       'Tea records the chosen name in the description that {@link hline} emits; the host draws the line.',
-    example: 'hline("zero", 0, linestyle = hline.style_dashed)',
+    examples: [example('', 'hline("zero", 0, linestyle = hline.style_dashed)')],
     category: 'Style constants',
   },
   'location.*': {
@@ -1228,10 +1635,26 @@ export const NATIVE_VALUE_DOCS: Readonly<Record<string, NativeValueDoc>> = {
       'shape.labelup': 'A label with its pointer at the top.',
       'shape.labeldown': 'A label with its pointer at the bottom.',
     },
-    example: lines(
-      'crossed = ta.crossover(close, ta.sma(close, 20))',
-      'plotshape("cross", crossed, style = shape.triangleup, location = location.belowbar, size = size.small)',
-    ),
+    examples: [
+      example(
+        '',
+        lines(
+          'crossed = ta.crossover(close, ta.sma(close, 20))',
+          'plotshape("cross", crossed, style = shape.triangleup, location = location.belowbar, size = size.small)',
+        ),
+        lines(
+          'time,close',
+          '0,9',
+          '1,11',
+          '2,10',
+          '3,12',
+          '4,9',
+          '5,14',
+          '6,10',
+          '7,15',
+        ),
+      ),
+    ],
     category: 'Style constants',
   },
   'size.*': {
@@ -1256,8 +1679,23 @@ export const NATIVE_VALUE_DOCS: Readonly<Record<string, NativeValueDoc>> = {
       'display.price_scale': 'Only on the price scale. Inputs reject it.',
       'display.status_line': 'Only in the status line.',
     },
-    example:
-      'plot("rsi", ta.rsi(close, 14), "RSI", display = display.data_window)',
+    examples: [
+      example(
+        '',
+        'plot("rsi", ta.rsi(close, 14), "RSI", display = display.data_window)',
+        lines(
+          'time,close',
+          '0,9',
+          '1,11',
+          '2,10',
+          '3,12',
+          '4,9',
+          '5,14',
+          '6,10',
+          '7,15',
+        ),
+      ),
+    ],
     category: 'Style constants',
   },
   'format.*': {
@@ -1268,8 +1706,23 @@ export const NATIVE_VALUE_DOCS: Readonly<Record<string, NativeValueDoc>> = {
       'format.inherit':
         'The host’s default format. This is the default of {@link plot}.',
     },
-    example:
-      'plot("change", ta.roc(close, 1), "Change", format = format.percent)',
+    examples: [
+      example(
+        '',
+        'plot("change", ta.roc(close, 1), "Change", format = format.percent)',
+        lines(
+          'time,close',
+          '0,9',
+          '1,11',
+          '2,10',
+          '3,12',
+          '4,9',
+          '5,14',
+          '6,10',
+          '7,15',
+        ),
+      ),
+    ],
     category: 'Style constants',
   },
   'position.*': {

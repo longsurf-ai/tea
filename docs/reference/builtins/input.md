@@ -44,8 +44,31 @@ An input declares a value the host supplies when it binds the script, falling ba
 Declares a whole-number input.
 
 ```tea
-input.int(defval: int, title?: string, minval?: int, maxval?: int, step?: int, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → int
-input.int(defval: int, title?: string, options: any value, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → int
+input int input.int(
+    const int defval,
+    const string title = …,
+    const int minval = …,
+    const int maxval = …,
+    const int step = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
+
+input int input.int(
+    const int defval,
+    const string title = …,
+    const any value options,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type              | Description                                                                                                                            |
@@ -62,9 +85,37 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 
 A value below `minval`, above `maxval` or missing from `options` is rejected when the host binds the script; `step` only guides a host’s control and is not enforced. The default must meet the same limits, `minval` cannot exceed `maxval`, and `step` must be greater than zero. `options` replaces the range arguments and cannot be combined with them. See [`input`](./input.md#input) for how inputs are named and when they are fixed.
 
+**Example:**
+
 ```tea
 length = input.int(14, "Length", minval = 1, maxval = 200)
 emit "average" ta.sma(close, length)
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  average
+0      na
+1      na
+2      na
+3      na
+4      na
+5      na
+6      na
+7      na
 ```
 
 ### float
@@ -72,8 +123,31 @@ emit "average" ta.sma(close, length)
 Declares a floating-point number input.
 
 ```tea
-input.float(defval: float, title?: string, minval?: float, maxval?: float, step?: float, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → float
-input.float(defval: float, title?: string, options: any value, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → float
+input float input.float(
+    const float defval,
+    const string title = …,
+    const float minval = …,
+    const float maxval = …,
+    const float step = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
+
+input float input.float(
+    const float defval,
+    const string title = …,
+    const any value options,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type              | Description                                                                                                                            |
@@ -90,9 +164,37 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 
 A value below `minval`, above `maxval` or missing from `options` is rejected when the host binds the script; `step` only guides a host’s control and is not enforced. The default must meet the same limits, `minval` cannot exceed `maxval`, and `step` must be greater than zero. `options` replaces the range arguments and cannot be combined with them.
 
+**Example:**
+
 ```tea
 width = input.float(2.0, "Band width", minval = 0.5, step = 0.5)
 emit "upper" ta.sma(close, 20) + width * ta.stdev(close, 20)
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  upper
+0      na
+1      na
+2      na
+3      na
+4      na
+5      na
+6      na
+7      na
 ```
 
 ### price
@@ -100,7 +202,16 @@ emit "upper" ta.sma(close, 20) + width * ta.stdev(close, 20)
 Declares a price-level input.
 
 ```tea
-input.price(defval: float, title?: string, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → float
+input float input.price(
+    const float defval,
+    const string title = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type          | Description                                                                                  |
@@ -118,7 +229,16 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 Declares a true-or-false input.
 
 ```tea
-input.bool(defval: bool, title?: string, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → bool
+input bool input.bool(
+    const bool defval,
+    const string title = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type         | Description                                                                  |
@@ -131,10 +251,38 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 
 Its value is hidden by default (`display.none`).
 
+**Example:**
+
 ```tea
 smooth = input.bool(true, "Smooth")
 average = ta.sma(close, 5)
 emit "value" smooth ? average : close
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  value
+0      na
+1      na
+2      na
+3      na
+4      10.2
+5      11.2
+6      11
+7      12
 ```
 
 ### string
@@ -142,7 +290,17 @@ emit "value" smooth ? average : close
 Declares a text input, optionally limited to a list of choices.
 
 ```tea
-input.string(defval: string, title?: string, options?: any value, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → string
+input string input.string(
+    const string defval,
+    const string title = …,
+    const any value options = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type              | Description                                                                                                                                                                 |
@@ -154,6 +312,8 @@ input.string(defval: string, title?: string, options?: any value, tooltip?: stri
 
 Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `inline`, `group`, `confirm`, `display`, `active`.
 
+**Example:**
+
 ```tea
 kind = input.string("SMA", "Average", options = ["SMA", "EMA"])
 sma = ta.sma(close, 20)
@@ -161,12 +321,46 @@ ema = ta.ema(close, 20)
 emit "average" kind == "SMA" ? sma : ema
 ```
 
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  average
+0      na
+1      na
+2      na
+3      na
+4      na
+5      na
+6      na
+7      na
+```
+
 ### text_area
 
 Declares a multi-line text input.
 
 ```tea
-input.text_area(defval: string, title?: string, tooltip?: string, group?: string, confirm?: bool, display?: string, active?: bool) → string
+input string input.text_area(
+    const string defval,
+    const string title = …,
+    const string tooltip = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type           | Description                                                                                  |
@@ -184,7 +378,17 @@ Its value is hidden by default (`display.none`).
 Declares an input that selects one member of an enum.
 
 ```tea
-input.enum(defval: enum, title?: string, options?: any value, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → type of first argument
+input.enum(
+    const enum defval,
+    const string title = …,
+    const any value options = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type              | Description                                                                                                                                                           |
@@ -198,6 +402,8 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 
 A host supplies the member’s name, such as `"ema"`, not its title.
 
+**Example:**
+
 ```tea
 enum Average
     sma = "Simple"
@@ -209,6 +415,32 @@ ema = ta.ema(close, 20)
 emit "average" kind == Average.sma ? sma : ema
 ```
 
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  average
+0      na
+1      na
+2      na
+3      na
+4      na
+5      na
+6      na
+7      na
+```
+
 ## Colors, symbols and time
 
 ### color
@@ -216,7 +448,16 @@ emit "average" kind == Average.sma ? sma : ema
 Declares a color input.
 
 ```tea
-input.color(defval: color, title?: string, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → color
+input color input.color(
+    const color defval,
+    const string title = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type          | Description                                                                                  |
@@ -229,9 +470,37 @@ Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `in
 
 A host supplies the color as `#RRGGBB` or `#RRGGBBAA` text. Its value is hidden by default (`display.none`).
 
+**Example:**
+
 ```tea
 lineColor = input.color(color.blue, "Line color")
 plot("close", close, color = lineColor)
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  close
+0      {"id":"close","series":9,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+1      {"id":"close","series":11,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+2      {"id":"close","series":10,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+3      {"id":"close","series":12,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+4      {"id":"close","series":9,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+5      {"id":"close","series":14,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+6      {"id":"close","series":10,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
+7      {"id":"close","series":15,"title":"","color":{"r":33,"g":150,"b":243,"a":255},"linewidth":1,"style":"line","trackprice":false,"histbase":0,"offset":0,"editable":true,"show_last":0,"display":"all","format":"inherit","precision":0}
 ```
 
 ### timeframe
@@ -239,7 +508,17 @@ plot("close", close, color = lineColor)
 Declares a text input that names a timeframe, such as `"D"`.
 
 ```tea
-input.timeframe(defval: string, title?: string, options?: any value, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → string
+input string input.timeframe(
+    const string defval,
+    const string title = …,
+    const any value options = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type              | Description                                                                                                                                                                   |
@@ -264,7 +543,16 @@ emit "higher_close" higherClose
 Declares a text input that names a symbol, such as `"NASDAQ:AAPL"`.
 
 ```tea
-input.symbol(defval: string, title?: string, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → string
+input string input.symbol(
+    const string defval,
+    const string title = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type           | Description                                                                                  |
@@ -288,7 +576,17 @@ emit "ratio" close / otherClose
 Declares a text input for a trading session, such as `"0930-1600"`.
 
 ```tea
-input.session(defval: string, title?: string, options?: any value, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → string
+input string input.session(
+    const string defval,
+    const string title = …,
+    const any value options = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type              | Description                                                                                                                                                                             |
@@ -307,7 +605,16 @@ Tea does not interpret session text; the value is an ordinary string.
 Declares an input that holds a point in time.
 
 ```tea
-input.time(defval: int, title?: string, tooltip?: string, inline?: string, group?: string, confirm?: bool, display?: string, active?: bool) → int
+input int input.time(
+    const int defval,
+    const string title = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const bool confirm = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type        | Description                                                                                  |
@@ -318,11 +625,20 @@ input.time(defval: int, title?: string, tooltip?: string, inline?: string, group
 
 Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `inline`, `group`, `confirm`, `display`, `active`.
 
-Tea treats the value as a plain `int`; give it in milliseconds since the Unix epoch so it compares directly with [`time`](./market-data.md#time). Its value is hidden by default (`display.none`).
+Tea treats the value as a plain `int`; give it in milliseconds since the Unix epoch so it compares directly with [`time`](./bar-and-time.md#time). Its value is hidden by default (`display.none`).
+
+**Example:**
 
 ```tea
 start = input.time(1704067200000, "Start") // 2024-01-01 00:00 UTC
 emit "started" time >= start
+```
+
+**Output:**
+
+```text
+index  started
+0      false
 ```
 
 ## Series inputs
@@ -332,7 +648,16 @@ emit "started" time >= start
 Declares an input that chooses which series, such as `close` or `high`, the script reads.
 
 ```tea
-input.source(defval: float, title?: string, tooltip?: string, inline?: string, group?: string, display?: string, active?: bool, confirm?: bool) → float
+series float input.source(
+    series float defval,
+    const string title = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const string display = …,
+    input bool active = …,
+    const bool confirm = …
+)
 ```
 
 | Parameter | Type           | Description                                                                                             |
@@ -343,11 +668,39 @@ input.source(defval: float, title?: string, tooltip?: string, inline?: string, g
 
 Also accepts the [common parameters](#common-parameters) `title`, `tooltip`, `inline`, `group`, `display`, `active`, `confirm`.
 
-The host supplies the name of a series, such as `"high"`, and must bind a data stream that has it. The result can be used like [`close`](./market-data.md#close), including its history. A source input cannot be declared inside a request expression.
+The host supplies the name of a series, such as `"high"`, and must bind a data stream that has it. The result can be used like [`close`](./price-and-volume.md#close), including its history. A source input cannot be declared inside a request expression.
+
+**Example:**
 
 ```tea
 source = input.source(close, "Source")
 emit "average" ta.sma(source, 10)
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  average
+0      na
+1      na
+2      na
+3      na
+4      na
+5      na
+6      na
+7      na
 ```
 
 ### series
@@ -355,7 +708,7 @@ emit "average" ta.sma(source, 10)
 Declares a numeric series that the host supplies with every input row.
 
 ```tea
-input.series(name: string) → float
+series float input.series(const string name)
 ```
 
 | Parameter | Type           | Description                                                                                                                                                                                  |
@@ -364,11 +717,39 @@ input.series(name: string) → float
 
 **Returns:** The series’ value on the current row; `na` when the row has none.
 
-Every call with the same name reads the same series. A script can call it only at its top level, and a library only as an exported alias such as `export vwap = input.series("vwap")`, which is how [`close`](./market-data.md#close) and the other price series are defined. Unlike [`input.source`](./input.md#source), the name is fixed in the source and is not a setting.
+Every call with the same name reads the same series. A script can call it only at its top level, and a library only as an exported alias such as `export vwap = input.series("vwap")`, which is how [`close`](./price-and-volume.md#close) and the other price series are defined. Unlike [`input.source`](./input.md#source), the name is fixed in the source and is not a setting.
+
+**Example:**
 
 ```tea
 vwap = input.series("vwap")
 emit "distance" close - vwap
+```
+
+```csv
+time,close,vwap
+0,9,9.5
+1,11,11.2
+2,10,10.4
+3,12,11.6
+4,9,10.1
+5,14,12.8
+6,10,11.0
+7,15,13.4
+```
+
+**Output:**
+
+```text
+index  distance
+0      -0.5
+1      -0.1999999999999993
+2      -0.40000000000000036
+3      0.40000000000000036
+4      -1.0999999999999996
+5      1.1999999999999993
+6      -1
+7      1.5999999999999996
 ```
 
 ## Any type
@@ -378,12 +759,65 @@ emit "distance" close - vwap
 Declares an input whose type follows its default value.
 
 ```tea
-input(defval: int, title?: string, tooltip?: string, inline?: string, group?: string, display?: string, active?: bool) → int
-input(defval: float, title?: string, tooltip?: string, inline?: string, group?: string, display?: string, active?: bool) → float
-input(defval: bool, title?: string, tooltip?: string, inline?: string, group?: string, display?: string, active?: bool) → bool
-input(defval: string, title?: string, tooltip?: string, inline?: string, group?: string, display?: string, active?: bool) → string
-input(defval: color, title?: string, tooltip?: string, inline?: string, group?: string, display?: string, active?: bool) → color
-input(defval: float, title?: string, inline?: string, group?: string, tooltip?: string, display?: string, active?: bool) → float
+input int input(
+    const int defval,
+    const string title = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const string display = …,
+    input bool active = …
+)
+
+input float input(
+    const float defval,
+    const string title = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const string display = …,
+    input bool active = …
+)
+
+input bool input(
+    const bool defval,
+    const string title = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const string display = …,
+    input bool active = …
+)
+
+input string input(
+    const string defval,
+    const string title = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const string display = …,
+    input bool active = …
+)
+
+input color input(
+    const color defval,
+    const string title = …,
+    const string tooltip = …,
+    const string inline = …,
+    const string group = …,
+    const string display = …,
+    input bool active = …
+)
+
+series float input(
+    series float defval,
+    const string title = …,
+    const string inline = …,
+    const string group = …,
+    const string tooltip = …,
+    const string display = …,
+    input bool active = …
+)
 ```
 
 | Parameter | Type                                                                          | Description                                                                                                                                                                                                                          |
@@ -398,8 +832,36 @@ An input is fixed when the host binds the script and keeps that value on every b
 
 A `bool` or `color` input is hidden by default (`display.none`).
 
+**Example:**
+
 ```tea
 length = input(14, "Length")
 source = input(close, "Source")
 emit "average" ta.sma(source, length)
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  average
+0      na
+1      na
+2      na
+3      na
+4      na
+5      na
+6      na
+7      na
 ```

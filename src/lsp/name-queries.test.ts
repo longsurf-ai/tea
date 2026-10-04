@@ -134,6 +134,34 @@ describe('hover documentation', () => {
     );
   });
 
+  test('a formula shows as LaTeX code and an example without its output', () => {
+    const source = [
+      '/**',
+      ' * Doubles a price.',
+      ' * @formula',
+      ' * 2 \\cdot \\mathit{p}',
+      ' * @example',
+      ' * On one bar.',
+      ' * ```tea',
+      ' * emit "x" 2 * 3',
+      ' * ```',
+      ' * @see ta.sma',
+      ' */',
+      'double(float p) => p * 2',
+      'twice = double(close)',
+    ].join('\n');
+    expect(docsAt(source, 'double', 12)).toBe(
+      [
+        'Doubles a price.',
+        '**Formula**',
+        '```latex\n2 \\cdot \\mathit{p}\n```',
+        '**Example:** On one bar.',
+        '```tea\nemit "x" 2 * 3\n```',
+        '**See also:** `ta.sma`',
+      ].join('\n\n'),
+    );
+  });
+
   test('a declaration in this document documents itself with a doc comment', () => {
     const source = [
       '/** Doubles a price. */',
@@ -197,7 +225,10 @@ describe('hover', () => {
 
   test('a native shows the catalog signature of the resolved overload', () => {
     expect(hoverLines(on(15, 'max'))).toEqual([
-      'math.max(number: int | float, ...number1: int | float) → float',
+      'float math.max(',
+      '    series int | float number,',
+      '    series int | float ...number1',
+      ')',
     ]);
     expect(hover(analysis, on(15, 'max'))?.range).toEqual(rangeOf(15, 'max'));
     // The namespace is not a value.
@@ -213,7 +244,9 @@ describe('hover', () => {
       expect(
         hover(request, {line: 0, character: source.indexOf(name)})?.contents,
       ).toMatchObject({
-        value: expect.stringContaining(' → request-dependent result\n'),
+        value: expect.stringMatching(
+          new RegExp(`^\`\`\`tea\nrequest\\.${name}\\(`),
+        ),
       });
     },
   );

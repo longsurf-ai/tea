@@ -32,8 +32,8 @@ Functions and constants in the `math` namespace.
 Returns the absolute value of a number.
 
 ```tea
-math.abs(number: int) → int
-math.abs(number: float) → float
+int math.abs(series int number)
+float math.abs(series float number)
 ```
 
 | Parameter | Type                       | Description |
@@ -47,8 +47,8 @@ math.abs(number: float) → float
 Returns the sign of a number as -1, 0 or 1.
 
 ```tea
-math.sign(number: int) → int
-math.sign(number: float) → float
+int math.sign(series int number)
+float math.sign(series float number)
 ```
 
 | Parameter | Type                       | Description |
@@ -62,7 +62,7 @@ math.sign(number: float) → float
 Returns the average of its arguments.
 
 ```tea
-math.avg(...number: int | float) → float
+float math.avg(series int | float ...number)
 ```
 
 | Parameter | Type                  | Description                           |
@@ -76,8 +76,12 @@ math.avg(...number: int | float) → float
 Returns the largest of its arguments.
 
 ```tea
-math.max(number: int, ...number1: int) → int
-math.max(number: int | float, ...number1: int | float) → float
+int math.max(series int number, series int ...number1)
+
+float math.max(
+    series int | float number,
+    series int | float ...number1
+)
 ```
 
 | Parameter | Type                              | Description                      |
@@ -92,8 +96,12 @@ math.max(number: int | float, ...number1: int | float) → float
 Returns the smallest of its arguments.
 
 ```tea
-math.min(number: int, ...number1: int) → int
-math.min(number: int | float, ...number1: int | float) → float
+int math.min(series int number, series int ...number1)
+
+float math.min(
+    series int | float number,
+    series int | float ...number1
+)
 ```
 
 | Parameter | Type                              | Description                      |
@@ -110,7 +118,7 @@ math.min(number: int | float, ...number1: int | float) → float
 Rounds a number down to an integer.
 
 ```tea
-math.floor(number: int | float) → int
+int math.floor(series int | float number)
 ```
 
 | Parameter | Type                  | Description          |
@@ -124,7 +132,7 @@ math.floor(number: int | float) → int
 Rounds a number up to an integer.
 
 ```tea
-math.ceil(number: int | float) → int
+int math.ceil(series int | float number)
 ```
 
 | Parameter | Type                  | Description          |
@@ -138,8 +146,12 @@ math.ceil(number: int | float) → int
 Rounds a number to the nearest integer, or to a number of decimal places.
 
 ```tea
-math.round(number: int | float) → int
-math.round(number: int | float, precision: int) → float
+int math.round(series int | float number)
+
+float math.round(
+    series int | float number,
+    series int precision
+)
 ```
 
 | Parameter   | Type                  | Description                                                                           |
@@ -151,9 +163,37 @@ math.round(number: int | float, precision: int) → float
 
 Halves round up, toward positive infinity: `math.round(2.5)` is `3` and `math.round(-2.5)` is `-2`. Decimal rounding works on binary floating-point values, so `math.round(1.005, 2)` is `1.0`, not `1.01`, because `1.005` is stored as slightly less than written.
 
+**Example:**
+
 ```tea
 emit "whole" math.round(close)
 emit "cents" math.round(close, 2)
+```
+
+```csv
+time,close
+0,9
+1,11
+2,10
+3,12
+4,9
+5,14
+6,10
+7,15
+```
+
+**Output:**
+
+```text
+index  whole  cents
+0      9      9
+1      11     11
+2      10     10
+3      12     12
+4      9      9
+5      14     14
+6      10     10
+7      15     15
 ```
 
 ## Powers and logarithms
@@ -163,7 +203,7 @@ emit "cents" math.round(close, 2)
 Returns the square root of a number.
 
 ```tea
-math.sqrt(number: int | float) → float
+float math.sqrt(series int | float number)
 ```
 
 | Parameter | Type                  | Description |
@@ -177,7 +217,10 @@ math.sqrt(number: int | float) → float
 Raises a number to a power.
 
 ```tea
-math.pow(base: int | float, exponent: int | float) → float
+float math.pow(
+    series int | float base,
+    series int | float exponent
+)
 ```
 
 | Parameter  | Type                  | Description          |
@@ -192,7 +235,7 @@ math.pow(base: int | float, exponent: int | float) → float
 Returns the natural logarithm of a number.
 
 ```tea
-math.log(number: int | float) → float
+float math.log(series int | float number)
 ```
 
 | Parameter | Type                  | Description |
@@ -206,7 +249,7 @@ math.log(number: int | float) → float
 Returns the base-10 logarithm of a number.
 
 ```tea
-math.log10(number: int | float) → float
+float math.log10(series int | float number)
 ```
 
 | Parameter | Type                  | Description |
@@ -220,7 +263,7 @@ math.log10(number: int | float) → float
 Returns e raised to a power.
 
 ```tea
-math.exp(number: int | float) → float
+float math.exp(series int | float number)
 ```
 
 | Parameter | Type                  | Description |

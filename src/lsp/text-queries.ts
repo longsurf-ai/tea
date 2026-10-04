@@ -11,8 +11,8 @@ import type {
 import {newFileBase, type Pos} from '../base/pos';
 import {
   CATALOG,
+  formatNativeParam,
   formatNativeSignature,
-  formatNativeTypeRef,
   nativeFuncs,
   type NativeFunc,
 } from '../checker/catalog';
@@ -766,8 +766,8 @@ function functionSignature(
   );
 }
 
-// The parameter texts repeat the spelling of `formatNativeSignature`, whose
-// line they must be found in. A staged parameter is not shown but keeps its
+// The parameter texts are `formatNativeParam`'s, the spelling
+// `formatNativeSignature` uses, so each is found in its line. A staged parameter is not shown but keeps its
 // position, so an argument there highlights nothing. Called as a method,
 // `receiver` supplies `self`, which the label leaves out.
 function nativeSignature(
@@ -784,7 +784,7 @@ function nativeSignature(
       ? formatNativeSignature(native)
       : methodLabel(native, receiver),
     shown.map(param => ({
-      label: nativeParamLabel(param),
+      label: formatNativeParam(param),
       documentation: docs?.params.get(param.name),
     })),
     slot === undefined ? -1 : shown.indexOf(slot as (typeof shown)[number]),
@@ -792,16 +792,12 @@ function nativeSignature(
   );
 }
 
-function nativeParamLabel(param: NativeFunc['params'][number]): string {
-  return `${param.variadic ? '...' : ''}${param.name}${param.required ? '' : '?'}: ${formatNativeTypeRef(param.type)}`;
-}
-
-// `values.push(value: T) → void`: a native as a receiver calls it.
+// `void values.push(series T value)`: a native as a receiver calls it.
 function methodLabel(native: NativeFunc, receiver: string): string {
-  const params = native.params
-    .slice(1)
-    .filter(param => param.availability === 'supported')
-    .map(nativeParamLabel);
-  const result = formatNativeSignature(native).split(' → ').at(-1);
-  return `${receiver}.${native.name.slice(native.name.indexOf('.') + 1)}(${params.join(', ')}) → ${result}`;
+  return formatNativeSignature({
+    ...native,
+    name: `${receiver}.${native.name.slice(native.name.indexOf('.') + 1)}`,
+    typeParams: [],
+    params: native.params.slice(1),
+  });
 }

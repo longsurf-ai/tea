@@ -64,6 +64,7 @@
     "test": "vitest run --no-file-parallelism"
   },
   "dependencies": {
+    "@webgpu/types": "0.1.71",
     "apache-arrow": "^21.2.0",
     "commander": "14.0.2",
     "csv-parse": "7.0.2",
@@ -75,14 +76,12 @@
     "typescript": "5.8.3",
     "vscode-languageserver": "10.1.1",
     "vscode-languageserver-textdocument": "1.0.14",
-    "zod": "4.3.6",
-    "@webgpu/types": "0.1.71"
+    "zod": "4.3.6"
   },
   "optionalDependencies": {
     "webgpu": "0.4.0"
   },
   "devDependencies": {
-    "esbuild": "0.28.2",
     "@docusaurus/core": "3.10.2",
     "@docusaurus/module-type-aliases": "3.10.2",
     "@docusaurus/plugin-content-docs": "3.10.2",
@@ -94,15 +93,19 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "acorn": "8.18.0",
+    "esbuild": "0.28.2",
+    "katex": "0.16.47",
+    "kld-intersections": "0.7.0",
     "prettier": "3.8.1",
     "prism-react-renderer": "2.4.1",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "vitest": "4.1.11",
-    "vscode-oniguruma": "2.0.1",
-    "vscode-textmate": "9.3.2",
+    "rehype-katex": "7.0.1",
+    "remark-math": "6.0.0",
     "robust-orientation": "1.2.1",
     "robust-segment-intersect": "1.0.1",
-    "kld-intersections": "0.7.0"
+    "vitest": "4.1.11",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2"
   }
 }

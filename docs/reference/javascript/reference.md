@@ -12,7 +12,7 @@ import {…} from 'tea/reference';
 The Tea reference manual as data: the Language, Built-ins and Libraries pages of the published reference, generated from the same sources by `scripts/docs/generate-reference.ts`. A host renders [`referenceManual`](./reference.md#referencemanual-constant) with its own components, such as an editor's in-app manual.
 
 Prose fields are Markdown. A link whose target starts with `#` stays inside
-the manual: `#ta.sma` names an entry by its [`ReferenceEntry.id`](./reference.md#referenceentry), and
+the manual: `#ta.sma` names an entry by its [`ReferenceEntry.id`](./reference.md#referenceentry-referenceentry-id), and
 `#reference/builtins/ta` names a page by its `ReferencePage.id`; entry
 ids never contain `/`. Links to pages outside the manual keep only their
 text.
@@ -55,48 +55,49 @@ interface ReferenceEntry {
 }
 ```
 
-**`ReferenceEntry.id`**
+#### ReferenceEntry ReferenceEntry id
+
+As code writes it, unique in the manual: `ta.sma`, `color.*`, `plot`.
 
 ```ts
 readonly id: string;
 ```
 
-As code writes it, unique in the manual: `ta.sma`, `color.*`, `plot`.
+#### ReferenceEntry ReferenceEntry symbols
 
-**`ReferenceEntry.symbols`**
+Every name this entry documents: its id, or each constant of a family such as `color.*`. The language server's `tea/referenceName` answers one.
 
 ```ts
 readonly symbols: readonly string[];
 ```
 
-Every name this entry documents: its id, or each constant of a family
-such as `color.*`. The language server's `tea/referenceName` answers one.
+#### ReferenceEntry ReferenceEntry category
 
-**`ReferenceEntry.category`**
+The section of its page, such as `Moving averages`.
 
 ```ts
 readonly category: string;
 ```
 
-The section of its page, such as `Moving averages`.
+#### ReferenceEntry ReferenceEntry summary
 
-**`ReferenceEntry.summary`**
+One sentence.
 
 ```ts
 readonly summary: string;
 ```
 
-One sentence.
+#### ReferenceEntry ReferenceEntry signatures
 
-**`ReferenceEntry.signatures`**
+One per overload; a long one spans lines with a parameter on each.
 
 ```ts
 readonly signatures: readonly string[];
 ```
 
-One per overload; a long one spans lines with a parameter on each.
+#### ReferenceEntry ReferenceEntry members
 
-**`ReferenceEntry.members`**
+A table of members or constants, with Markdown cells.
 
 ```ts
 readonly members: {
@@ -105,15 +106,13 @@ readonly members: {
 } | null;
 ```
 
-A table of members or constants, with Markdown cells.
+#### ReferenceEntry ReferenceEntry body
 
-**`ReferenceEntry.body`**
+Details and examples.
 
 ```ts
 readonly body: string;
 ```
-
-Details and examples.
 
 ### ReferenceManual interface
 
@@ -141,21 +140,21 @@ interface ReferenceParameter {
 }
 ```
 
-**`ReferenceParameter.type`**
+#### ReferenceParameter ReferenceParameter type
+
+Qualifier and type, such as `series float`; null where Tea infers it.
 
 ```ts
 readonly type: string | null;
 ```
 
-Qualifier and type, such as `series float`; null where Tea infers it.
+#### ReferenceParameter ReferenceParameter defaultValue
 
-**`ReferenceParameter.defaultValue`**
+The default written in the declaration, or null when it has none.
 
 ```ts
 readonly defaultValue: string | null;
 ```
-
-The default written in the declaration, or null when it has none.
 
 ## Types
 

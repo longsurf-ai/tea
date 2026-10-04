@@ -28,7 +28,7 @@ export interface LibraryMember {
   readonly kind: 'field' | 'method' | 'enum member';
   readonly name: string;
   readonly declaration: string;
-  readonly params: readonly string[];
+  readonly params: readonly LibraryParam[];
   readonly doc: DocComment | null;
   readonly line: number;
 }
@@ -130,7 +130,7 @@ function readLibrary(name: string, filename: string): TeaLibrary {
                 : text(member),
             params:
               member.kind === NodeKind.MethodDecl
-                ? member.params.map(p => p.name.value)
+                ? member.params.map(param)
                 : [],
             doc: docCommentAbove(lines, member.pos.line),
             line: member.pos.line,
@@ -150,7 +150,7 @@ function readLibrary(name: string, filename: string): TeaLibrary {
             // endPos stops before an unstored `)` and receiver mode; an
             // interface method is always one source line.
             declaration: lines[method.pos.line - 1]!.trim(),
-            params: method.params.map(p => p.name.value),
+            params: method.params.map(param),
             doc: docCommentAbove(lines, method.pos.line),
             line: method.pos.line,
           })),

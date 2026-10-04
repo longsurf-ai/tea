@@ -74,17 +74,23 @@ export function nativeFunctionDocs(name: string): DocComment | null {
   if (doc === undefined) return null;
   return {
     summary: doc.summary,
-    body: blocks(doc.details, fenced(doc.example)),
+    body: doc.details ?? '',
     params: new Map(Object.entries(doc.params)),
     returns: doc.returns ?? null,
     category: doc.category,
+    formula: doc.formula ?? null,
+    warmup: doc.warmup ?? null,
+    examples: doc.examples ?? [],
+    pine: doc.pine ?? null,
+    see: doc.see ?? [],
   };
 }
 
 /**
  * The catalog docs of a native value such as `bar_index`, or of the family a
  * constant such as `color.red` belongs to, with that constant's own note
- * first. Null for a name the catalog does not document.
+ * first. A family's own key, such as `color.*`, reads the family's docs. Null
+ * for a name the catalog does not document.
  */
 export function nativeValueDocs(name: string): DocComment | null {
   const key = Object.keys(NATIVE_VALUE_DOCS).find(candidate =>
@@ -96,43 +102,94 @@ export function nativeValueDocs(name: string): DocComment | null {
   const doc = NATIVE_VALUE_DOCS[key]!;
   return {
     summary: doc.summary,
-    body: blocks(doc.members?.[name], doc.details, fenced(doc.example)),
+    body: blocks(doc.members?.[name], doc.details),
     params: new Map(),
     returns: null,
     category: doc.category,
+    formula: null,
+    warmup: null,
+    examples: doc.examples ?? [],
+    pine: doc.pine ?? null,
+    see: doc.see ?? [],
   };
 }
 
 /**
- * A doc comment as hover Markdown: the summary, the body, then the
- * parameters and the result.
+ * A doc comment as hover Markdown: the summary, the parameters and the
+ * result, then {@link docSections} without example outputs.
  *
  * @example
  * ```ts
  * docMarkdown(nativeFunctionDocs('nz')!);
- * // 'Replaces a missing value with a fallback.\n\n...**Parameters**\n- `source` — ...'
+ * // 'Replaces a missing value with a fallback.\n\n**Parameters**\n- `source` — ...'
  * ```
  */
 export function docMarkdown(doc: DocComment): string {
   return blocks(
     editorText(doc.summary),
-    editorText(doc.body),
     doc.params.size === 0
       ? undefined
       : `**Parameters**\n${[...doc.params]
           .map(([name, text]) => `- \`${name}\` — ${editorText(text)}`)
           .join('\n')}`,
     doc.returns === null ? undefined : `**Returns** ${editorText(doc.returns)}`,
+    editorText(docSections(doc)),
+  );
+}
+
+/**
+ * The sections every outlet shows after an entry's summary, signature,
+ * parameters and result, as Markdown in this order: the body; **Formula** and
+ * its TeX between `$$` lines; **Warm-up and na:**; each **Example:** with its
+ * caption, program, CSV and, when `outputs` holds it, **Output:**; **Pine
+ * Script:**; and **See also:** as `{@link}`s, which each outlet resolves as it
+ * resolves the rest of the prose.
+ *
+ * @param outputs What each example writes, by example index, as the
+ * reference runs it; hovers pass none.
+ *
+ * @example
+ * ```ts
+ * docSections(parseDocComment('Mean.\n@formula\n\\bar{x}\n@see ta.ema'));
+ * // '**Formula**\n\n$$\n\\bar{x}\n$$\n\n**See also:** {@link ta.ema}'
+ * ```
+ */
+export function docSections(
+  doc: DocComment,
+  outputs: readonly string[] = [],
+): string {
+  return blocks(
+    doc.body,
+    doc.formula === null ? undefined : `**Formula**\n\n$$\n${doc.formula}\n$$`,
+    doc.warmup === null ? undefined : `**Warm-up and na:** ${doc.warmup}`,
+    ...doc.examples.map((example, index) =>
+      blocks(
+        example.caption === ''
+          ? '**Example:**'
+          : `**Example:** ${example.caption}`,
+        fenced(example.source),
+        fenced(example.csv ?? undefined, 'csv'),
+        outputs[index] === undefined
+          ? undefined
+          : `**Output:**\n\n${fenced(outputs[index], 'text')}`,
+      ),
+    ),
+    doc.pine === null ? undefined : `**Pine Script:** ${doc.pine}`,
+    doc.see.length === 0
+      ? undefined
+      : `**See also:** ${doc.see.map(name => `{@link ${name}}`).join(', ')}`,
   );
 }
 
 /**
  * Doc prose as an editor shows it. `{@link name}` becomes code, since an
  * editor has no page to link to, and a link to a documentation page keeps
- * only its label; a link with a scheme stays.
+ * only its label; a link with a scheme stays. A `$$` formula block becomes a
+ * `latex` code block, since editors do not render math.
  */
 export function editorText(text: string): string {
   return text
+    .replace(/^\$\$\n([\s\S]*?)\n\$\$$/gm, '```latex\n$1\n```')
     .replace(
       /\{@link\s+([^\s}|]+)(?:\s*\|\s*([^}]+?))?\s*\}/g,
       (_, target: string, label: string | undefined) =>
@@ -188,8 +245,13 @@ function docAbove(analysis: Analysis, pos: Pos | undefined): DocComment | null {
   return lines ? docCommentAbove(lines, pos.line) : null;
 }
 
-function fenced(source: string | undefined): string | undefined {
-  return source === undefined ? undefined : `\`\`\`tea\n${source}\n\`\`\``;
+function fenced(
+  source: string | undefined,
+  language = 'tea',
+): string | undefined {
+  return source === undefined
+    ? undefined
+    : `\`\`\`${language}\n${source}\n\`\`\``;
 }
 
 function blocks(...parts: readonly (string | undefined)[]): string {

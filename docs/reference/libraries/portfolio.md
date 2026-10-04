@@ -8,9 +8,9 @@ description: "Portfolios that account for a strategy's fills: cash, positions, f
 Portfolios that account for a strategy's fills: cash, positions, fees, profit and drawdown.
 
 Add `import portfolio` together with `import broker` and `import trade`.
-Create a portfolio with [`portfolio.new`](./portfolio.md#new) for one net position, or with
-[`portfolio.lots`](./portfolio.md#lots) for separately tracked lots, and pass it to a
-coordinator from the `trade` library, which applies every [`broker.Fill`](./broker.md#fill)
+Create a portfolio with [`portfolio.new`](./portfolio/new.md) for one net position, or with
+[`portfolio.lots`](./portfolio/lots.md) for separately tracked lots, and pass it to a
+coordinator from the `trade` library, which applies every [`broker.Fill`](./broker/Fill.md)
 the broker returns. A portfolio never decides whether, when or at what price
 an order fills. Read results through the coordinator's `snapshot()`.
 
@@ -46,321 +46,32 @@ plot("win rate", metrics.winRate)
 
 Add `import portfolio` to a script to use these as `portfolio.name`.
 
-| Name                                                | Description                                                                                                                                                        |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`portfolio.new`](#new)                             | Creates a portfolio that holds one net position, for [`trade.nextOpen`](./trade.md#nextopen), [`trade.ohlc`](./trade.md#ohlc) and [`trade.path`](./trade.md#path). |
-| [`portfolio.lots`](#lots)                           | Creates a portfolio that tracks each entry as its own lot, for [`trade.lots`](./trade.md#lots).                                                                    |
-| [`portfolio.basic`](#basic)                         | Creates a net portfolio with the given starting cash and default settings.                                                                                         |
-| [`portfolio.PortfolioView`](#portfolioview)         | Read-only reporting methods that every portfolio provides.                                                                                                         |
-| [`portfolio.NetLedger`](#netledger)                 | Net-position accounting that [`trade.nextOpen`](./trade.md#nextopen), [`trade.ohlc`](./trade.md#ohlc) and [`trade.path`](./trade.md#path) require.                 |
-| [`portfolio.LotLedger`](#lotledger)                 | Per-lot accounting that [`trade.lots`](./trade.md#lots) requires.                                                                                                  |
-| [`portfolio.OpenTrade`](#opentrade)                 | Accounting record of one open lot in a [`portfolio.LotPortfolio`](./portfolio.md#lotportfolio).                                                                    |
-| [`portfolio.PortfolioSnapshot`](#portfoliosnapshot) | Copy of a portfolio's metrics at one moment.                                                                                                                       |
-| [`portfolio.NetPortfolio`](#netportfolio)           | Portfolio that holds one signed net position with an average entry price.                                                                                          |
-| [`portfolio.LotPortfolio`](#lotportfolio)           | Portfolio that tracks each entry as a separate lot with its own id, price and fee.                                                                                 |
-
 ## Creating portfolios
 
-### new
-
-Creates a portfolio that holds one net position, for [`trade.nextOpen`](./trade.md#nextopen), [`trade.ohlc`](./trade.md#ohlc) and [`trade.path`](./trade.md#path).
-
-```tea
-portfolio.new(
-    float initialCash = 1000000.0,
-    int pyramiding = 1,
-    float marginLong = 100.0,
-    float marginShort = 100.0,
-)
-```
-
-| Parameter     | Type    | Default     | Description                                                                                                                |
-| ------------- | ------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `initialCash` | `float` | `1000000.0` | Starting cash; must be positive.                                                                                           |
-| `pyramiding`  | `int`   | `1`         | Most same-direction entries one position may accumulate; at least `1`.                                                     |
-| `marginLong`  | `float` | `100.0`     | `100` requires a new long position's value plus fees to fit in cash; `0` turns the check off. Other values are invalid.    |
-| `marginShort` | `float` | `100.0`     | `100` requires a new short position's value plus fees to fit in equity; `0` turns the check off. Other values are invalid. |
-
-**Returns:** A [`portfolio.NetPortfolio`](./portfolio.md#netportfolio) whose cash and equity start at `initialCash`.
-
-Invalid settings do not stop the script; instead the broker rejects every
-order with `invalidConfiguration` when it would fill.
-
-### lots
-
-Creates a portfolio that tracks each entry as its own lot, for [`trade.lots`](./trade.md#lots).
-
-```tea
-portfolio.lots(
-    float initialCash = 1000000.0,
-    int maxOpenTrades = 1,
-    float marginLong = 0.0,
-    float marginShort = 0.0,
-)
-```
-
-| Parameter       | Type    | Default     | Description                                                                                                           |
-| --------------- | ------- | ----------- | --------------------------------------------------------------------------------------------------------------------- |
-| `initialCash`   | `float` | `1000000.0` | Starting cash; must be positive.                                                                                      |
-| `maxOpenTrades` | `int`   | `1`         | Most lots open at once; at least `1`. The broker rejects entries beyond it.                                           |
-| `marginLong`    | `float` | `0.0`       | `100` requires a new long lot's value plus fees to fit in cash; `0` turns the check off. Other values are invalid.    |
-| `marginShort`   | `float` | `0.0`       | `100` requires a new short lot's value plus fees to fit in equity; `0` turns the check off. Other values are invalid. |
-
-**Returns:** A [`portfolio.LotPortfolio`](./portfolio.md#lotportfolio) with no open lots, whose cash and equity start at `initialCash`.
-
-Unlike [`portfolio.new`](./portfolio.md#new), the margins default to `0`, so the capital
-check is off unless you set them. Invalid settings do not stop the script;
-instead the broker rejects every order with `invalidConfiguration` when it
-would fill.
-
-### basic
-
-Creates a net portfolio with the given starting cash and default settings.
-
-```tea
-portfolio.basic(float initialCash)
-```
-
-| Parameter     | Type    | Description                      |
-| ------------- | ------- | -------------------------------- |
-| `initialCash` | `float` | Starting cash; must be positive. |
-
-**Returns:** A [`portfolio.NetPortfolio`](./portfolio.md#netportfolio).
-
-Same as `portfolio.new(initialCash = initialCash)`.
+| Name                                      | Description                                                                                                                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`portfolio.new`](./portfolio/new.md)     | Creates a portfolio that holds one net position, for [`trade.nextOpen`](./trade/nextOpen.md), [`trade.ohlc`](./trade/ohlc.md) and [`trade.path`](./trade/path.md). |
+| [`portfolio.lots`](./portfolio/lots.md)   | Creates a portfolio that tracks each entry as its own lot, for [`trade.lots`](./trade/lots.md).                                                                    |
+| [`portfolio.basic`](./portfolio/basic.md) | Creates a net portfolio with the given starting cash and default settings.                                                                                         |
 
 ## Interfaces
 
-### PortfolioView
-
-Read-only reporting methods that every portfolio provides.
-
-```tea
-interface PortfolioView
-```
-
-| Member                               | Description                                                                                   |
-| ------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `float cash() const`                 | Returns the cash balance.                                                                     |
-| `float position_quantity() const`    | Returns the signed position: positive when long, negative when short.                         |
-| `float position_avg_price() const`   | Returns the average entry price of the open position, or `na` when flat.                      |
-| `PortfolioSnapshot snapshot() const` | Returns all metrics as one [`portfolio.PortfolioSnapshot`](./portfolio.md#portfoliosnapshot). |
-
-Use it as a type constraint for code that only reads results.
-[`portfolio.NetPortfolio`](./portfolio.md#netportfolio) and [`portfolio.LotPortfolio`](./portfolio.md#lotportfolio) both
-satisfy it.
-
-### NetLedger
-
-Net-position accounting that [`trade.nextOpen`](./trade.md#nextopen), [`trade.ohlc`](./trade.md#ohlc) and [`trade.path`](./trade.md#path) require.
-
-```tea
-interface NetLedger
-```
-
-| Member                                 | Description                                                                                                                 |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `broker.Account account() const`       | Returns the [`broker.Account`](./broker.md#account) view the broker checks orders against.                                  |
-| `int apply_net(broker.Fill execution)` | Applies one fill to the position; coordinators also pass `na` when nothing filled. `execution`: the fill to apply, or `na`. |
-| `float mark(float price)`              | Values the position at `price` and returns the new equity. `price`: price to value the position at.                         |
-| `float cash() const`                   | Returns the cash balance.                                                                                                   |
-| `float position_quantity() const`      | Returns the signed position: positive when long, negative when short.                                                       |
-| `float position_avg_price() const`     | Returns the average entry price of the open position, or `na` when flat.                                                    |
-| `PortfolioSnapshot snapshot() const`   | Returns all metrics as one [`portfolio.PortfolioSnapshot`](./portfolio.md#portfoliosnapshot).                               |
-
-[`portfolio.NetPortfolio`](./portfolio.md#netportfolio) satisfies it. It has no per-lot methods;
-those belong to [`portfolio.LotLedger`](./portfolio.md#lotledger).
-
-### LotLedger
-
-Per-lot accounting that [`trade.lots`](./trade.md#lots) requires.
-
-```tea
-interface LotLedger
-```
-
-| Member                                  | Description                                                                                                                  |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `broker.Account account() const`        | Returns the [`broker.Account`](./broker.md#account) view the broker checks orders against.                                   |
-| `int apply_lot(broker.Fill execution)`  | Applies one fill to the open lots; coordinators also pass `na` when nothing filled. `execution`: the fill to apply, or `na`. |
-| `float mark(float price)`               | Values the open lots at `price` and returns the new equity. `price`: price to value the lots at.                             |
-| `float cash() const`                    | Returns the cash balance.                                                                                                    |
-| `float position_quantity() const`       | Returns the signed total of the open lots: positive when long, negative when short.                                          |
-| `float position_avg_price() const`      | Returns the average entry price of the open lots, or `na` when none are open.                                                |
-| `PortfolioSnapshot snapshot() const`    | Returns all metrics as one [`portfolio.PortfolioSnapshot`](./portfolio.md#portfoliosnapshot).                                |
-| `int open_trade_count() const`          | Returns the number of open lots.                                                                                             |
-| `OpenTrade open_trade(int index) const` | Returns the open lot at `index`. `index`: position from `0` to `open_trade_count() - 1`.                                     |
-
-[`portfolio.LotPortfolio`](./portfolio.md#lotportfolio) satisfies it.
+| Name                                                      | Description                                                                                                                                        |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`portfolio.PortfolioView`](./portfolio/PortfolioView.md) | Read-only reporting methods that every portfolio provides.                                                                                         |
+| [`portfolio.NetLedger`](./portfolio/NetLedger.md)         | Net-position accounting that [`trade.nextOpen`](./trade/nextOpen.md), [`trade.ohlc`](./trade/ohlc.md) and [`trade.path`](./trade/path.md) require. |
+| [`portfolio.LotLedger`](./portfolio/LotLedger.md)         | Per-lot accounting that [`trade.lots`](./trade/lots.md) requires.                                                                                  |
 
 ## Records
 
-### OpenTrade
-
-Accounting record of one open lot in a [`portfolio.LotPortfolio`](./portfolio.md#lotportfolio).
-
-```tea
-type OpenTrade
-```
-
-| Member                  | Description                                                                           |
-| ----------------------- | ------------------------------------------------------------------------------------- |
-| `int id`                | Stable trade id from the entry fill; `close_trade` and `close_trade_at_stop` take it. |
-| `broker.Side entrySide` | Side the lot was opened on: `broker.Side.buy` for long, `broker.Side.sell` for short. |
-| `float entryPrice`      | Entry fill price, after slippage.                                                     |
-| `float quantity`        | Lot size; always positive.                                                            |
-| `float entryFee = 0.0`  | Commission paid on entry, deducted from the lot's profit when it closes.              |
-
-It holds only what accounting needs. Keep exit rules such as stops and
-targets in your strategy's own state, keyed by `id`.
-
-### PortfolioSnapshot
-
-Copy of a portfolio's metrics at one moment.
-
-```tea
-type PortfolioSnapshot
-```
-
-| Member                       | Description                                                                                     |
-| ---------------------------- | ----------------------------------------------------------------------------------------------- |
-| `float cash`                 | Cash balance.                                                                                   |
-| `float positionQuantity`     | Signed position: positive when long, negative when short, `0` when flat.                        |
-| `float positionAveragePrice` | Average entry price of the open position; `na` when flat.                                       |
-| `int openTradeCount`         | Entries in the net position for a net portfolio, or open lots for a lot portfolio.              |
-| `int maxLongStack`           | Most long lots open at the same time so far; always `0` for a net portfolio.                    |
-| `int maxShortStack`          | Most short lots open at the same time so far; always `0` for a net portfolio.                   |
-| `float equity`               | Equity at the latest mark: cash plus the position valued at the mark price.                     |
-| `float realizedPnl`          | Realized profit and loss, net of fees.                                                          |
-| `float totalFees`            | Total commission paid.                                                                          |
-| `int fillCount`              | Number of fills applied.                                                                        |
-| `int roundTripCount`         | Number of closed trades: closed positions for a net portfolio, closed lots for a lot portfolio. |
-| `float winRate`              | Fraction of closed trades with a profit, from `0` to `1`; `0` before the first close.           |
-| `float profitFactor`         | Gross profit divided by gross loss; `0` when there is no loss.                                  |
-| `float maxDrawdown`          | Largest drop from peak equity, as a fraction of the peak.                                       |
-| `float totalReturn`          | Change in equity since the start, as a fraction of the initial cash.                            |
-
-Get it from a coordinator's `snapshot()`. Ratios are fractions: `0.25`
-means 25%.
+| Name                                                              | Description                                                                                     |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [`portfolio.OpenTrade`](./portfolio/OpenTrade.md)                 | Accounting record of one open lot in a [`portfolio.LotPortfolio`](./portfolio/LotPortfolio.md). |
+| [`portfolio.PortfolioSnapshot`](./portfolio/PortfolioSnapshot.md) | Copy of a portfolio's metrics at one moment.                                                    |
 
 ## Portfolios
 
-### NetPortfolio
-
-Portfolio that holds one signed net position with an average entry price.
-
-```tea
-type NetPortfolio
-```
-
-| Member                                  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `float initialCash`                     | Starting cash; it must be positive, and `total_return` is measured against it.                                                                                                                                                                                                                                                                                                                                                                                |
-| `int pyramiding`                        | Most same-direction entries one position may accumulate; at least `1`.                                                                                                                                                                                                                                                                                                                                                                                        |
-| `float marginLong`                      | `100` requires a new long position's value plus fees to fit in cash; `0` turns the check off.                                                                                                                                                                                                                                                                                                                                                                 |
-| `float marginShort`                     | `100` requires a new short position's value plus fees to fit in equity; `0` turns the check off.                                                                                                                                                                                                                                                                                                                                                              |
-| `float cashValue = 0.0`                 | Current cash balance.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `float positionQuantityValue = 0.0`     | Signed position: positive when long, negative when short.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `float entryPrice = na`                 | Average entry price of the open position; `na` when flat.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `float entryNotional = 0.0`             | Value of the open position at its entry prices, excluding fees.                                                                                                                                                                                                                                                                                                                                                                                               |
-| `float entryFee = 0.0`                  | Entry fees of the open position not yet charged to realized profit.                                                                                                                                                                                                                                                                                                                                                                                           |
-| `int openEntryCountValue = 0`           | Entries in the open position, checked against `pyramiding`; rebalance fills do not count.                                                                                                                                                                                                                                                                                                                                                                     |
-| `float realizedPnlValue = 0.0`          | Realized profit and loss, net of fees.                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `float totalFeesValue = 0.0`            | Total commission paid.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `float equityValue = 0.0`               | Equity at the latest `mark`.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `float peakEquity = 0.0`                | Highest equity seen by `mark`.                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `float maxDrawdownValue = 0.0`          | Largest drop from peak equity, as a fraction of the peak.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `int fillCountValue = 0`                | Number of fills applied.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `int roundTripCountValue = 0`           | Number of positions closed, including by reversal.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `float activeTradePnlValue = 0.0`       | Profit realized so far by the open position, which decides whether it counts as a win when it closes.                                                                                                                                                                                                                                                                                                                                                         |
-| `int winningTradeCountValue = 0`        | Closed positions with a profit.                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `int losingTradeCountValue = 0`         | Closed positions with zero or negative profit.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `float grossProfitValue = 0.0`          | Total profit of the winning positions.                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `float grossLossValue = 0.0`            | Total loss of the losing positions, as a positive number.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `bool targetPositionArithmetic = false` | Whether a rebalance fill opened the current position; it only changes the rounding order of realized profit.                                                                                                                                                                                                                                                                                                                                                  |
-| `broker.Account account() const`        | Returns the [`broker.Account`](./broker.md#account) view the broker checks orders against. Its `configurationValid` is `false` unless `initialCash` is positive, `pyramiding` is at least `1`, and each margin is `0` or `100`. Called by the trade coordinators.                                                                                                                                                                                             |
-| `bool is_flat() const`                  | Returns whether the position is zero.                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `float buying_power() const`            | Returns the cash available for new orders, which is the cash balance.                                                                                                                                                                                                                                                                                                                                                                                         |
-| `float position_quantity() const`       | Returns the signed position: positive when long, negative when short.                                                                                                                                                                                                                                                                                                                                                                                         |
-| `float position_avg_price() const`      | Returns the average entry price of the open position, or `na` when flat.                                                                                                                                                                                                                                                                                                                                                                                      |
-| `int max_long_stack() const`            | Always returns `0`; only a [`portfolio.LotPortfolio`](./portfolio.md#lotportfolio) counts stacked lots.                                                                                                                                                                                                                                                                                                                                                       |
-| `int max_short_stack() const`           | Always returns `0`; only a [`portfolio.LotPortfolio`](./portfolio.md#lotportfolio) counts stacked lots.                                                                                                                                                                                                                                                                                                                                                       |
-| `PortfolioSnapshot snapshot() const`    | Returns all metrics as one [`portfolio.PortfolioSnapshot`](./portfolio.md#portfoliosnapshot).                                                                                                                                                                                                                                                                                                                                                                 |
-| `int apply_net(broker.Fill execution)`  | Applies one fill to cash, position, entry price, realized profit and statistics. It ignores `na` and fills whose quantity or price is not positive or whose fee is negative. Realized profit on a closing fill is net of the closing fee and a proportional share of the entry fees. Called by the trade coordinators; strategies normally use the coordinator instead. `execution`: the fill to apply, or `na`. Returns: the number of fills applied so far. |
-| `float mark(float price)`               | Values the position at `price`, updating equity, peak equity and maximum drawdown. Called by the coordinators' `mark` and `end_bar`. `price`: price to value the position at. Returns: the new equity.                                                                                                                                                                                                                                                        |
-| `float cash() const`                    | Returns the cash balance.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `float equity() const`                  | Returns equity at the latest `mark`.                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `float realized_pnl() const`            | Returns realized profit and loss, net of fees.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `float total_fees() const`              | Returns the total commission paid.                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `int fill_count() const`                | Returns the number of fills applied.                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `int round_trip_count() const`          | Returns the number of positions closed, including by reversal.                                                                                                                                                                                                                                                                                                                                                                                                |
-| `float win_rate() const`                | Returns the fraction of closed positions with a profit, from `0` to `1`; `0` before the first close.                                                                                                                                                                                                                                                                                                                                                          |
-| `float profit_factor() const`           | Returns gross profit divided by gross loss; `0` when there is no loss.                                                                                                                                                                                                                                                                                                                                                                                        |
-| `float max_drawdown() const`            | Returns the largest drop from peak equity, as a fraction of the peak.                                                                                                                                                                                                                                                                                                                                                                                         |
-| `float total_return() const`            | Returns the change in equity since the start, as a fraction of `initialCash`; `na` when `initialCash` is `0`.                                                                                                                                                                                                                                                                                                                                                 |
-
-Create it with [`portfolio.new`](./portfolio.md#new), which starts cash, equity and peak
-equity at `initialCash`, and pass it to a coordinator.
-Same-direction fills add to the position at a quantity-weighted average
-price; opposite fills reduce, close or reverse it. One round trip lasts from
-opening a position to closing it, however many fills that takes. The
-coordinator calls the methods that change the portfolio; strategies read
-results through the coordinator.
-
-### LotPortfolio
-
-Portfolio that tracks each entry as a separate lot with its own id, price and fee.
-
-```tea
-type LotPortfolio
-```
-
-| Member                                  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `float initialCash`                     | Starting cash; it must be positive, and `total_return` is measured against it.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `int maxOpenTrades`                     | Most lots open at once; at least `1`. The broker rejects entries beyond it.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `float marginLong`                      | `100` requires a new long lot's value plus fees to fit in cash; `0` turns the check off.                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `float marginShort`                     | `100` requires a new short lot's value plus fees to fit in equity; `0` turns the check off.                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `array<OpenTrade> openTrades`           | The open lots, in no stable order: closing a lot moves the last lot into its place.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `float cashValue = 0.0`                 | Current cash balance.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `float equityValue = 0.0`               | Equity at the latest `mark`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `float peakEquity = 0.0`                | Highest equity seen by `mark`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `float maxDrawdownValue = 0.0`          | Largest drop from peak equity, as a fraction of the peak.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `float realizedPnlValue = 0.0`          | Realized profit and loss, net of fees.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `float totalFeesValue = 0.0`            | Total commission paid.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `int fillCountValue = 0`                | Number of fills applied.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `int roundTripCountValue = 0`           | Number of lots closed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `int winningTradeCountValue = 0`        | Closed lots with a profit.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `int losingTradeCountValue = 0`         | Closed lots with zero or negative profit.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `float grossProfitValue = 0.0`          | Total profit of the winning lots.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `float grossLossValue = 0.0`            | Total loss of the losing lots, as a positive number.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `int maxLongStackValue = 0`             | Most long lots open at the same time so far.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `int maxShortStackValue = 0`            | Most short lots open at the same time so far.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `broker.Account account() const`        | Returns the [`broker.Account`](./broker.md#account) view the broker checks orders against. It reports the open lot count against `maxOpenTrades`, and its `configurationValid` is `false` unless `initialCash` is positive, `maxOpenTrades` is at least `1` and each margin is `0` or `100`. Called by [`trade.LotTrade`](./trade.md#lottrade).                                                                                                                                                                         |
-| `bool is_flat() const`                  | Returns whether no lot is open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `float buying_power() const`            | Returns the cash available for new orders, which is the cash balance.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `float position_quantity() const`       | Returns the signed total of the open lots: positive when long, negative when short.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `float position_avg_price() const`      | Returns the quantity-weighted average entry price of the open lots, or `na` when none are open.                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `int open_trade_count() const`          | Returns the number of open lots.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `OpenTrade open_trade(int index) const` | Returns the open lot at `index`. Lot order is not stable: closing a lot moves the last lot into its place. `index`: position from `0` to `open_trade_count() - 1`.                                                                                                                                                                                                                                                                                                                                                      |
-| `int max_long_stack() const`            | Returns the most long lots that were open at the same time.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `int max_short_stack() const`           | Returns the most short lots that were open at the same time.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `PortfolioSnapshot snapshot() const`    | Returns all metrics as one [`portfolio.PortfolioSnapshot`](./portfolio.md#portfoliosnapshot).                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `int apply_lot(broker.Fill execution)`  | Applies one fill: an entry opens a lot, and a close or exit closes the lot its `tradeId` names. A new lot's id is the fill's `tradeId`, or the fill's `id` when `tradeId` is `0`. It ignores `na`, invalid fills, other fill kinds, entries beyond `maxOpenTrades`, and closes whose side or quantity does not match the lot. Called by [`trade.LotTrade`](./trade.md#lottrade); strategies normally use the coordinator instead. `execution`: the fill to apply, or `na`. Returns: the number of fills applied so far. |
-| `float mark(float price)`               | Values the open lots at `price`, updating equity, peak equity and maximum drawdown. Called by [`trade.LotTrade`](./trade.md#lottrade)'s `mark`. `price`: price to value the lots at. Returns: the new equity.                                                                                                                                                                                                                                                                                                           |
-| `float cash() const`                    | Returns the cash balance.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `float equity() const`                  | Returns equity at the latest `mark`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `float realized_pnl() const`            | Returns realized profit and loss, net of fees.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `float total_fees() const`              | Returns the total commission paid.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `int fill_count() const`                | Returns the number of fills applied.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `int round_trip_count() const`          | Returns the number of lots closed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `float win_rate() const`                | Returns the fraction of closed lots with a profit, from `0` to `1`; `0` before the first close.                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `float profit_factor() const`           | Returns gross profit divided by gross loss; `0` when there is no loss.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `float max_drawdown() const`            | Returns the largest drop from peak equity, as a fraction of the peak.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `float total_return() const`            | Returns the change in equity since the start, as a fraction of `initialCash`; `na` when `initialCash` is `0`.                                                                                                                                                                                                                                                                                                                                                                                                           |
-
-Create it with [`portfolio.lots`](./portfolio.md#lots), which starts cash, equity and peak
-equity at `initialCash`, and pass it to [`trade.lots`](./trade.md#lots). Lots always
-close in full, and each closed lot counts as one round trip.
-The coordinator calls the methods that change the portfolio; strategies read
-results through the coordinator.
+| Name                                                    | Description                                                                        |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| [`portfolio.NetPortfolio`](./portfolio/NetPortfolio.md) | Portfolio that holds one signed net position with an average entry price.          |
+| [`portfolio.LotPortfolio`](./portfolio/LotPortfolio.md) | Portfolio that tracks each entry as a separate lot with its own id, price and fee. |

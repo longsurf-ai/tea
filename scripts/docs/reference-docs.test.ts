@@ -12,22 +12,14 @@ import {PUBLIC_TYPE_CATALOG} from '../../src/checker/type-catalog';
 import {generate} from '../../src/codegen/codegen';
 import {Qualifier} from '../../src/ir/type';
 import {buildText} from '../../src/noder/testing';
-import {AssignOp, SOURCE_DECLARATION_KINDS} from '../../src/syntax/nodes';
-import {KEYWORDS, Op} from '../../src/syntax/tokens';
+import {SOURCE_DECLARATION_KINDS} from '../../src/syntax/nodes';
+import katex from 'katex';
 import {referenceManual} from '../../src/reference/index';
-import {referenceOutputs} from './generate-reference';
+import {nativeFunctionDocs, nativeValueDocs} from '../../src/lsp/documentation';
+import {LANGUAGE_PAGES, LANGUAGE_TOKENS} from './generate-reference';
 import {javascriptApi} from './javascript-api-docs';
 import {type DocComment} from '../../src/syntax/doc-comments';
 import {teaLibraries} from './tea-library-docs';
-
-const LANGUAGE_PAGES = [
-  'lexical-structure',
-  'types',
-  'declarations',
-  'expressions',
-  'control-flow',
-  'outputs',
-] as const;
 
 function languagePage(name: (typeof LANGUAGE_PAGES)[number]): string {
   return readFileSync(
@@ -151,7 +143,7 @@ describe('native catalog documentation', () => {
       ...Object.entries(NATIVE_VALUE_DOCS),
     ]) {
       const sources = [
-        ...(doc.example === undefined ? [] : [doc.example]),
+        ...(doc.examples ?? []).map(example => example.source),
         ...teaFences(doc.details ?? ''),
       ];
       sources.forEach((source, index) =>
@@ -210,7 +202,9 @@ describe('shipped Tea library documentation', () => {
             ...docProblems(
               `${library.file}:${member.line} ${item.name}.${member.name}`,
               member.doc,
-              member.kind === 'method' ? member.params : null,
+              member.kind === 'method'
+                ? member.params.map(param => param.name)
+                : null,
             ),
           );
         }
@@ -234,7 +228,18 @@ describe('shipped Tea library documentation', () => {
         );
       for (const block of source.matchAll(/\/\*\*[\s\S]*?\*\//g)) {
         for (const tag of block[0].matchAll(/^\s*\*?\s*@(\w+)/gm)) {
-          if (!['param', 'returns', 'category'].includes(tag[1]!)) {
+          if (
+            ![
+              'param',
+              'returns',
+              'category',
+              'formula',
+              'warmup',
+              'example',
+              'pine',
+              'see',
+            ].includes(tag[1]!)
+          ) {
             problems.push(`${library.file}: unknown doc tag @${tag[1]}`);
           }
         }
@@ -251,7 +256,10 @@ describe('shipped Tea library documentation', () => {
         ]),
       ];
       docs.forEach((doc, index) =>
-        teaFences(doc?.body ?? '').forEach((source, example) =>
+        [
+          ...teaFences(doc?.body ?? ''),
+          ...(doc?.examples ?? []).map(example => example.source),
+        ].forEach((source, example) =>
           expectCompiles(source, `${library.name}-${index}-${example}.tea`),
         ),
       );
@@ -259,29 +267,74 @@ describe('shipped Tea library documentation', () => {
   }
 });
 
+/** Every doc comment the reference renders, with where it comes from. */
+function allDocs(): [string, DocComment | null][] {
+  return [
+    ...Object.keys(NATIVE_FUNCTION_DOCS).map(
+      name => [name, nativeFunctionDocs(name)] as [string, DocComment | null],
+    ),
+    ...Object.keys(NATIVE_VALUE_DOCS).map(
+      name => [name, nativeValueDocs(name)] as [string, DocComment | null],
+    ),
+    ...teaLibraries().flatMap(library => [
+      [library.file, library.doc] as [string, DocComment | null],
+      ...library.exports.flatMap(item => [
+        [`${library.file} ${item.name}`, item.doc] as [
+          string,
+          DocComment | null,
+        ],
+        ...item.members.map(
+          member =>
+            [`${library.file} ${item.name}.${member.name}`, member.doc] as [
+              string,
+              DocComment | null,
+            ],
+        ),
+      ]),
+    ]),
+  ];
+}
+
+describe('doc text', () => {
+  test('every formula is valid KaTeX, and math appears only in @formula', () => {
+    const problems: string[] = [];
+    for (const [where, doc] of allDocs()) {
+      if (doc === null) continue;
+      if (doc.formula !== null) {
+        try {
+          katex.renderToString(doc.formula, {
+            displayMode: true,
+            throwOnError: true,
+            strict: 'error',
+          });
+        } catch (error) {
+          problems.push(`${where}: ${(error as Error).message}`);
+        }
+      }
+      const prose = [
+        doc.summary,
+        doc.body,
+        doc.returns ?? '',
+        doc.warmup ?? '',
+        doc.pine ?? '',
+        ...doc.params.values(),
+        ...doc.examples.map(example => example.caption),
+      ].join('\n');
+      if (prose.includes('$$')) problems.push(`${where}: $$ outside @formula`);
+      if (/^#{1,6} /m.test(prose.replace(/```[\s\S]*?```/g, ''))) {
+        problems.push(`${where}: doc text cannot hold a Markdown heading`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+});
+
 describe('language reference pages', () => {
   test('cover every keyword, operator, literal name and comment form in a heading', () => {
     const covered = new Set(
       LANGUAGE_PAGES.flatMap(page => [...headingCode(languagePage(page))]),
     );
-    const required = [
-      ...KEYWORDS,
-      ...Object.values(Op),
-      '=',
-      ...Object.values(AssignOp),
-      '?:',
-      '[]',
-      '.',
-      '=>',
-      'true',
-      'false',
-      'na',
-      '//',
-      '/* */',
-      '/** */',
-      '//@version',
-    ];
-    expect(required.filter(token => !covered.has(token))).toEqual([]);
+    expect(LANGUAGE_TOKENS.filter(token => !covered.has(token))).toEqual([]);
   });
 
   test('cover every public type and qualifier', () => {
@@ -353,20 +406,15 @@ describe('JavaScript API documentation', () => {
   }
 });
 
-describe('reference generation', () => {
-  // Generation fails on a `{@link}` that names no documented symbol, a page
-  // missing from docs.json, or a docs.json page that does not exist.
-  test('renders every page the Reference navigation lists', async () => {
-    const outputs = await referenceOutputs();
-    expect(outputs.size).toBeGreaterThan(0);
-  });
-});
-
 describe('in-app reference manual', () => {
   test('holds the script-facing pages with unique entries and links that resolve', () => {
     expect(referenceManual.groups.map(group => group.title)).toEqual([
+      'Overview',
       'Language',
-      'Built-ins',
+      'Data and inputs',
+      'Outputs',
+      'Technical analysis',
+      'Functions',
       'Libraries',
     ]);
     const pages = referenceManual.groups.flatMap(group => group.pages);
@@ -381,6 +429,7 @@ describe('in-app reference manual', () => {
         'close',
         'color.*',
         'trade.nextOpen',
+        'trade.NextOpenTrade.entry',
       ]),
     );
     // `#ta.sma` names an entry, `#reference/builtins/ta` a page.

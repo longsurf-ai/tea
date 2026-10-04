@@ -18,7 +18,8 @@ navigation, and presentation.
   sequence.
 - Broken links, Markdown links, and anchors fail the build.
 - Styling stays reading-first, uses local system fonts, and loads no remote
-  assets.
+  assets. The one exception to system fonts is KaTeX's math fonts, bundled
+  from the `katex` package with its stylesheet for `$$` formulas.
 - `.docusaurus/` and `build/` are generated outputs, never source files.
   `.gitignore` excludes both; `.npmignore` excludes only `.docusaurus/` so
   installed releases contain the prebuilt site.

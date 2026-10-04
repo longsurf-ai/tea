@@ -428,44 +428,43 @@ sink.complete();
 await sink.completion; // File contains "close\n12.5\n".
 ```
 
-**`CSVSink.next`**
+#### CSVSink CSVSink next
+
+Accept one Observer value, rejecting `completion` if validation or writing fails.
 
 ```ts
 next(value: T): void;
 ```
 
-Accept one Observer value, rejecting `completion` if validation or writing fails.
-
 **Example:** `sink.next({close: 12.5})` appends one CSV row.
 
-**`CSVSink.write`**
+#### CSVSink CSVSink write
+
+Write a row; await the returned Promise when the file applies backpressure.
 
 ```ts
 write(value: T): void | Promise<void>;
 ```
 
-Write a row; await the returned Promise when the file applies backpressure.
-
 **Example:** `await sink.write({close: 12.5})` waits when the writer needs to drain.
 
-**`CSVSink.error`**
+#### CSVSink CSVSink error
+
+Stop writing and reject completion with the upstream error.
 
 ```ts
 error(error: unknown): void;
 ```
 
-Stop writing and reject completion with the upstream error.
-
 **Example:** `sink.error(new Error('feed failed'))` rejects `sink.completion`.
 
-**`CSVSink.complete`**
+#### CSVSink CSVSink complete
+
+Finish the file, including a header-only file when a declared schema received no rows.
 
 ```ts
 complete(): void;
 ```
-
-Finish the file, including a header-only file when a declared schema
-received no rows.
 
 **Example:** `sink.complete(); await sink.completion` waits for all bytes to flush.
 
@@ -495,35 +494,33 @@ const source = await CSVSource.open("prices.csv", schema);
 // A CSV row `12.5` is emitted as {close: 12.5}, not {close: '12.5'}.
 ```
 
-**`CSVSource.schema`**
+#### CSVSource CSVSource schema
+
+Return a defensive schema copy; modifying it never changes future reads.
 
 ```ts
 get schema(): Schema;
 ```
 
-Return a defensive schema copy; modifying it never changes future reads.
-
 **Example:** `source.schema.fields[0].name` is `'close'` for the example above.
 
-**`CSVSource.open`**
+#### CSVSource CSVSource open
+
+Return a cold source. Without an explicit schema it first reads the header, and every discovered field is non-nullable Arrow Utf8.
 
 ```ts
 static open<T = Record<string, unknown>>(path: string, schema?: Schema, clock?: Clock): Promise<CSVSource<T>>;
 ```
 
-Return a cold source. Without an explicit schema it first reads the
-header, and every discovered field is non-nullable Arrow Utf8.
-
 **Example:** `(await CSVSource.open('prices.csv')).schema.fields[0].name` is the first header.
 
-**`CSVSource.stream`**
+#### CSVSource CSVSource stream
+
+Return a cold stream; every subscription opens its own file reader and cancellation closes that reader.
 
 ```ts
 stream(): DataStream<T>;
 ```
-
-Return a cold stream; every subscription opens its own file reader and
-cancellation closes that reader.
 
 **Example:** `source.stream().subscribe({next: row => console.log(row)})` prints decoded rows.
 
@@ -554,33 +551,33 @@ const prices = new DataStream(
 prices.subscribe({ next: (row) => console.log(row.close) }); // 10, then 11
 ```
 
-**`DataStream.schema`**
+#### DataStream DataStream schema
+
+Return an independent Arrow schema, including independent metadata Maps.
 
 ```ts
 get schema(): Schema;
 ```
 
-Return an independent Arrow schema, including independent metadata Maps.
-
 **Example:** `prices.schema.fields[0].name` is `'close'` in the example above.
 
-**`DataStream.subscribe`**
+#### DataStream DataStream subscribe
+
+Subscribe to validated values; unsubscribing releases this subscription.
 
 ```ts
 subscribe(observer: Partial<Observer<T>>): Subscription;
 ```
 
-Subscribe to validated values; unsubscribing releases this subscription.
-
 **Example:** `prices.subscribe({next: row => console.log(row.close)})` prints each price.
 
-**`DataStream.asObservable`**
+#### DataStream DataStream asObservable
+
+Expose the same validated Observable for ordinary RxJS composition.
 
 ```ts
 asObservable(): Observable<T>;
 ```
-
-Expose the same validated Observable for ordinary RxJS composition.
 
 **Example:** `firstValueFrom(prices.asObservable())` resolves to `{close: 10}`.
 
@@ -618,48 +615,43 @@ tea`emit "double" close * 2`.bind(prices).to(new StdoutSink());
 // {"index":0,"timed":false,"provisional":false,"double":20}
 ```
 
-**`StdoutSink.next`**
+#### StdoutSink StdoutSink next
+
+Print one Observer value; the same as `write()`.
 
 ```ts
 next(value: T): void;
 ```
 
-Print one Observer value; the same as `write()`.
-
 **Example:** `sink.next({close: 12.5})` prints `{"close":12.5}`.
 
-**`StdoutSink.write`**
+#### StdoutSink StdoutSink write
+
+Format and print one value, ignoring it once the sink has stopped. If `format` or `writeLine` throws, the sink stops and rethrows that error; as a `Node.to()` observer, that fails the run.
 
 ```ts
 write(value: T): void;
 ```
 
-Format and print one value, ignoring it once the sink has stopped. If
-`format` or `writeLine` throws, the sink stops and rethrows that error;
-as a `Node.to()` observer, that fails the run.
-
 **Example:** `sink.write({close: 12.5})` prints `{"close":12.5}` immediately.
 
-**`StdoutSink.error`**
+#### StdoutSink StdoutSink error
+
+Stop the sink and rethrow `error`; a stopped sink ignores it. When RxJS delivers the error, it reports the rethrow as an unhandled error, while [`batchRecipe`](./tea.md#batchrecipe) rejects with it.
 
 ```ts
 error(error: unknown): void;
 ```
 
-Stop the sink and rethrow `error`; a stopped sink ignores it. When RxJS
-delivers the error, it reports the rethrow as an unhandled error, while
-[`batchRecipe`](./tea.md#batchrecipe) rejects with it.
-
 **Example:** `sink.error(new Error('feed failed'))` throws that error.
 
-**`StdoutSink.complete`**
+#### StdoutSink StdoutSink complete
+
+Stop the sink; later values are ignored. Nothing is buffered, so there is nothing to flush.
 
 ```ts
 complete(): void;
 ```
-
-Stop the sink; later values are ignored. Nothing is buffered, so there
-is nothing to flush.
 
 **Example:** `sink.complete()` ends printing without waiting for anything.
 
@@ -725,53 +717,53 @@ sink.complete();
 await sink.completion;
 ```
 
-**`WebSocketSink.schema`**
+#### WebSocketSink WebSocketSink schema
+
+Return an independent Arrow schema; caller mutations do not affect sends.
 
 ```ts
 get schema(): Schema;
 ```
 
-Return an independent Arrow schema; caller mutations do not affect sends.
-
 **Example:** `sink.schema.fields[0].name` is `'close'` in the example above.
 
-**`WebSocketSink.next`**
+#### WebSocketSink WebSocketSink next
+
+Accept one Observer row for validated JSON delivery.
 
 ```ts
 next(value: T): void;
 ```
 
-Accept one Observer row for validated JSON delivery.
-
 **Example:** `sink.next({close: 12.5})` sends or queues one JSON text frame.
 
-**`WebSocketSink.write`**
+#### WebSocketSink WebSocketSink write
+
+Send immediately when possible, otherwise apply the configured queue policy.
 
 ```ts
 write(value: T): void;
 ```
 
-Send immediately when possible, otherwise apply the configured queue policy.
-
 **Example:** `sink.write({close: 12.5})` queues the row while the socket opens.
 
-**`WebSocketSink.error`**
+#### WebSocketSink WebSocketSink error
+
+Close the socket and reject completion with the supplied error.
 
 ```ts
 error(error: unknown): void;
 ```
 
-Close the socket and reject completion with the supplied error.
-
 **Example:** `sink.error(new Error('feed failed'))` rejects `sink.completion`.
 
-**`WebSocketSink.complete`**
+#### WebSocketSink WebSocketSink complete
+
+Drain queued messages, close the socket, and then resolve completion.
 
 ```ts
 complete(): void;
 ```
-
-Drain queued messages, close the socket, and then resolve completion.
 
 **Example:** `sink.complete(); await sink.completion` waits for the queue to drain.
 
@@ -801,23 +793,23 @@ new WebSocketSource("ws://localhost:8080", schema)
   .subscribe({ next: (row) => console.log(row) }); // {close: 12.5}
 ```
 
-**`WebSocketSource.schema`**
+#### WebSocketSource WebSocketSource schema
+
+Return an independent Arrow schema without changing socket validation.
 
 ```ts
 get schema(): Schema;
 ```
 
-Return an independent Arrow schema without changing socket validation.
-
 **Example:** `source.schema.fields[0].name` is `'close'` for the example above.
 
-**`WebSocketSource.stream`**
+#### WebSocketSource WebSocketSource stream
+
+Create a stream without opening a connection; subscribing opens the socket.
 
 ```ts
 stream(): DataStream<T>;
 ```
-
-Create a stream without opening a connection; subscribing opens the socket.
 
 **Example:** `source.stream().subscribe({next: row => console.log(row)})` receives parsed JSON rows.
 
@@ -859,54 +851,47 @@ Observable graph, one child Node per request, and the runtime created when
 execution starts. Module readiness describes configuration; Node readiness
 also requires the source streams to be connected.
 
-**`Node.module`**
+#### Node Node module
+
+The compiled module owned by this Node, including Arrow schemas and request children. It contains no stream connection state. Binding leaves it unchanged.
 
 ```ts
 readonly module: Module;
 ```
 
-The compiled module owned by this Node, including Arrow schemas and request
-children. It contains no stream connection state. Binding leaves it unchanged.
-
 **Example:** After `const bound = node.bind({length: 20})`, `bound.module.parameters[0].value`
 is 20. `node.module.ready()` may be true before `node.ready()`, which also
 requires connected streams.
 
-**`Node.bind`**
+#### Node Node bind
+
+Returns a Node with a parameter patch or input streams, without subscribing. Parameter binding preserves previous values and fills only unset defaults; stream binding validates every requested field before deriving connections. A path selects nested request declaration names; no parent values are inherited. Streams may declare non-nullable Bool `provisional` metadata; it defaults to false. Repeated timed attempts require a pending provisional step; finalizing it commits one index before the source may advance time.
 
 ```ts
 bind(input: BindingInput, path?: readonly string[]): Node;
 ```
 
-Returns a Node with a parameter patch or input streams, without subscribing.
-Parameter binding preserves previous values and fills only unset defaults;
-stream binding validates every requested field before deriving connections.
-A path selects nested request declaration names; no parent values are inherited.
-Streams may declare non-nullable Bool `provisional` metadata; it defaults
-to false. Repeated timed attempts require a pending provisional step;
-finalizing it commits one index before the source may advance time.
-
 **Example:** `node.bind({length: 20}).bind(closeStream)` derives a root run;
 `node.bind({length: 50}, ['daily'])` configures an independent child.
 
-**`Node.ready`**
+#### Node Node ready
+
+Reports whether the main program and every request child have all inputs.
 
 ```ts
 ready(): boolean;
 ```
 
-Reports whether the main program and every request child have all inputs.
-
 **Example:** A program using `close` is not ready until a DataStream supplying
 `close` has been bound.
 
-**`Node.to`**
+#### Node Node to
+
+Observes output and starts execution when the first observer is attached.
 
 ```ts
 to(observer: Partial<Observer<Datum>>): Subscription;
 ```
-
-Observes output and starts execution when the first observer is attached.
 
 Later observers share the same runtime and receive only future output.
 If any observer throws while receiving a Datum, the shared execution stops
@@ -915,13 +900,13 @@ and every observer receives that same error.
 **Example:** `node.to(new StdoutSink())` starts the pipeline and prints each
 lossless output Datum.
 
-**`Node.asStream`**
+#### Node Node asStream
+
+Exposes this Node's output as a DataStream that another Node can bind.
 
 ```ts
 asStream(): DataStream;
 ```
-
-Exposes this Node's output as a DataStream that another Node can bind.
 
 Rows carry `time` when this Node is timed, `provisional`, and every output
 field with its Arrow type and metadata; `index` and `timed` stay with the
@@ -947,13 +932,13 @@ doubled.asStream().subscribe({
 });
 ```
 
-**`Node.dispose`**
+#### Node Node dispose
+
+Stops the input subscription and releases every main and request runtime.
 
 ```ts
 dispose(): void;
 ```
-
-Stops the input subscription and releases every main and request runtime.
 
 **Example:** Call `node.dispose()` to stop a live Subject or WebSocket source.
 
@@ -973,13 +958,13 @@ through Tea's public Node API.
 
 **Example:** `const result = await recipe.execute()` runs the saved wiring once.
 
-**`Recipe.execute`**
+#### Recipe Recipe execute
+
+Starts the configured run and waits for it to finish.
 
 ```ts
 execute(): Promise<R>;
 ```
-
-Starts the configured run and waits for it to finish.
 
 Resolves with the run's result, or rejects if the run fails.
 

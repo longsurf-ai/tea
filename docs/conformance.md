@@ -74,6 +74,10 @@ the expected values, calculate the affected hashes with `shasum -a 256`, and
 update `manifest.json` explicitly. Hashes create review friction and make
 accidental rewrites fail; they are not a substitute for reviewing the oracle.
 
+The Tea reference runs its `@example` programs and shows their output. Those
+outputs are illustrations produced by Tea, never conformance references: do not
+copy them into `tests/fixtures/execution` or derive an expected value from them.
+
 ## Intentional deviations
 
 `deviations.json` records only differences that have been consciously adopted

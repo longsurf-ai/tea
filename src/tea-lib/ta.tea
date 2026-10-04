@@ -49,6 +49,9 @@ library("ta")
  * @param length Number of bars, a positive `int`.
  * @returns The mean; `na` for the first `length - 1` bars and when every value
  * in the window is `na`.
+ * @formula
+ * \mathrm{sma}_t = \frac{1}{|K_t|} \sum_{i \in K_t} \mathit{source}_{t-i},
+ * \qquad K_t = \{\, i \in \{0, \dots, \mathit{length}-1\} : \mathit{source}_{t-i} \ne \mathrm{na} \,\}
  * @category Moving averages
  */
 export sma(source, int length) =>
@@ -288,7 +291,7 @@ export linreg(source, int length, int offset) =>
  * @param length Number of bars, a positive `int`.
  * @returns The center of gravity; `na` for the first `length - 1` bars, when
  * every value in the window is `na`, and when the known values sum to `0`.
- * @category Moving averages
+ * @category Momentum
  */
 export cog(source, int length) =>
 	if length < 1
@@ -618,7 +621,7 @@ export dmi(int diLength, int adxSmoothing) =>
  * on the first bar: `true` gives `high - low`, `false` gives `na`.
  * @returns The true range, or the `handle_na` result when the previous close is
  * `na`.
- * @category Volatility and channels
+ * @category Volatility and bands
  */
 export tr(handle_na = true) =>
 	prevClose = close[1]
@@ -630,7 +633,7 @@ export tr(handle_na = true) =>
  *
  * @param length Smoothing length in bars, a positive `int`.
  * @returns The average; `na` for the first `length - 1` bars.
- * @category Volatility and channels
+ * @category Volatility and bands
  */
 export atr(int length) =>
 	if length < 1
@@ -647,7 +650,7 @@ export atr(int length) =>
  * @param length Number of bars, a positive `int`.
  * @returns The deviation; `na` for the first `length - 1` bars and when every
  * value in the window is `na`.
- * @category Volatility and channels
+ * @category Statistics
  */
 export dev(source, int length) =>
 	if length < 1
@@ -674,7 +677,7 @@ export dev(source, int length) =>
  * `n - 1` (sample variance).
  * @returns The variance; `na` for the first `length - 1` bars, when every value
  * in the window is `na`, and for a sample variance of one value.
- * @category Volatility and channels
+ * @category Statistics
  */
 export variance(source, int length, biased = true) =>
 	if length < 1
@@ -712,7 +715,7 @@ export variance(source, int length, biased = true) =>
  * `length - 1` (sample).
  * @returns The square root of {@link ta.variance} with the same arguments; `na`
  * whenever that is `na`.
- * @category Volatility and channels
+ * @category Statistics
  */
 export stdev(source, int length, biased = true) =>
 	if length < 1
@@ -729,7 +732,7 @@ export stdev(source, int length, biased = true) =>
  * @param length Number of bars, a positive `int`.
  * @returns The range; `na` for the first `length - 1` bars and when every value
  * in the window is `na`.
- * @category Volatility and channels
+ * @category Statistics
  */
 export range(source, int length) =>
 	if length < 1
@@ -755,7 +758,7 @@ export range(source, int length) =>
  * @param mult Band distance in standard deviations.
  * @returns A tuple `[middle, upper, lower]`; each is `na` for the first
  * `length - 1` bars and while any value in the window is `na`.
- * @category Volatility and channels
+ * @category Volatility and bands
  */
 export bb(source, int length, mult) =>
 	if length < 1
@@ -775,7 +778,7 @@ export bb(source, int length, mult) =>
  * @param mult Band distance in standard deviations.
  * @returns The width in percent; `na` for the first `length - 1` bars, while any
  * value in the window is `na`, and when the middle band is `0`.
- * @category Volatility and channels
+ * @category Volatility and bands
  */
 export bbw(source, int length, mult) =>
 	if length < 1
@@ -805,7 +808,7 @@ export bbw(source, int length, mult) =>
  * @param useTrueRange `true` measures each bar's range with `ta.tr(false)`,
  * so the range is `na` on the first bar; `false` uses `high - low`.
  * @returns A tuple `[middle, upper, lower]`.
- * @category Volatility and channels
+ * @category Volatility and bands
  */
 export kc(source, int length, mult, useTrueRange = true) =>
 	if length < 1
@@ -827,7 +830,7 @@ export kc(source, int length, mult, useTrueRange = true) =>
  * @param useTrueRange `true` measures each bar's range with {@link ta.tr};
  * `false` uses `high - low`.
  * @returns The width as a ratio; `na` when the middle line is `0`.
- * @category Volatility and channels
+ * @category Volatility and bands
  */
 export kcw(source, int length, mult, useTrueRange = true) =>
 	if length < 1
@@ -856,7 +859,7 @@ export kcw(source, int length, mult, useTrueRange = true) =>
  * where `line` is the lower band below price, and `1` in a downtrend, where
  * `line` is the upper band above price; it is `1` until the ATR has a previous
  * value. `line` is `0` on the first bar and `na` until the ATR has a value.
- * @category Volatility and channels
+ * @category Trailing stops
  */
 export supertrend(factor, int atrPeriod) =>
 	if atrPeriod < 1
@@ -900,7 +903,7 @@ export supertrend(factor, int atrPeriod) =>
  * @param max Largest acceleration factor.
  * @returns The level; `na` on the first bar, and on every bar if this call did
  * not run on the bar where `bar_index` is `1`.
- * @category Volatility and channels
+ * @category Trailing stops
  */
 export sar(start, inc, max) =>
 	var float result = na
@@ -1088,7 +1091,7 @@ export barssince(condition) =>
  * @param length Number of bars, a positive `int`.
  * @returns The highest value; `na` for the first `length - 1` bars and when
  * every value in the window is `na`.
- * @category Crosses and conditions
+ * @category Highs, lows and pivots
  */
 export highest(source, int length) =>
 	if length < 1
@@ -1111,7 +1114,7 @@ export highest(source, int length) =>
  * @param length Number of bars, a positive `int`.
  * @returns The lowest value; `na` for the first `length - 1` bars and when every
  * value in the window is `na`.
- * @category Crosses and conditions
+ * @category Highs, lows and pivots
  */
 export lowest(source, int length) =>
 	if length < 1
@@ -1136,7 +1139,7 @@ export lowest(source, int length) =>
  * @param length Number of bars, a positive `int`.
  * @returns An `int` from `1 - length` to `0`; `na` for the first `length - 1`
  * bars and when every value in the window is `na`.
- * @category Crosses and conditions
+ * @category Highs, lows and pivots
  */
 export highestbars(source, int length) =>
 	if length < 1
@@ -1163,7 +1166,7 @@ export highestbars(source, int length) =>
  * @param length Number of bars, a positive `int`.
  * @returns An `int` from `1 - length` to `0`; `na` for the first `length - 1`
  * bars and when every value in the window is `na`.
- * @category Crosses and conditions
+ * @category Highs, lows and pivots
  */
 export lowestbars(source, int length) =>
 	if length < 1
@@ -1199,7 +1202,7 @@ export lowestbars(source, int length) =>
  * is reported this many bars late.
  * @returns `source[rightbars]` on a bar that confirms a pivot high, otherwise
  * `na`.
- * @category Crosses and conditions
+ * @category Highs, lows and pivots
  */
 export pivothigh(source, int leftbars, int rightbars) =>
 	if leftbars < 0
@@ -1227,7 +1230,7 @@ export pivothigh(source, int leftbars, int rightbars) =>
  * pivot is reported this many bars late.
  * @returns `source[rightbars]` on a bar that confirms a pivot low, otherwise
  * `na`.
- * @category Crosses and conditions
+ * @category Highs, lows and pivots
  */
 export pivotlow(source, int leftbars, int rightbars) =>
 	if leftbars < 0
@@ -1250,7 +1253,7 @@ export pivotlow(source, int leftbars, int rightbars) =>
  *
  * @param source Series to add up, such as {@link volume}.
  * @returns The sum so far; `na` before the first value of `source`.
- * @category Accumulation and statistics
+ * @category Statistics
  */
 export cum(source) =>
 	var float total = na
@@ -1265,7 +1268,7 @@ export cum(source) =>
  *
  * @param source Series to track.
  * @returns The running maximum; `na` before the first value of `source`.
- * @category Accumulation and statistics
+ * @category Statistics
  */
 export max(source) =>
 	var float m = na
@@ -1280,7 +1283,7 @@ export max(source) =>
  *
  * @param source Series to track.
  * @returns The running minimum; `na` before the first value of `source`.
- * @category Accumulation and statistics
+ * @category Statistics
  */
 export min(source) =>
 	var float m = na
@@ -1300,7 +1303,7 @@ export min(source) =>
  * @returns Pearson's correlation; `na` for the first `length - 1` bars, when no
  * bar in the window has both values, and when either series is constant over
  * the bars used.
- * @category Accumulation and statistics
+ * @category Statistics
  */
 export correlation(source1, source2, int length) =>
 	if length < 1
@@ -1351,7 +1354,7 @@ export correlation(source1, source2, int length) =>
  * @param length Number of previous bars, a positive `int`.
  * @returns A percentage from `0` to `100`; `na` for the first `length` bars and
  * while `source` or any of the previous `length` values is `na`.
- * @category Accumulation and statistics
+ * @category Statistics
  */
 export percentrank(source, int length) =>
 	if length < 1

@@ -14,8 +14,8 @@ The typed execution library that compiler-generated TypeScript imports, also usa
 Most hosts run programs through [`Node`](./tea.md#node) from `tea` instead. A host that
 already owns synchronized rows starts from a generated [`Module`](./runtime.md#module) (the
 default export of a `tea build` file, or the result of [`loadModule`](./compiler.md#loadmodule)):
-bind it with [`Module.bind`](./runtime.md#module), create a [`Context`](./runtime.md#context), and call
-[`Context.step`](./runtime.md#context) once per row.
+bind it with [`Module.bind`](./runtime.md#module-module-bind), create a [`Context`](./runtime.md#context), and call
+[`Context.step`](./runtime.md#context-context-step) once per row.
 
 | Name                                            | Description                                                                                                                                                                                                                                                                          |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -23,7 +23,7 @@ bind it with [`Module.bind`](./runtime.md#module), create a [`Context`](./runtim
 | [`bool`](#bool-function)                        | Construct a captured Tea bool. Tea bools have no missing value, so this always holds `true` or `false`.                                                                                                                                                                              |
 | [`cloneSchema`](#cloneschema)                   | Give a caller its own schema, including nested fields and mutable metadata Maps. Object freezing and structuredClone cannot provide this ownership boundary.                                                                                                                         |
 | [`color`](#color-function)                      | Construct a captured Tea color from a [`Color`](./runtime.md#color-class), a `#RRGGBB` or `#RRGGBBAA` hex string, or `null` for the missing color.                                                                                                                                   |
-| [`contextValue`](#contextvalue)                 | Read a bind-visible builtin inside a module's generated binding calculation; hosts supply these values through [`Module.bind`](./runtime.md#module) rather than calling this.                                                                                                        |
+| [`contextValue`](#contextvalue)                 | Read a bind-visible builtin inside a module's generated binding calculation; hosts supply these values through [`Module.bind`](./runtime.md#module-module-bind) rather than calling this.                                                                                            |
 | [`decodeSchema`](#decodeschema)                 | Restore real Arrow classes from a schema-only IPC stream.                                                                                                                                                                                                                            |
 | [`encodeSchema`](#encodeschema)                 | Encode a schema with Arrow's standard IPC writer, without any data rows. Use this at a serialization boundary; execution never serializes each step.                                                                                                                                 |
 | [`enumeration`](#enumeration)                   | Preserve a generated string enum's identity and accepted member values.                                                                                                                                                                                                              |
@@ -66,7 +66,7 @@ bind it with [`Module.bind`](./runtime.md#module), create a [`Context`](./runtim
 | [`Utf8`](#utf8)                                 | Apache Arrow `Utf8`: the type of Tea strings and enum members.                                                                                                                                                                                                                       |
 | [`ModuleInputs`](#moduleinputs)                 | A Module's data requirements, including named series and contextual builtins. Inspect the bound Module: parameters can change source names and history depths.                                                                                                                       |
 | [`Numeric`](#numeric)                           | Tea's numeric kind controls promotion and integer division.                                                                                                                                                                                                                          |
-| [`Scalar`](#scalar)                             | A plain JavaScript scalar: a parameter's value, default or option, or a fixed contextual builtin value passed to [`Module.bind`](./runtime.md#module).                                                                                                                               |
+| [`Scalar`](#scalar)                             | A plain JavaScript scalar: a parameter's value, default or option, or a fixed contextual builtin value passed to [`Module.bind`](./runtime.md#module-module-bind).                                                                                                                   |
 | [`colors`](#colors)                             | Colors reuse the canonical encoding also used by constant folding.                                                                                                                                                                                                                   |
 | [`math`](#math)                                 | Numeric intrinsics preserve Tea's result kind and normalize overflow to NA.                                                                                                                                                                                                          |
 | [`runtime`](#runtime)                           | `runtime.error(message)`: stops the run with an `ExecutionError` whose code is `RUNTIME_ERROR` and whose message is the script's.                                                                                                                                                    |
@@ -121,7 +121,7 @@ Construct a captured Tea color from a [`Color`](./runtime.md#color-class), a `#R
 function color(value: string | Color | null): Value<Color | null, "color">;
 ```
 
-A string goes through [`Color.parse`](./runtime.md#color-class), so malformed hex throws a
+A string goes through [`Color.parse`](./runtime.md#color-class-color-class-parse), so malformed hex throws a
 `TypeError`.
 
 ```ts
@@ -132,7 +132,7 @@ color(null).value; // null
 
 ### contextValue
 
-Read a bind-visible builtin inside a module's generated binding calculation; hosts supply these values through [`Module.bind`](./runtime.md#module) rather than calling this.
+Read a bind-visible builtin inside a module's generated binding calculation; hosts supply these values through [`Module.bind`](./runtime.md#module-module-bind) rather than calling this.
 
 ```ts
 function contextValue(
@@ -392,52 +392,51 @@ red.equals(Color.parse("#ff0000ff")); // true
 red.withTransparency(100).a; // 0; red is unchanged
 ```
 
-**`Color.parse`**
+#### Color class Color class parse
+
+Parse the hex representation accepted by Tea color parameters and literals. Invalid input throws; callers represent a missing color with null.
 
 ```ts
 static parse(value: string): Color;
 ```
 
-Parse the hex representation accepted by Tea color parameters and literals.
-Invalid input throws; callers represent a missing color with null.
-
 **Example:** `Color.parse('#2196f380').a` is 128.
 
-**`Color.rgb`**
+#### Color class Color class rgb
+
+Construct a color with Tea's transparency percentage and rounding rules.
 
 ```ts
 static rgb(r: number, g: number, b: number, transparency?: number): Color;
 ```
 
-Construct a color with Tea's transparency percentage and rounding rules.
-
 **Example:** `Color.rgb(300, -5, 127.6, 100).toString()` is '#FF008000'.
 
-**`Color.withTransparency`**
+#### Color class Color class withTransparency
+
+Replace transparency, clamping the percentage to 0 through 100.
 
 ```ts
 withTransparency(value: number): Color;
 ```
 
-Replace transparency, clamping the percentage to 0 through 100.
-
 **Example:** `Color.parse('#FF000080').withTransparency(0).toString()` is '#FF0000'.
 
-**`Color.equals`**
+#### Color class Color class equals
+
+Compare channel values; separately constructed equal colors are equal.
 
 ```ts
 equals(other: Color | null): boolean;
 ```
 
-Compare channel values; separately constructed equal colors are equal.
+#### Color class Color class toString
 
-**`Color.toString`**
+Format canonical uppercase hex, omitting alpha when fully opaque.
 
 ```ts
 toString(): string;
 ```
-
-Format canonical uppercase hex, omitting alpha when fully opaque.
 
 ### Context
 
@@ -470,61 +469,57 @@ class Context<
 provisional: false\})` evaluates one synchronized row. Separate Contexts own
 separate histories and Heaps, even when their executable code is shared.
 
-**`Context.params`**
+#### Context Context params
+
+Captured parameter values by name, fixed for this Context's lifetime.
 
 ```ts
 readonly params: P;
 ```
 
-Captured parameter values by name, fixed for this Context's lifetime.
+#### Context Context inputs
 
-**`Context.inputs`**
+Named history readers for series inputs, builtins and request children.
 
 ```ts
 readonly inputs: I;
 ```
 
-Named history readers for series inputs, builtins and request children.
+#### Context Context outputs
 
-**`Context.outputs`**
+Named output destinations: `.set(value)` for set fields and `.append(value)` for append fields. Each call captures a detached copy of the value at that moment.
 
 ```ts
 readonly outputs: O;
 ```
 
-Named output destinations: `.set(value)` for set fields and
-`.append(value)` for append fields. Each call captures a detached copy of
-the value at that moment.
+#### Context Context state
 
-**`Context.state`**
+Root state is accessible only while main is executing.
 
 ```ts
 get state(): S;
 ```
 
-Root state is accessible only while main is executing.
+#### Context Context step
 
-**`Context.step`**
+Accept one attempt atomically. Main may return normally at any point; an exception aborts its writes and output. Final attempts advance history; successful provisional attempts retain the existing varip/Heap behavior.
 
 ```ts
 step(input: StepInput): StepResult;
 ```
 
-Accept one attempt atomically. Main may return normally at any point; an
-exception aborts its writes and output. Final attempts advance history;
-successful provisional attempts retain the existing varip/Heap behavior.
-
 ```ts
 Call with provisional true, then false for the same logical row.
 ```
 
-**`Context.dispose`**
+#### Context Context dispose
+
+Release this execution's storage; repeated disposal is harmless.
 
 ```ts
 dispose(): void;
 ```
-
-Release this execution's storage; repeated disposal is harmless.
 
 ### Field
 
@@ -602,13 +597,13 @@ class Input<T, K extends string = string> {
 
 **Example:** `const previous = close.hist(1);` cannot change when close advances.
 
-**`Input.hist`**
+#### Input Input hist
+
+Read current state at zero or committed history at a positive offset.
 
 ```ts
 hist(offset?: number | Value<number, 'int'>): Value<T, K>;
 ```
-
-Read current state at zero or committed history at a positive offset.
 
 ### MapValue
 
@@ -701,15 +696,17 @@ class Module<C extends Context = Context> {
 
 **Example:** `const configured = program.bind({length: 20}); configured !== program`.
 
-**`Module.abi`**
+#### Module Module abi
+
+Always [`RUNTIME_ABI_VERSION`](./runtime.md#constants); construction rejects any other value.
 
 ```ts
 readonly abi: typeof RUNTIME_ABI_VERSION;
 ```
 
-Always [`RUNTIME_ABI_VERSION`](./runtime.md#constants); construction rejects any other value.
+#### Module Module inputs
 
-**`Module.inputs`**
+Data the program reads; see [`ModuleInputs`](./runtime.md#moduleinputs).
 
 ```ts
 readonly inputs: {
@@ -723,17 +720,17 @@ readonly inputs: {
 };
 ```
 
-Data the program reads; see [`ModuleInputs`](./runtime.md#moduleinputs).
+#### Module Module parameters
 
-**`Module.parameters`**
+Parameter declarations; each `value` is absent until bound.
 
 ```ts
 readonly parameters: readonly Parameter[];
 ```
 
-Parameter declarations; each `value` is absent until bound.
+#### Module Module state
 
-**`Module.state`**
+Binding persistence, history requirements and independent written call sites.
 
 ```ts
 readonly state: {
@@ -741,9 +738,9 @@ readonly state: {
 };
 ```
 
-Binding persistence, history requirements and independent written call sites.
+#### Module Module outputs
 
-**`Module.outputs`**
+The schema is the sole owner of output fields, names and write modes.
 
 ```ts
 readonly outputs: {
@@ -751,60 +748,55 @@ readonly outputs: {
 };
 ```
 
-The schema is the sole owner of output fields, names and write modes.
+#### Module Module requests
 
-**`Module.requests`**
+Request children, each record holding its own child Module and context.
 
 ```ts
 readonly requests: readonly Request[];
 ```
 
-Request children, each record holding its own child Module and context.
+#### Module Module bind
 
-**`Module.bind`**
+Return an independently configured tree. A path selects request declaration names; each child retains its own parameter values and defaults.
 
 ```ts
 bind(values?: Readonly<Record<string, unknown>>, context?: ReadonlyMap<number, Scalar>, path?: readonly string[]): Module<C>;
 ```
 
-Return an independently configured tree. A path selects request declaration
-names; each child retains its own parameter values and defaults.
-
 **Example:** `program.bind({length: 20}, undefined, ['daily'])` configures only daily.
 
-**`Module.ready`**
+#### Module Module ready
+
+Configuration readiness; Node separately verifies connected source streams.
 
 ```ts
 ready(): boolean;
 ```
 
-Configuration readiness; Node separately verifies connected source streams.
+#### Module Module remaining
 
-**`Module.remaining`**
+Names of parameters that have no value yet. Defaults apply only when `bind()` runs, so before the first bind this lists every parameter.
 
 ```ts
 remaining(): readonly string[];
 ```
 
-Names of parameters that have no value yet. Defaults apply only when
-`bind()` runs, so before the first bind this lists every parameter.
+#### Module Module main
 
-**`Module.main`**
+Run the program's entry function once. [`Context.step`](./runtime.md#context-context-step) calls this inside its transaction; hosts call `step()` instead.
 
 ```ts
 main(context: C): void;
 ```
 
-Run the program's entry function once. [`Context.step`](./runtime.md#context) calls this
-inside its transaction; hosts call `step()` instead.
+#### Module Module clone
 
-**`Module.clone`**
+Copy configuration and Arrow metadata for an independent execution.
 
 ```ts
 clone(): Module<C>;
 ```
-
-Copy configuration and Arrow metadata for an independent execution.
 
 ### Schema
 
@@ -845,7 +837,9 @@ namespace Schema {
 }
 ```
 
-**`Schema.select`**
+#### Schema Schema select
+
+Construct a new Schema containing only specified fields.
 
 ```ts
 select<K extends keyof T = any>(fieldNames: K[]): Schema<{
@@ -853,21 +847,23 @@ select<K extends keyof T = any>(fieldNames: K[]): Schema<{
 }>;
 ```
 
-Construct a new Schema containing only specified fields.
-
-- `fieldNames`: Names of fields to keep.
+| Parameter    | Description              |
+| ------------ | ------------------------ |
+| `fieldNames` | Names of fields to keep. |
 
 **Returns:** A new Schema of fields matching the specified names.
 
-**`Schema.selectAt`**
+#### Schema Schema selectAt
+
+Construct a new Schema containing only fields at the specified indices.
 
 ```ts
 selectAt<K extends T = any>(fieldIndices: number[]): Schema<K>;
 ```
 
-Construct a new Schema containing only fields at the specified indices.
-
-- `fieldIndices`: Indices of fields to keep.
+| Parameter      | Description                |
+| -------------- | -------------------------- |
+| `fieldIndices` | Indices of fields to keep. |
 
 **Returns:** A new Schema of fields at the specified indices.
 
@@ -892,39 +888,39 @@ class Series<T, K extends string = string> extends Input<T, K> {
 
 **Example:** `total.init(() => float(0)); total.set(total.hist(0).add(close.hist(0)));`
 
-**`Series.set`**
+#### Series Series set
+
+Stage a value in the current transaction. Reads in the same step see this write.
 
 ```ts
 set(value: Value<T, K>): void;
 ```
 
-Stage a value in the current transaction. Reads in the same step see this write.
-
 **Example:** `total.set(total.hist(0).add(float(1)))` leaves earlier captures unchanged.
 
-**`Series.init`**
+#### Series Series init
+
+Evaluate a persistent initializer only on its first reached execution.
 
 ```ts
 init(initial: () => Value<T, K>): void;
 ```
 
-Evaluate a persistent initializer only on its first reached execution.
+#### Series Series needsInit
 
-**`Series.needsInit`**
+Test the lexical initializer guard without adding a function boundary.
 
 ```ts
 needsInit(): boolean;
 ```
 
-Test the lexical initializer guard without adding a function boundary.
+#### Series Series initialize
 
-**`Series.initialize`**
+Stage a first initialization after its guarded expression completes.
 
 ```ts
 initialize(value: Value<T, K>): void;
 ```
-
-Stage a first initialization after its guarded expression completes.
 
 ### TimestampMillisecond
 
@@ -1142,75 +1138,77 @@ class Value<T, K extends string = string> {
 
 **Example:** `int(7).div(int(2)).value` is 3; dividing by float(2) produces 3.5.
 
-**`Value.byteSize`**
+#### Value Value byteSize
+
+Logical size of this value's carrier; child allocations are counted separately.
 
 ```ts
 get byteSize(): number;
 ```
 
-Logical size of this value's carrier; child allocations are counted separately.
+#### Value Value sameType
 
-**`Value.sameType`**
+Compare declared value domains without a numeric descriptor lookup.
 
 ```ts
 sameType(other: Value<unknown>): boolean;
 ```
 
-Compare declared value domains without a numeric descriptor lookup.
+#### Value Value assertStored
 
-**`Value.assertStored`**
+Validate raw values where they enter a declared binding or managed collection.
 
 ```ts
 assertStored(value: RawValue, reader?: Pick<Heap, 'read'>): void;
 ```
 
-Validate raw values where they enter a declared binding or managed collection.
+#### Value Value add
 
-**`Value.add`**
+Add captured numbers. A float operand promotes the result; neither operand changes.
 
 ```ts
 add<N extends Numeric, M extends Numeric>(this: Value<number, N>, other: Value<number, M>): Value<number, N extends 'float' ? 'float' : M>;
 ```
 
-Add captured numbers. A float operand promotes the result; neither operand changes.
-
 **Example:** `int(2).add(float(0.5)).value` is 2.5.
 
-**`Value.div`**
+#### Value Value div
+
+Divide using Tea rules: integer division truncates toward zero and zero yields NA.
 
 ```ts
 div<N extends Numeric, M extends Numeric>(this: Value<number, N>, other: Value<number, M>): Value<number, N extends 'float' ? 'float' : M>;
 ```
 
-Divide using Tea rules: integer division truncates toward zero and zero yields NA.
-
 **Example:** `int(-7).div(int(2)).value` is -3.
 
-**`Value.eq`**
+#### Value Value eq
+
+Equality involving a missing value is false, including two missing values.
 
 ```ts
 eq(other: Value<T extends string ? string | null : T, K extends Numeric ? Numeric : K>): Value<boolean, 'bool'>;
 ```
 
-Equality involving a missing value is false, including two missing values.
+#### Value Value ne
 
-**`Value.ne`**
+Inequality involving a missing value is also false. Use na() to test missingness.
 
 ```ts
 ne(other: Value<T extends string ? string | null : T, K extends Numeric ? Numeric : K>): Value<boolean, 'bool'>;
 ```
 
-Inequality involving a missing value is also false. Use na() to test missingness.
+#### Value Value require
 
-**`Value.require`**
+Validate the captured receiver before evaluating mutating method arguments.
 
 ```ts
 require(this: Value<Ref<unknown> | null, K>): Value<T, K>;
 ```
 
-Validate the captured receiver before evaluating mutating method arguments.
+#### Value Value field
 
-**`Value.field`**
+Capture a named field location. Null reads use the generated class's empty field value; mutation requires a non-null receiver before RHS evaluation.
 
 ```ts
 field<N extends Extract<keyof (NonNullable<T> extends Ref<infer S> ? S : never), string>>(name: N): {
@@ -1219,12 +1217,11 @@ field<N extends Extract<keyof (NonNullable<T> extends Ref<infer S> ? S : never),
 };
 ```
 
-Capture a named field location. Null reads use the generated class's empty
-field value; mutation requires a non-null receiver before RHS evaluation.
-
 **Example:** `point.require().field('x').set(float(2))` stages a field write.
 
-**`Value.get`**
+#### Value Value get
+
+Read a collection element or a tuple member as a captured value.
 
 ```ts
 get<I extends number>(...args: T extends readonly Value<unknown>[] ? [
@@ -1239,11 +1236,11 @@ get<I extends number>(...args: T extends readonly Value<unknown>[] ? [
 ] : never): T extends readonly Value<unknown>[] ? T[I] : T extends ArrayValue<infer E> | MatrixValue<infer E> ? E : T extends MapValue<Value<unknown>, infer E> ? E : never;
 ```
 
-Read a collection element or a tuple member as a captured value.
-
 **Example:** `prices.get(int(0))` reads the first array item; `pair.get(1)` reads a tuple member.
 
-**`Value.entries`**
+#### Value Value entries
+
+Snapshot iteration membership before the loop; referenced struct bodies stay live.
 
 ```ts
 entries(): readonly (T extends ArrayValue<infer E> ? E : T extends MapValue<infer Key, infer Item> ? readonly [
@@ -1251,8 +1248,6 @@ entries(): readonly (T extends ArrayValue<infer E> ? E : T extends MapValue<infe
     Item
 ] : never)[];
 ```
-
-Snapshot iteration membership before the loop; referenced struct bodies stay live.
 
 ## Interfaces
 
@@ -1272,13 +1267,13 @@ class Bool extends DataType<Type.Bool> {
 }
 ```
 
-**`Bool.toString`**
+#### Bool interface Bool interface toString
+
+Returns a string representation of an object.
 
 ```ts
 toString(): string;
 ```
-
-Returns a string representation of an object.
 
 ### Frame
 
@@ -1331,13 +1326,13 @@ class List<T extends DataType = any> extends DataType<
 }
 ```
 
-**`List.toString`**
+#### List List toString
+
+Returns a string representation of an object.
 
 ```ts
 toString(): string;
 ```
-
-Returns a string representation of an object.
 
 ### Map\_
 
@@ -1401,13 +1396,13 @@ class Map_<
 }
 ```
 
-**`Map_.toString`**
+#### Map* Map* toString
+
+Returns a string representation of an object.
 
 ```ts
 toString(): string;
 ```
-
-Returns a string representation of an object.
 
 ### Ref
 
@@ -1449,41 +1444,37 @@ interface StepInput {
 }
 ```
 
-**`StepInput.series`**
+#### StepInput StepInput series
+
+One number per `module.inputs.series` entry, in that order; `NaN` is na.
 
 ```ts
 readonly series: readonly Stored[];
 ```
 
-One number per `module.inputs.series` entry, in that order; `NaN` is na.
+#### StepInput StepInput builtins
 
-**`StepInput.builtins`**
+One value per entry of `module.inputs.builtins`, in that order. A builtin fixed through `Module.bind` uses its bound value instead.
 
 ```ts
 readonly builtins: readonly Stored[];
 ```
 
-One value per entry of `module.inputs.builtins`, in that order. A builtin
-fixed through `Module.bind` uses its bound value instead.
+#### StepInput StepInput requests
 
-**`StepInput.requests`**
+One entry per `module.requests` record, in that order: the child's value for a sample request, or the array of collected values for a collect request.
 
 ```ts
 readonly requests: readonly (Stored | readonly Stored[])[];
 ```
 
-One entry per `module.requests` record, in that order: the child's value
-for a sample request, or the array of collected values for a collect
-request.
+#### StepInput StepInput provisional
 
-**`StepInput.provisional`**
+True for a provisional attempt: it replaces same-index values but does not advance committed history, so the next step evaluates the same row again.
 
 ```ts
 readonly provisional: boolean;
 ```
-
-True for a provisional attempt: it replaces same-index values but does not
-advance committed history, so the next step evaluates the same row again.
 
 ### StepResult
 
@@ -1496,22 +1487,21 @@ interface StepResult {
 }
 ```
 
-**`StepResult.outputs`**
+#### StepResult StepResult outputs
+
+One cell per output field, in output-schema order: a set field holds its value or `null`, and an append field holds the values appended this step.
 
 ```ts
 readonly outputs: readonly unknown[];
 ```
 
-One cell per output field, in output-schema order: a set field holds its
-value or `null`, and an append field holds the values appended this step.
+#### StepResult StepResult provisional
 
-**`StepResult.provisional`**
+The `provisional` flag of the step input that produced these cells.
 
 ```ts
 readonly provisional: boolean;
 ```
-
-The `provisional` flag of the step input that produced these cells.
 
 ### Struct interface
 
@@ -1531,13 +1521,13 @@ class Struct<T extends TypeMap = any> extends DataType<Type.Struct, T> {
 }
 ```
 
-**`Struct.toString`**
+#### Struct interface Struct interface toString
+
+Returns a string representation of an object.
 
 ```ts
 toString(): string;
 ```
-
-Returns a string representation of an object.
 
 ### Utf8
 
@@ -1557,13 +1547,13 @@ class Utf8 extends DataType<Type.Utf8> {
 }
 ```
 
-**`Utf8.toString`**
+#### Utf8 Utf8 toString
+
+Returns a string representation of an object.
 
 ```ts
 toString(): string;
 ```
-
-Returns a string representation of an object.
 
 ## Types
 
@@ -1585,7 +1575,7 @@ type Numeric = "int" | "float";
 
 ### Scalar
 
-A plain JavaScript scalar: a parameter's value, default or option, or a fixed contextual builtin value passed to [`Module.bind`](./runtime.md#module).
+A plain JavaScript scalar: a parameter's value, default or option, or a fixed contextual builtin value passed to [`Module.bind`](./runtime.md#module-module-bind).
 
 ```ts
 type Scalar = number | string | boolean | null;
