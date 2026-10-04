@@ -17,6 +17,14 @@ preludes, and trade components are explicit imports.
   input.series("close")`, the one exported-variable form: an alias runs no
   per-bar code and owns no state or history. Scripts see every prelude name;
   a library resolves only the input aliases, where lexical lookup fails.
+- Every `library(...)` call, export, and member of an exported type carries a
+  `/** */` doc comment directly above it — a one-sentence summary, optional
+  Markdown, then tags: `@param`, `@returns`, `@formula` (TeX), `@warmup`,
+  `@example` (a caption, a `tea` program and an optional `csv` input, which
+  generation runs), `@pine`, `@see` and `@category`, whose value is the
+  sidebar label. `{@link name}` links another documented name. Tests fail
+  without docs, render every formula with KaTeX and compile every example.
+  Plain `//` comments are maintainer notes.
 - Exported functions, interfaces, types, and enums form the public surface;
   unexported declarations resolve only inside the owning library. Interfaces
   are checker-only structural constraints: receiver mode, positional arity and
@@ -40,6 +48,7 @@ preludes, and trade components are explicit imports.
   trade coordinator and enforce it with catalog ownership tests.
 - `tests/fixtures/checker/ta-suite.tea` must call every export of ta; extend it in
   the same change that adds a function.
-- Known gaps tracked in ta.tea's header: median/mode/percentile\__/valuewhen
-  need collections; the ta._ namespace VARIABLES (obv, vwap, accdist, …)
-  need computed library exports with per-bar state, beyond input aliases.
+- Pine Script names Tea lacks are listed in the `@pine` of each library's
+  doc comment, which the Pine Script compatibility page shows. ta's variables
+  (`obv`, `accdist`, …) are computed exports: `export name = expression`,
+  read-only, computed once per bar by the reading program.

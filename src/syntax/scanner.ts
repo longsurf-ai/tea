@@ -449,8 +449,8 @@ export class Scanner {
       this.source.nextch();
     }
     // A block comment spanning lines terminates the open statement, exactly
-    // like a line break.
-    if (sawLineBreak && this.tokensOnStatement) {
+    // like a line break: so inside parentheses or brackets it does not.
+    if (sawLineBreak && this.groupDepth === 0 && this.tokensOnStatement) {
       this.pendingNewline = true;
       this.newlinePos = start;
       this.tokensOnStatement = false;

@@ -388,6 +388,66 @@ describe('Tea strategy components end to end', () => {
     });
   });
 
+  test('an order sized to spend exactly the cash fills although q * p rounds past it', async () => {
+    // At 15, 1000 / 15 * 15 is 1000.0000000000001 in floating point.
+    const source = [
+      '',
+      'import broker',
+      'import portfolio',
+      'import trade',
+      'last_bar = input.int(0)',
+      'var entry = trade.nextOpen(broker.new(), portfolio.new(initialCash = 1000.0))',
+      'var target = trade.nextOpen(broker.new(), portfolio.new(initialCash = 1000.0))',
+      'entry.begin_bar(open, bar_index)',
+      'target.begin_bar(open, bar_index)',
+      'if bar_index == 0',
+      '    entry.entry("Long", trade.Direction.long, sizing = trade.percentOfEquity(100.0))',
+      '    target.rebalance("All", trade.targetPercentOfEquity(100.0))',
+      'entry.end_bar(close, bar_index == last_bar)',
+      'target.end_bar(close, bar_index == last_bar)',
+      'emit "output0" entry.position_quantity()',
+      'emit "output1" target.position_quantity()',
+    ].join('\n');
+    const {sink} = await execute(
+      source,
+      ['open,close', '15,15', '15,15', ''].join('\n'),
+    );
+    expectNumbersClose(valuesFor(sink, 1), [0, 1000 / 15]);
+    expectNumbersClose(valuesFor(sink, 2), [0, 1000 / 15]);
+  });
+
+  test('an OHLC exit waits for the next bar after a stop entry filled inside its bar', async () => {
+    // The open of 100 came before the entry at 105, so it cannot fill the
+    // exit at 101 on that bar; the next bar's low of 100 does.
+    const source = [
+      '',
+      'import broker',
+      'import portfolio',
+      'import trade',
+      'last_bar = input.int(0)',
+      'var strat = trade.ohlc(broker.new(), portfolio.new(initialCash = 1000.0))',
+      'm = strat.begin_bar(open, high, low, bar_index)',
+      'if bar_index == 0',
+      '    strat.entry("Long", trade.Direction.long, qty = 1.0, stop = 105.0)',
+      '    strat.exit("Stop", fromEntry = "Long", stop = 101.0, activateOnEntryBar = true)',
+      'strat.end_bar(close, bar_index == last_bar)',
+      'emit "output0" na(m.exit) ? -1.0 : m.exit.price',
+      'emit "output1" strat.position_quantity()',
+    ].join('\n');
+    const {sink} = await execute(
+      source,
+      [
+        'open,high,low,close',
+        '100,100,100,100',
+        '100,106,99,105',
+        '104,104,100,101',
+        '',
+      ].join('\n'),
+    );
+    expectNumbersClose(valuesFor(sink, 1), [-1, -1, 101]);
+    expectNumbersClose(valuesFor(sink, 2), [0, 1, 0]);
+  });
+
   test('applies the configured long-margin gate only when margin is enabled', async () => {
     const source = [
       '',
@@ -1368,6 +1428,68 @@ describe('Tea strategy components end to end', () => {
     );
   });
 
+  test('an exit for an unknown entry is rejected for the account state, before its prices', async () => {
+    // While flat there is no entry side, so stop 5 and target 30 cannot be
+    // judged; the missing entry is the reason.
+    const source = [
+      '',
+      'import broker',
+      'import portfolio',
+      'import trade',
+      'last_bar = input.int(0)',
+      'var strat = trade.ohlc(broker.new(), portfolio.new(initialCash = 1000.0))',
+      'strat.begin_bar(open, high, low, bar_index)',
+      'if bar_index == 0',
+      '    strat.exit("X", fromEntry = "Nobody", stop = 5.0, target = 30.0)',
+      'strat.end_bar(close, bar_index == last_bar)',
+    ].join('\n');
+    const {program, sink} = await execute(
+      source,
+      ['open,high,low,close', '10,10,10,10', '10,10,10,10', ''].join('\n'),
+    );
+    expect(effectField(program, sink, 'OrderRejected', 0, 'reason')).toBe(
+      'invalidAccountState',
+    );
+  });
+
+  test('cancelling a pending reversal entry also cancels its exit while a position is open', async () => {
+    // A short entry with its own stop waits while the long is open; cancelling
+    // it must not leave that stop attached, or a new exit for the long would
+    // be rejected as pending.
+    const source = [
+      '',
+      'import broker',
+      'import portfolio',
+      'import trade',
+      'last_bar = input.int(0)',
+      'var strat = trade.ohlc(broker.new(), portfolio.new(initialCash = 1000.0))',
+      'strat.begin_bar(open, high, low, bar_index)',
+      'if bar_index == 0',
+      '    strat.entry("Long", trade.Direction.long, qty = 1.0)',
+      'if bar_index == 1',
+      '    strat.entry("Short", trade.Direction.short, qty = 1.0, stop = 5.0)',
+      '    strat.exit("ShortStop", fromEntry = "Short", stop = 20.0)',
+      'cancelled = bar_index == 2 ? strat.cancel("Short") : 0',
+      'protect = bar_index == 2 ? strat.exit("LongStop", fromEntry = "Long", stop = 8.0) : na',
+      'strat.end_bar(close, bar_index == last_bar)',
+      'emit "output0" cancelled',
+      'emit "output1" na(protect) ? 0 : 1',
+    ].join('\n');
+    const {sink} = await execute(
+      source,
+      [
+        'open,high,low,close',
+        '10,10,10,10',
+        '10,10,10,10',
+        '10,10,10,10',
+        '10,10,10,10',
+        '',
+      ].join('\n'),
+    );
+    expect(valuesFor(sink, 1)).toEqual([0, 0, 2, 0]);
+    expect(valuesFor(sink, 2)).toEqual([0, 0, 1, 0]);
+  });
+
   test('keeps commission inside a percent-of-equity cash budget when requested', async () => {
     const source = [
       '',
@@ -1757,6 +1879,35 @@ describe('Tea strategy components end to end', () => {
         ([row, type]) => row === 1 && type === 'FillExecuted',
       ),
     ).toHaveLength(2);
+  });
+
+  test('a rebalance capped at the buying power fills at any price', async () => {
+    // With a rate commission, the capped quantity's recomputed cost used to
+    // round just past the cash at some opens and reject the whole order.
+    const opens = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 120];
+    for (const price of opens) {
+      const {sink} = await execute(
+        [
+          '',
+          'import broker',
+          'import portfolio',
+          'import trade',
+          'var strat = trade.nextOpen(broker.new(commission = broker.commissionRate(0.001)), portfolio.new(initialCash = 10000.0))',
+          'strat.begin_bar(open, bar_index)',
+          'if bar_index == 0',
+          '    strat.rebalance("All in", trade.targetPercentOfEquity(100.0))',
+          'strat.mark(close)',
+          'emit "output0" strat.position_quantity()',
+        ].join('\n'),
+        [
+          'open,high,low,close',
+          `${price},${price},${price},${price}`,
+          `${price},${price},${price},${price}`,
+          '',
+        ].join('\n'),
+      );
+      expectNumbersClose(valuesFor(sink, 1), [0, 10000 / (price * 1.001)]);
+    }
   });
 
   test('resolves target-percent rebalances at the open and preserves one pyramiding slot across adds', async () => {

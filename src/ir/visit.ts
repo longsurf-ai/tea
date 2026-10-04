@@ -171,9 +171,6 @@ function reachProgram(program: Program): Reach {
     noteName(global, reach);
   }
   for (const param of program.params) {
-    if (param.defaultValue?.kind === ParamDefaultKind.Series) {
-      reach.series.add(param.defaultValue.series);
-    }
     visitDepth(param.depth, reach);
     visitExpr(param.active, reach);
   }

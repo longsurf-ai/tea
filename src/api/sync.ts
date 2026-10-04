@@ -104,13 +104,23 @@ const wait = (): Wait => WAIT;
  * `consume` errors the output.
  * Unsubscribing from the output unsubscribes from both.
  *
- * ## Examples
+ * @param target The notifier. Each of its values produces one output value,
+ * in order, once the projector can serve it.
+ * @param project Maps a target value and the buffered source values to
+ * `[value: U, consume: integer]`, or returns `wait()` to wait for more
+ * source values. `wait` is its third argument.
+ * Defaults to emitting the whole buffer.
+ * @param continueAfterSourceComplete Keep serving target values after the
+ * source completes. Defaults to `false`.
+ * @returns A function that returns an Observable emitting one projected value
+ * per target value.
  *
- * Default projection
- *
+ * @example
+ * Without a projector, a notification emits everything buffered since the
+ * previous one, and waits while the buffer is empty.
  * ```ts
  * import {Subject} from 'rxjs';
- * import {sync} from './sync';
+ * import {sync} from 'tea';
  *
  * const source = new Subject<number>();
  * const target = new Subject<void>();
@@ -123,8 +133,8 @@ const wait = (): Wait => WAIT;
  * source.next(3); // 3
  * ```
  *
- * Consume one buffered value per notification
- *
+ * @example
+ * This projector consumes one buffered value per notification.
  * ```ts
  * source
  *   .pipe(
@@ -140,16 +150,25 @@ const wait = (): Wait => WAIT;
  * target.next(); // 2
  * ```
  *
- * Wait until two values are buffered, then take both
- *
+ * @example
+ * This projector waits until two values are buffered, then takes both.
  * ```ts
- * sync(target, (_, buffer, wait) =>
- *   buffer.length < 2 ? wait() : [buffer.slice(0, 2), 2],
- * );
+ * source
+ *   .pipe(
+ *     sync(target, (_, buffer, wait) =>
+ *       buffer.length < 2 ? wait() : [buffer.slice(0, 2), 2],
+ *     ),
+ *   )
+ *   .subscribe(x => console.log(x));
+ *
+ * source.next(1);
+ * target.next(); // queued
+ * source.next(2); // [1, 2]
  * ```
  *
- * Carry the newest source value forward past source completion
- *
+ * @example
+ * With `continueAfterSourceComplete`, this projector keeps serving the newest
+ * source value after the source completes.
  * ```ts
  * source
  *   .pipe(
@@ -173,17 +192,6 @@ const wait = (): Wait => WAIT;
  * ```
  *
  * @see `zip`, `buffer`, `sample` in rxjs
- *
- * @param target The notifier. Each of its values produces one output value,
- * in order, once the projector can serve it.
- * @param project Maps a target value and the buffered source values to
- * `[value: U, consume: integer]`, or returns `wait()` to wait for more
- * source values. `wait` is its third argument.
- * Defaults to emitting the whole buffer.
- * @param continueAfterSourceComplete Keep serving target values after the
- * source completes. Defaults to `false`.
- * @return A function that returns an Observable emitting one projected value
- * per target value.
  */
 export function sync<S, T, U = S | readonly S[]>(
   target: Observable<T>,

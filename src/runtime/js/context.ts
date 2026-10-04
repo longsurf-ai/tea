@@ -27,7 +27,12 @@ export type {StepInput} from './state-update';
 
 /** Detached output cells from one accepted attempt. */
 export interface StepResult {
+  /**
+   * One cell per output field, in output-schema order: a set field holds its
+   * value or `null`, and an append field holds the values appended this step.
+   */
   readonly outputs: readonly unknown[];
+  /** The `provisional` flag of the step input that produced these cells. */
   readonly provisional: boolean;
 }
 
@@ -45,8 +50,15 @@ export class Context<
   S extends object = object,
   O extends object = object,
 > {
+  /** Captured parameter values by name, fixed for this Context's lifetime. */
   readonly params: P;
+  /** Named history readers for series inputs, builtins and request children. */
   readonly inputs: I;
+  /**
+   * Named output destinations: `.set(value)` for set fields and
+   * `.append(value)` for append fields. Each call captures a detached copy of
+   * the value at that moment.
+   */
   readonly outputs: O;
   private readonly heap = new ArenaHeap();
   private readonly structs: StructStorageRuntime;

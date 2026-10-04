@@ -9,25 +9,61 @@
 
 declare const clock: unique symbol;
 
+/**
+ * A regular sampling period in nanoseconds, or {@link i} when the period is
+ * irregular or unknown. A {@link DataStream} carries one Clock.
+ *
+ * Build a period by multiplying a unit constant, as in `(5n * m) as Clock`, or
+ * convert a Tea timeframe with {@link timeframeClock}. A Clock describes
+ * cadence only; event time travels in a `time` field.
+ *
+ * Binding requires every root stream clock other than `i` to agree, and
+ * `Node.to()` throws when a request child's clock and its request
+ * timeframe's clock are both known and differ. Unless both streams carry
+ * event time, a collect request groups `parentClock / childClock` child
+ * values per parent step when both clocks are known and divide exactly.
+ */
 export type Clock = bigint & {
   readonly [clock]: true;
 };
 
-// Defining irregular clock as 0 has the benefit of not
-// being able to be divided by any other clock.
+/**
+ * The irregular or unknown clock, `0n`. Clock checks skip it, and it never
+ * sets a collect group size.
+ */
 export const i: Clock = 0n as Clock;
+/** One nanosecond, the Clock unit (`1n`). */
 export const ns: Clock = 1n as Clock;
+/** One microsecond: 1,000 nanoseconds. */
 export const us: Clock = (1000n * ns) as Clock;
+/** One millisecond: 1,000 microseconds. */
 export const ms: Clock = (1000n * us) as Clock;
+/** One second: 1,000 milliseconds. */
 export const s: Clock = (1000n * ms) as Clock;
+/** One minute: 60 seconds. */
 export const m: Clock = (60n * s) as Clock;
+/** One hour: 60 minutes. */
 export const h: Clock = (60n * m) as Clock;
+/** One day: 24 hours. */
 export const d: Clock = (24n * h) as Clock;
+/** One week: 7 days. */
 export const w: Clock = (7n * d) as Clock;
+/** One month, fixed at 30 days. */
 export const M: Clock = (30n * d) as Clock;
+/** One year, fixed at 360 days. */
 export const y: Clock = (360n * d) as Clock;
 
-/** Convert one concrete Tea timeframe to its regular clock, or `i`. */
+/**
+ * Convert one concrete Tea timeframe to its regular clock, or `i`.
+ *
+ * It accepts two spellings: a positive whole number of minutes, such as
+ * `'60'` for {@link h} or `'240'` for four hours, and an optional positive
+ * count followed by `S`, `D`, `W` or `M`, where `M` is {@link M}, 30 days.
+ * Any other text, such as `'1H'`, `'1h'` or `''`, returns {@link i}, with no
+ * error.
+ * @example `timeframeClock('60') === h`, `timeframeClock('1D') === d` and
+ * `timeframeClock('1H') === i`.
+ */
 export function timeframeClock(timeframe: string): Clock {
   const match = /^([1-9]\d*)?([SDWM])$/.exec(timeframe);
   if (/^[1-9]\d*$/.test(timeframe)) {

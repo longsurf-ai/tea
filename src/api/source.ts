@@ -19,12 +19,20 @@ export interface Source<T = Record<string, unknown>> {
 
 /* CSV Source */
 
+/**
+ * One CSV row as text, keyed by column name: the row type of a CSV stream
+ * opened without a schema, where every column is a non-nullable Utf8 field.
+ *
+ * @example `await fromCSV<CSVRow>('prices.csv')` is a stream of rows such as
+ * `{symbol: 'AAPL', close: '12.5'}`.
+ */
 export type CSVRow = Readonly<Record<string, string>>;
 
 /**
  * A cold CSV source with declared Arrow fields. CSV text is converted to each
  * field's scalar type before validation; undeclared CSV columns are ignored.
- * No file is opened by the constructor. `open()` additionally inspects extent.
+ * No file is opened by the constructor. `open()` reads the header first when
+ * no schema is supplied.
  *
  * @example
  * ```ts
@@ -53,8 +61,8 @@ export class CSVSource<T = Record<string, unknown>> implements Source<T> {
   }
 
   /**
-   * Inspect the header, then return a cold source. Without an explicit schema
-   * every discovered field is non-nullable Arrow Utf8.
+   * Return a cold source. Without an explicit schema it first reads the
+   * header, and every discovered field is non-nullable Arrow Utf8.
    * @example `(await CSVSource.open('prices.csv')).schema.fields[0].name` is the first header.
    */
   static async open<T = Record<string, unknown>>(
@@ -100,7 +108,9 @@ async function inspectCSV(path: string): Promise<Schema> {
           record.some(header => typeof header !== 'string' || header === '') ||
           new Set(record).size !== record.length
         ) {
-          throw new Error(`CSV source '${path}' has an invalid header`);
+          throw new Error(
+            `CSV source '${path}' needs a header of distinct, non-empty column names`,
+          );
         }
         schema = new Schema(
           record.map(header => new Field(header, new Utf8(), false)),
@@ -116,7 +126,15 @@ async function inspectCSV(path: string): Promise<Schema> {
 }
 
 /**
- * Inspect a CSV file and create its finite, cold DataStream.
+ * Create a finite, cold DataStream over a CSV file, reading its header first
+ * when no schema is supplied.
+ *
+ * Cells decode to the schema's field types. An empty cell is `null` in a
+ * nullable field, `NaN` in a float field (Tea reads it as `na`), and an error
+ * in an integer, timestamp or bool field. A timestamp cell must hold numeric
+ * epoch milliseconds: text such as an ISO-8601 date fails the stream with a
+ * `TypeError` ("CSV field 'time' must be numeric"). Read such a column as
+ * `Utf8` and convert it, as the second example shows.
  * @example
  * ```ts
  * import {Field, Float64, Schema} from 'apache-arrow';
@@ -124,6 +142,23 @@ async function inspectCSV(path: string): Promise<Schema> {
  *   new Field('close', new Float64(), false),
  * ]));
  * prices.subscribe({next: row => console.log(row.close)}); // CSV '12.5' becomes 12.5.
+ * ```
+ * @example
+ * ISO-8601 times, read as text and converted to epoch milliseconds:
+ * ```ts
+ * import {Field, Float64, Schema, TimestampMillisecond, Utf8} from 'apache-arrow';
+ * import {map} from 'rxjs';
+ * const text = await fromCSV<{time: string; close: number}>('prices.csv', new Schema([
+ *   new Field('time', new Utf8(), false),
+ *   new Field('close', new Float64(), false),
+ * ]));
+ * const prices = new DataStream(
+ *   new Schema([
+ *     new Field('time', new TimestampMillisecond(), false),
+ *     new Field('close', new Float64(), false),
+ *   ]),
+ *   text.asObservable().pipe(map(row => ({time: Date.parse(row.time), close: row.close}))),
+ * );
  * ```
  */
 export async function fromCSV<T = Record<string, unknown>>(
@@ -160,7 +195,18 @@ function csvCell(field: Field, value: unknown): unknown {
   if (field.nullable && value === '') return null;
   const type = field.type;
   if (DataType.isUtf8(type) || DataType.isLargeUtf8(type)) return value;
-  if (DataType.isInt(type) && type.bitWidth === 64) return BigInt(value);
+  // An empty cell is a missing value: NaN where the type has one, an error
+  // where it has none. `Number('')` would otherwise read it as 0.
+  if (value.trim() === '') {
+    if (DataType.isFloat(type)) return Number.NaN;
+    throw new TypeError(`CSV field '${field.name}' is empty`);
+  }
+  if (DataType.isInt(type) && type.bitWidth === 64) {
+    if (!/^\s*-?\d+\s*$/.test(value)) {
+      throw new TypeError(`CSV field '${field.name}' must be an integer`);
+    }
+    return BigInt(value);
+  }
   if (
     DataType.isFloat(type) ||
     DataType.isInt(type) ||

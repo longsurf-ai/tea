@@ -14,49 +14,71 @@ name e#1: var series float depth=none
 name x: perBar series float depth=none
 func ta.ema(source: series float, length: const int): series float
   body: BlockExpr: series float
+    IfExpr: series void
+      cond: Const false: const bool
+      then: BlockExpr: const void
+        CallNative runtime.error write: series void
+          Const "ta.ema: length must be at least 1": const string
     Assign
       target: Read name:alpha: const float
       value: Const 0.2: const float
     InitName e
       Const na: const float
-    Assign
-      target: Read name:e: series float
-      value: IfExpr: series float
-        cond: CallNative na pure: series bool
-          Read name:e: series float
-        then: BlockExpr: series float
-          value: Read name:source: series float
-        else: BlockExpr: series float
-          value: Binary Add: series float
-            Binary Mul: series float
-              Const 0.2: const float
-              Read name:source: series float
-            Binary Mul: series float
-              Const 0.8: const float
+    IfExpr: series float
+      cond: Unary Not: series bool
+        CallNative na pure: series bool
+          Read name:source: series float
+      then: BlockExpr: series float
+        Assign
+          target: Read name:e: series float
+          value: IfExpr: series float
+            cond: CallNative na pure: series bool
               Read name:e: series float
+            then: BlockExpr: series float
+              value: Read name:source: series float
+            else: BlockExpr: series float
+              value: Binary Add: series float
+                Binary Mul: series float
+                  Const 0.2: const float
+                  Read name:source: series float
+                Binary Mul: series float
+                  Const 0.8: const float
+                  Read name:e: series float
+        value: Read name:e: series float
     value: Read name:e: series float
 func ta.ema(source#1: series float, length#1: const int): series float
   body: BlockExpr: series float
+    IfExpr: series void
+      cond: Const false: const bool
+      then: BlockExpr: const void
+        CallNative runtime.error write: series void
+          Const "ta.ema: length must be at least 1": const string
     Assign
       target: Read name:alpha#1: const float
       value: Const 0.09090909090909091: const float
     InitName e#1
       Const na: const float
-    Assign
-      target: Read name:e#1: series float
-      value: IfExpr: series float
-        cond: CallNative na pure: series bool
-          Read name:e#1: series float
-        then: BlockExpr: series float
-          value: Read name:source#1: series float
-        else: BlockExpr: series float
-          value: Binary Add: series float
-            Binary Mul: series float
-              Const 0.09090909090909091: const float
-              Read name:source#1: series float
-            Binary Mul: series float
-              Const 0.9090909090909091: const float
+    IfExpr: series float
+      cond: Unary Not: series bool
+        CallNative na pure: series bool
+          Read name:source#1: series float
+      then: BlockExpr: series float
+        Assign
+          target: Read name:e#1: series float
+          value: IfExpr: series float
+            cond: CallNative na pure: series bool
               Read name:e#1: series float
+            then: BlockExpr: series float
+              value: Read name:source#1: series float
+            else: BlockExpr: series float
+              value: Binary Add: series float
+                Binary Mul: series float
+                  Const 0.09090909090909091: const float
+                  Read name:source#1: series float
+                Binary Mul: series float
+                  Const 0.9090909090909091: const float
+                  Read name:e#1: series float
+        value: Read name:e#1: series float
     value: Read name:e#1: series float
 func double(x: series float): series float
   body: BlockExpr: series float

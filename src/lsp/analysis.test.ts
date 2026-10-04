@@ -99,48 +99,80 @@ describe('diagnostics', () => {
 });
 
 describe('errors positioned in a library body', () => {
-  const IN_EMA =
-    "in ta.ema (tea-lib/ta.tea:27:24): operator '*' requires numeric operands (got float and string)";
+  // Located in the shipped source, so doc comments added above ta.change
+  // never move this expectation. Its untyped `source` lets a string reach the
+  // subtraction in its body.
+  const ta = readFileSync(
+    fileURLToPath(new URL('../tea-lib/ta.tea', import.meta.url)),
+    'utf8',
+  ).split('\n');
+  const changeLine = ta.findIndex(line =>
+    line.includes('source - source[length]'),
+  );
+  const changeColumn = ta[changeLine]!.indexOf('source - source[length]') + 1;
+  const IN_CHANGE = `in ta.change (tea-lib/ta.tea:${changeLine + 1}:${changeColumn}): operator '-' requires numeric operands (got string and string)`;
 
   test('surface on the call in this document that caused them', () => {
-    expect(rendered(analyzeText('e = ta.ema("a", 14)\n'))).toEqual([
-      `0:4-10 ${IN_EMA}`,
+    expect(rendered(analyzeText('e = ta.change("a")\n'))).toEqual([
+      `0:4-13 ${IN_CHANGE}`,
     ]);
   });
 
   test('only the call with the bad signature is marked', () => {
     const analysis = analyzeText(
-      'good = ta.ema(close, 14)\nbad = ta.ema("a", 14)\nplot("p", good)\n',
+      'good = ta.change(close)\nbad = ta.change("a")\nplot("p", good)\n',
     );
-    expect(rendered(analysis)).toEqual([`1:6-12 ${IN_EMA}`]);
+    expect(rendered(analysis)).toEqual([`1:6-15 ${IN_CHANGE}`]);
+  });
+
+  test('an invalid constant length is marked on the call that passes it', () => {
+    const [line, ...rest] = rendered(analyzeText('s = ta.sma(close, 0)\n'));
+    expect(rest).toEqual([]);
+    expect(line).toMatch(
+      /^0:4-10 in ta\.sma \(tea-lib\/ta\.tea:\d+:\d+\): ta\.sma: length must be at least 1$/,
+    );
+  });
+
+  test('a function that rejects its own argument names itself, not the functions it calls', () => {
+    // ta.bb(close, 0, 2) would also call ta.sma and ta.stdev with length 0.
+    expect(rendered(analyzeText('[m, u, l] = ta.bb(close, 0, 2)\n'))).toEqual([
+      expect.stringMatching(
+        /^0:12-17 in ta\.bb \(tea-lib\/ta\.tea:\d+:\d+\): ta\.bb: length must be at least 1$/,
+      ),
+    ]);
   });
 
   test('every error of one call is kept, on the same range', () => {
-    const lines = rendered(analyzeText('s = ta.sma(close, "x")\n'));
-    expect(lines.length).toBe(2);
+    // nested.broken fails on two lines of its body.
+    const filename = join(FIXTURES, 'imports/nested/several.tea');
+    const lines = rendered(
+      analyze({filename, source: readFileSync(filename, 'utf8')}),
+    );
+    expect(lines).toHaveLength(2);
     expect(
-      lines.every(line => line.startsWith('0:4-10 in ta.sma (tea-lib/ta.tea:')),
+      lines.every(line => line.startsWith('3:4-17 in nested.broken (')),
     ).toBe(true);
   });
 
   test('a call made inside a function of this document is marked where it is written', () => {
     const analysis = analyzeText(
-      'smooth(src) =>\n    ta.ema(src, 14)\nx = smooth("a")\n',
+      'smooth(src) =>\n    ta.change(src)\nx = smooth("a")\n',
     );
-    expect(rendered(analysis)).toEqual([`1:4-10 ${IN_EMA}`]);
+    expect(rendered(analysis)).toEqual([`1:4-13 ${IN_CHANGE}`]);
   });
 
   test('a library function reached through another library function marks the outer call', () => {
-    // ta.macd calls ta.ema; the error sits in ema, the document wrote macd.
+    // nested.outer calls nested.inner; the error sits in inner, the document
+    // wrote outer.
+    const filename = join(FIXTURES, 'imports/nested/entry.tea');
     const lines = rendered(
-      analyzeText('[m, s, h] = ta.macd("a", 12, 26, 9)\n'),
+      analyze({filename, source: readFileSync(filename, 'utf8')}),
     );
-    expect(lines.length).toBeGreaterThan(0);
-    expect(
-      lines.every(line =>
-        /^0:12-19 in ta\.macd \(tea-lib\/ta\.tea:\d+:\d+\): /.test(line),
+    expect(lines).toEqual([
+      expect.stringMatching(
+        /^3:4-16 in nested\.outer \(.*lib\.tea:6:13\): operator '-' requires numeric operands \(got int and string\)$/,
       ),
-    ).toBe(true);
+    ]);
   });
 });
 

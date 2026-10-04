@@ -28,9 +28,9 @@ var state = trade.nextOpen(
 
 state.begin_bar(open, bar_index)
 if ta.crossover(fast, slow)
-    state.entry("Long", "Short cover", trade.Direction.long)
+    state.entry("Long", trade.Direction.long)
 if ta.crossunder(fast, slow)
-    state.entry("Short", "Long close", trade.Direction.short)
+    state.entry("Short", trade.Direction.short)
 
 state.mark(close)
 metrics = state.snapshot()
@@ -110,7 +110,7 @@ future Sweep Recipe so sweep semantics have one real owner.
 ```ts
 const node = tea`
 length = input.int(20)
-plot(ta.ema(close, length))
+plot("ema", ta.ema(close, length))
 `;
 
 const sink = new StdoutSink<Datum>();

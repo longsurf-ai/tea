@@ -6,7 +6,8 @@ import {fileURLToPath} from 'node:url';
 import {describe, expect, test} from 'vitest';
 import type {Position, Range} from 'vscode-languageserver';
 import {analyze} from './analysis';
-import {definition, hover, references} from './name-queries';
+import {wrapSignature} from './documentation';
+import {definition, hover, referenceName, references} from './name-queries';
 
 const FILE = '/charts/fixture.tea';
 const LINES = [
@@ -44,7 +45,8 @@ function on(line: number, word: string): Position {
   return rangeOf(line, word).start;
 }
 
-// The lines of the hover's `tea` block, or null.
+// The lines of the hover's leading `tea` block, or null. Documentation, when
+// the name has any, follows the block.
 function hoverLines(position: Position): string[] | null {
   const result = hover(analysis, position);
   if (result === null) {
@@ -52,8 +54,8 @@ function hoverLines(position: Position): string[] | null {
   }
   expect(result.contents).toMatchObject({kind: 'markdown'});
   const {value} = result.contents as {value: string};
-  expect(value.startsWith('```tea\n') && value.endsWith('\n```')).toBe(true);
-  return value.split('\n').slice(1, -1);
+  expect(value.startsWith('```tea\n')).toBe(true);
+  return value.slice('```tea\n'.length, value.indexOf('\n```')).split('\n');
 }
 
 const inThisFile = (line: number, word: string) => ({
@@ -75,6 +77,104 @@ const SILENT: readonly (readonly [string, Position])[] = [
 
 test('the fixture checks cleanly', () => {
   expect(analysis.diagnostics).toEqual([]);
+});
+
+describe('hover documentation', () => {
+  // The Markdown after the leading signature block.
+  function docsAt(source: string, word: string, line = 0): string | null {
+    const lines = source.split('\n');
+    const result = hover(analyze({filename: 'docs.tea', source}), {
+      line,
+      character: lines[line]!.indexOf(word),
+    });
+    if (result === null) return null;
+    const {value} = result.contents as {value: string};
+    const end = value.indexOf('\n```') + '\n```'.length;
+    const docs = value.slice(end).trim();
+    if (docs === '') return null;
+    // A rule separates the signature from the docs.
+    expect(docs.startsWith('---\n\n')).toBe(true);
+    return docs.slice('---\n\n'.length);
+  }
+
+  test('a library function shows its doc comment, parameters and result', () => {
+    const docs = docsAt('x = ta.ema(close, 9)', 'ema');
+    expect(docs).toMatch(/^Exponential moving average of `source`/);
+    expect(docs).toContain('**Parameters**\n- `source` — Series to average');
+    expect(docs).toContain('**Returns** `float`: the average.');
+    // `{@link ta.rma}` becomes code: an editor has no page to link to.
+    expect(docs).toContain('`ta.rma` moves by');
+  });
+
+  test('a native shows its catalog docs', () => {
+    expect(docsAt('x = nz(close)', 'nz')).toMatch(
+      /^Replaces a missing value with a fallback\./,
+    );
+    expect(docsAt('x = bar_index', 'bar_index')).toMatch(/^The number/);
+    // A constant shows its family's docs.
+    expect(docsAt('x = color.red', 'red')).toContain('palette');
+  });
+
+  test('an input alias, a library name, a type and an enum member are documented', () => {
+    expect(docsAt('x = close', 'close')).toMatch(/^Closing price/);
+    const source = 'import trade\nx = trade.Direction.long';
+    expect(docsAt(source, 'trade', 1)).toMatch(/^Trade coordinators/);
+    expect(docsAt(source, 'Direction', 1)).toMatch(/^Side of a new position/);
+    expect(docsAt(source, 'long', 1)).toMatch(/^A long position/);
+  });
+
+  test('a long signature lists a parameter per line', () => {
+    const result = hover(
+      analyze({filename: 'plot.tea', source: 'plot("c", close)'}),
+      {line: 0, character: 1},
+    );
+    const {value} = result!.contents as {value: string};
+    expect(value).toMatch(
+      /^```tea\nseries Plot plot\(\n {4}const string id,\n {4}series float series,\n/,
+    );
+  });
+
+  test('a formula shows as LaTeX code and an example without its output', () => {
+    const source = [
+      '/**',
+      ' * Doubles a price.',
+      ' * @formula',
+      ' * 2 \\cdot \\mathit{p}',
+      ' * @example',
+      ' * On one bar.',
+      ' * ```tea',
+      ' * emit "x" 2 * 3',
+      ' * ```',
+      ' * @see ta.sma',
+      ' */',
+      'double(float p) => p * 2',
+      'twice = double(close)',
+    ].join('\n');
+    expect(docsAt(source, 'double', 12)).toBe(
+      [
+        'Doubles a price.',
+        '**Formula**',
+        '```latex\n2 \\cdot \\mathit{p}\n```',
+        '**Example:** On one bar.',
+        '```tea\nemit "x" 2 * 3\n```',
+        '**See also:** `ta.sma`',
+      ].join('\n\n'),
+    );
+  });
+
+  test('a declaration in this document documents itself with a doc comment', () => {
+    const source = [
+      '/** Doubles a price. */',
+      'double(float p) => p * 2',
+      '/** The doubled close. */',
+      'twice = double(close)',
+      'emit "twice" twice',
+    ].join('\n');
+    expect(docsAt(source, 'double', 3)).toBe('Doubles a price.');
+    expect(docsAt(source, 'twice', 3)).toBe('The doubled close.');
+    // A parameter shares its function's line, but not its doc.
+    expect(docsAt(source, 'p', 1)).toBeNull();
+  });
 });
 
 describe('hover', () => {
@@ -125,7 +225,10 @@ describe('hover', () => {
 
   test('a native shows the catalog signature of the resolved overload', () => {
     expect(hoverLines(on(15, 'max'))).toEqual([
-      'math.max(number: int | float, ...number1: int | float) → float',
+      'float math.max(',
+      '    series int | float number,',
+      '    series int | float ...number1',
+      ')',
     ]);
     expect(hover(analysis, on(15, 'max'))?.range).toEqual(rangeOf(15, 'max'));
     // The namespace is not a value.
@@ -141,7 +244,9 @@ describe('hover', () => {
       expect(
         hover(request, {line: 0, character: source.indexOf(name)})?.contents,
       ).toMatchObject({
-        value: expect.stringContaining(' → request-dependent result\n'),
+        value: expect.stringMatching(
+          new RegExp(`^\`\`\`tea\nrequest\\.${name}\\(`),
+        ),
       });
     },
   );
@@ -213,6 +318,39 @@ describe('definition', () => {
 
   test.each(SILENT)('%s has none', (_, position) => {
     expect(definition(analysis, position)).toEqual([]);
+  });
+});
+
+describe('reference name', () => {
+  test('a shipped or native name is the one the reference documents', () => {
+    const exported = analyze({filename: 'obv.tea', source: 'x = ta.obv'});
+    expect(referenceName(exported, {line: 0, character: 8})).toBe('ta.obv');
+    expect(referenceName(analysis, on(14, 'ema'))).toBe('ta.ema');
+    expect(referenceName(analysis, on(17, 'plot'))).toBe('plot');
+    expect(referenceName(analysis, on(10, 'close'))).toBe('close');
+    expect(referenceName(analysis, on(15, 'max'))).toBe('math.max');
+  });
+
+  test('a catalog constant, and a library type for its member', () => {
+    const source = 'import trade\nx = color.red\nd = trade.Direction.long';
+    const lines = source.split('\n');
+    const at = (line: number, word: string) =>
+      referenceName(analyze({filename: 'reference.tea', source}), {
+        line,
+        character: lines[line]!.indexOf(word),
+      });
+    expect(at(1, 'red')).toBe('color.red');
+    expect(at(2, 'Direction')).toBe('trade.Direction');
+    expect(at(2, 'long')).toBe('trade.Direction');
+  });
+
+  test('a name this document declares is not in the reference', () => {
+    expect(referenceName(analysis, on(11, 'g'))).toBeNull();
+    expect(referenceName(analysis, on(9, 'Bar'))).toBeNull();
+    expect(referenceName(analysis, on(12, 'top'))).toBeNull();
+    expect(referenceName(analysis, on(13, 'scaled'))).toBeNull();
+    const literal = analyze({filename: 'literal.tea', source: 'x = true'});
+    expect(referenceName(literal, {line: 0, character: 5})).toBeNull();
   });
 });
 
@@ -376,5 +514,22 @@ describe('shipped libraries opened as documents', () => {
     const filename = join(TEA_LIB, `${name}.tea`);
     const result = analyze({filename, source: readFileSync(filename, 'utf8')});
     expect(result.diagnostics).toEqual([]);
+  });
+});
+
+describe('wrapSignature', () => {
+  test('lists parameters once a signature is long, keeping bracketed commas', () => {
+    expect(wrapSignature('f(int a, int b) → int', 10)).toBe(
+      'f(\n    int a,\n    int b\n) → int',
+    );
+    expect(wrapSignature('g<T: storable>(map<string, T> m, int n)', 10)).toBe(
+      'g<T: storable>(\n    map<string, T> m,\n    int n\n)',
+    );
+  });
+
+  test('leaves short, empty and already wrapped signatures alone', () => {
+    expect(wrapSignature('f(int a) → int')).toBe('f(int a) → int');
+    expect(wrapSignature('f() → int', 3)).toBe('f() → int');
+    expect(wrapSignature('f(\n    a\n)', 3)).toBe('f(\n    a\n)');
   });
 });

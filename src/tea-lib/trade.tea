@@ -1,34 +1,299 @@
 //@version=1
-// Policy-specific trade coordinators. NextOpenTrade, OhlcTrade, and PathTrade
-// own distinct scalar-net lifecycles; LotTrade owns immediate bounded-lot
-// calls. Broker matching and portfolio accounting remain in their respective
-// components.
+/**
+ * Trade coordinators that send a strategy's orders to a broker and record every
+ * fill in a portfolio, plus helpers that size entries and set rebalance
+ * targets.
+ *
+ * Add `import trade` together with `import broker` and `import portfolio`. A
+ * coordinator owns one broker value and one portfolio value. It submits orders
+ * to the broker and applies each fill to the portfolio before the broker
+ * matches anything else, so later checks see the new cash and position. The
+ * four coordinators, made by {@link trade.nextOpen}, {@link trade.ohlc},
+ * {@link trade.path} and {@link trade.lots}, differ in when and at what price
+ * orders fill, and {@link trade.lots} keeps each entry as a separate lot;
+ * [Strategies](/strategy) compares them.
+ *
+ * A complete strategy that uses all three libraries:
+ *
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * fast = ta.ema(close, 10)
+ * slow = ta.ema(close, 30)
+ * crossedUp = ta.crossover(fast, slow)
+ * crossedDown = ta.crossunder(fast, slow)
+ *
+ * // `var` keeps the coordinator, its orders and its books from bar to bar.
+ * var strat = trade.nextOpen(
+ *     broker.new(commission = broker.commissionPercent(0.1)),
+ *     portfolio.new(initialCash = 10000.0)
+ * )
+ * strat.begin_bar(open, bar_index)
+ * if crossedUp and strat.position_quantity() == 0.0
+ *     strat.entry("Long", trade.Direction.long,
+ *         sizing = trade.percentOfEquity(50.0))
+ * if crossedDown and strat.position_quantity() > 0.0
+ *     strat.close("Exit")
+ * strat.end_bar(close, false)
+ *
+ * metrics = strat.snapshot()
+ * plot("equity", metrics.equity)
+ * plot("max drawdown", metrics.maxDrawdown)
+ * ```
+ */
 library("trade")
 
 import broker
 import portfolio
 
+/**
+ * Side of a new position: long or short.
+ *
+ * A coordinator's `entry` buys for `long` and sells for `short`. A short sale
+ * adds its proceeds to cash, and equity is cash plus the signed position times
+ * the mark price, so a short loses equity as the price rises.
+ * @example
+ * Two coordinators enter 5 units at bar 1's open of 100, one long and one
+ * short. The short sale adds 500 to cash, and the short's equity falls as the
+ * close rises: 980 at 104 and 950 at 110.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var buyer = trade.nextOpen(broker.new(),
+ *     portfolio.new(initialCash = 1000.0))
+ * var seller = trade.nextOpen(broker.new(),
+ *     portfolio.new(initialCash = 1000.0))
+ * buyer.begin_bar(open, bar_index)
+ * seller.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     buyer.entry("Long", trade.Direction.long, qty = 5.0)
+ *     seller.entry("Short", trade.Direction.short, qty = 5.0)
+ * buyer.end_bar(close, false)
+ * seller.end_bar(close, false)
+ * emit "close" close
+ * emit "long equity" buyer.snapshot().equity
+ * emit "short position" seller.position_quantity()
+ * emit "short cash" seller.cash()
+ * emit "short equity" seller.snapshot().equity
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,100,104
+ * 2,104,110
+ * 3,110,106
+ * ```
+ * @see trade.NextOpenTrade.entry
+ * @category Coordinators
+ */
 export enum Direction
+	/** A long position, opened by buying. */
 	long
+	/** A short position, opened by selling. */
 	short
 
+/**
+ * Which equity a {@link trade.Sizing} percentage is taken from: the marked
+ * equity when `entry` is called, or the equity when the order fills.
+ * @example
+ * Both coordinators hold 5 units bought at 100 and add 12% of equity with an
+ * order sent on bar 2. `percentOfEquity` takes the equity marked at bar 1's
+ * close, 1200, and buys 144 / 150 = 0.96 units at bar 3's open of 150.
+ * `percentOfEquityAtFill` takes the equity at that open, 1250, and buys 1.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var byMark = trade.nextOpen(broker.new(),
+ *     portfolio.new(initialCash = 1000.0, pyramiding = 2))
+ * var atFill = trade.nextOpen(broker.new(),
+ *     portfolio.new(initialCash = 1000.0, pyramiding = 2))
+ * a = byMark.begin_bar(open, bar_index)
+ * b = atFill.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     byMark.entry("Long", trade.Direction.long, qty = 5.0)
+ *     atFill.entry("Long", trade.Direction.long, qty = 5.0)
+ * if bar_index == 2
+ *     byMark.entry("Long", trade.Direction.long,
+ *         sizing = trade.percentOfEquity(12.0))
+ *     atFill.entry("Long", trade.Direction.long,
+ *         sizing = trade.percentOfEquityAtFill(12.0))
+ * byMark.end_bar(close, false)
+ * atFill.end_bar(close, false)
+ * emit "open" open
+ * emit "close" close
+ * emit "percentOfEquity" na(a) ? na : a.quantity
+ * emit "percentOfEquityAtFill" na(b) ? na : b.quantity
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,100,140
+ * 2,145,145
+ * 3,150,150
+ * ```
+ * @see trade.percentOfEquity
+ * @see trade.percentOfEquityAtFill
+ * @category Sizing and targets
+ */
 export enum SizingKind
+	/**
+	 * Equity from the latest `mark` or `end_bar`, read when `entry` is called.
+	 */
 	percentOfEquity
+	/**
+	 * Equity at the order's matched price before slippage, computed when the
+	 * order fills.
+	 */
 	percentOfEquityAtFill
 
+/**
+ * Percent-of-equity sizing for an entry, made by {@link trade.percentOfEquity}
+ * or {@link trade.percentOfEquityAtFill}.
+ *
+ * Pass it as the `sizing` argument of `entry` on {@link trade.NextOpenTrade},
+ * {@link trade.OhlcTrade} or {@link trade.PathTrade}. Nothing is checked when
+ * it is made: if `value` is `0` or less, above `100` or `na`, the broker
+ * rejects the order with `invalidQuantity` when it would fill.
+ * @example
+ * The helpers only fill in the fields, even with an out-of-range 150.
+ * ```tea
+ * import trade
+ *
+ * marked = trade.percentOfEquity(25.0)
+ * atFill = trade.percentOfEquityAtFill(150.0, true)
+ * emit "marked value" marked.value
+ * emit "marked included" marked.commissionIncluded ? 1 : 0
+ * emit "at fill value" atFill.value
+ * emit "at fill included" atFill.commissionIncluded ? 1 : 0
+ * atFillKind = atFill.kind == trade.SizingKind.percentOfEquityAtFill
+ * emit "at fill kind" atFillKind ? 1 : 0
+ * ```
+ * @see trade.SizingKind
+ * @category Sizing and targets
+ */
 export type Sizing
+	/** Which equity the percentage is taken from. */
 	SizingKind kind
+	/**
+	 * Value of the order as a percentage of equity; valid values are above `0`
+	 * and at most `100`.
+	 */
 	float value
+	/**
+	 * Whether the budget also pays the commission; when `false`, the commission
+	 * is charged on top.
+	 */
 	bool commissionIncluded = false
 
-// NextOpenTrade coordinates only next-open and optional close processing.
-// It owns the concrete broker and portfolio values directly so choosing this
-// narrower policy adds no wrapper state to the generated Program.
+// NextOpenTrade owns the concrete broker and portfolio values directly so
+// choosing this narrower policy adds no wrapper state to the generated Program.
+/**
+ * Coordinator whose orders fill at a later bar's open, or at a bar's close when
+ * the broker processes orders on close.
+ *
+ * Create it with {@link trade.nextOpen}. Each bar, call `begin_bar` before the
+ * signal logic, submit orders, then call `end_bar`. An order fills at the open
+ * of a bar after the one it was submitted on. With a broker created with
+ * `processOrdersOnClose = true`, it can also fill at a close, including the
+ * close of its own bar. The broker holds one pending order at a time and makes
+ * at most two fills per bar; this family has no stop entries and no attached
+ * exits. Strategies call these methods rather than the broker's or the
+ * portfolio's own.
+ * @example
+ * The entry sent on bar 0 fills at bar 1's open of 100, and the close sent on
+ * bar 2 fills at bar 3's open of 120. Equity is marked at each close.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.nextOpen(broker.new(),
+ *     portfolio.new(initialCash = 1000.0))
+ * strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+ * if bar_index == 2
+ *     strat.close("Exit")
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "close" close
+ * emit "position" strat.position_quantity()
+ * emit "cash" strat.cash()
+ * emit "equity" strat.snapshot().equity
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,100,110
+ * 2,110,115
+ * 3,120,125
+ * 4,125,130
+ * ```
+ * @see trade.nextOpen
+ * @see trade.OhlcTrade
+ * @category Coordinators
+ */
 export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
+	/** Broker that validates and fills this coordinator's orders. */
 	B broker
+	/** Portfolio that records this coordinator's fills. */
 	P portfolio
+	/**
+	 * Bar index from the latest `begin_bar`, or `-1` before the first; orders
+	 * submitted later in the bar record it as their `signalBarIndex`.
+	 */
 	int idx = -1
 
+	/**
+	 * Starts a bar: fills the pending order at `openPrice` and applies the fill
+	 * to the portfolio.
+	 *
+	 * Call it once per bar, before the signal logic. An order can fill here
+	 * from the bar after it was submitted, so orders submitted later in this
+	 * bar wait. An entry against the open position fills twice at this open:
+	 * once to close the position, then once to open the new side. A reversal
+	 * whose opening fill did not fit in an earlier bar's two fills completes
+	 * here.
+	 * @param openPrice The bar's open.
+	 * @param barIndex The bar's index, normally `bar_index`.
+	 * @returns `broker.Fill`: the last fill applied, which for a reversal is
+	 * the opening fill, or `na` when nothing filled.
+	 * @example
+	 * The entry sent on bar 0 fills at bar 1's open. The short entry sent on
+	 * bar 2 reverses the position at bar 3's open: it sells the 5 units, then 2
+	 * more to open the short, and `begin_bar` returns that last fill.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * filled = strat.begin_bar(open, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 2
+	 *     strat.entry("Short", trade.Direction.short, qty = 2.0)
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "fill qty" na(filled) ? na : filled.quantity
+	 * emit "fill price" na(filled) ? na : filled.price
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,115
+	 * 3,120,125
+	 * ```
+	 */
 	broker.Fill begin_bar(float openPrice, int barIndex) =>
 		this.idx := barIndex
 		currentBroker = this.broker
@@ -41,6 +306,93 @@ export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		not na(continuation) ? continuation : execution
 
+	/**
+	 * Submits an entry order that opens, adds to or reverses the position at a
+	 * later bar's open, or at a close when the broker processes orders on
+	 * close.
+	 *
+	 * Give at most one of `qty` and `sizing`. With neither, the entry spends
+	 * all available capital, commission included: the cash for a buy, the
+	 * equity for a sell. The quantity is `qty`, or the sizing budget divided by
+	 * the execution price, the matched price after adverse slippage, once any
+	 * commission the sizing includes is taken out ({@link trade.percentOfEquity}
+	 * gives the formula).
+	 *
+	 * An entry against the open position reverses it with two fills: the first
+	 * closes the whole position, and the second opens the new side at the same
+	 * price, or at the next open when the first was the bar's second fill. An
+	 * entry without a size, or sized with {@link trade.percentOfEquityAtFill},
+	 * is sized from the account after the first fill, and a per-order
+	 * commission is charged on the first fill only. If the second fill is
+	 * rejected, the position is left flat. An entry on the position's side adds
+	 * to it only under the `commandId` of the entry that opened it, and only
+	 * while the position has fewer entries than the portfolio's `pyramiding`.
+	 *
+	 * On submission the broker checks only the pending order and the id: the
+	 * method returns `na` when another order is pending, or when an entry on
+	 * the position's side uses another `commandId` (`entryIdMismatch`). The
+	 * rest is checked when the order would fill, and a rejection then shows
+	 * only as a {@link broker.OrderRejected} event:
+	 *
+	 * - `invalidQuantity` for both `qty` and `sizing`, a `qty` that is not
+	 *   positive, or invalid sizing;
+	 * - `invalidAccountState` for an add with no room under `pyramiding`, or
+	 *   for too little capital. Unless the portfolio's margin for the order's
+	 *   side is `0`, an order with `qty` or `sizing` needs
+	 *   `notional * marginLong / 100 + fee <= cash` for a buy and
+	 *   `notional * marginShort / 100 + fee <= equity` for a sell, with equity
+	 *   valued at the matched price; with the commission included in percent
+	 *   sizing, the budget must fit instead. An order with neither needs
+	 *   capital above `0`.
+	 * @param commandId Name of the order; `cancel` takes it, and later entries
+	 * that add to the position reuse it.
+	 * @param direction `trade.Direction.long` to buy or `trade.Direction.short`
+	 * to sell.
+	 * @param qty Quantity to open or add; must be positive.
+	 * @param sizing Percent-of-equity sizing from {@link trade.percentOfEquity}
+	 * or {@link trade.percentOfEquityAtFill}.
+	 * @returns `broker.Order`: the accepted order, or `na` when the broker
+	 * rejects it on submission.
+	 * @example
+	 * On bar 0 the first entry is accepted as order 1, and the second returns
+	 * `na` because the first is pending. The first buys 50% of the 1000 equity,
+	 * 500 / 100 = 5 units, at bar 1's open. The short entry sent on bar 2,
+	 * without a size, reverses at bar 3's open of 125: it sells the 5 units,
+	 * then sells short the whole equity of 1125, 9 units.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * filled = strat.begin_bar(open, bar_index)
+	 * int firstId = na
+	 * int secondId = na
+	 * if bar_index == 0
+	 *     first = strat.entry("Long", trade.Direction.long,
+	 *         sizing = trade.percentOfEquity(50.0))
+	 *     second = strat.entry("Other", trade.Direction.long, qty = 1.0)
+	 *     firstId := na(first) ? na : first.id
+	 *     secondId := na(second) ? na : second.id
+	 * if bar_index == 2
+	 *     strat.entry("Short", trade.Direction.short)
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "first id" firstId
+	 * emit "second id" secondId
+	 * emit "fill qty" na(filled) ? na : filled.quantity
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,120
+	 * 3,125,125
+	 * ```
+	 * @see trade.percentOfEquity
+	 */
 	broker.Order entry(string commandId, Direction direction, float qty = na, Sizing sizing = na) =>
 		side = direction == Direction.long ? broker.Side.buy : broker.Side.sell
 		float notional = na
@@ -63,19 +415,245 @@ export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
 					notional := budget
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.entry, side, qty, this.idx, notional, na, na, false, na, cashBudget, equityPercent, commissionIncluded))
 
+	/**
+	 * Submits an order that closes the whole position at a later bar's open, or
+	 * at a close when the broker processes orders on close.
+	 *
+	 * It closes whatever position is open when it fills. It returns `na` when
+	 * another order is pending; if the position is flat when it would fill, the
+	 * broker rejects it with `invalidAccountState`.
+	 * @param commandId Name of the order; `cancel` takes it.
+	 * @returns `broker.Order`: the accepted order, or `na` when another order
+	 * is pending.
+	 * @example
+	 * The close sent on bar 2 sells all 5 units at bar 3's open of 120 and
+	 * realizes 5 * (120 - 100) = 100.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 2
+	 *     strat.close("Exit")
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "position" strat.position_quantity()
+	 * emit "cash" strat.cash()
+	 * emit "realized" strat.snapshot().realizedPnl
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,115
+	 * 3,120,125
+	 * ```
+	 */
 	broker.Order close(string commandId) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = currentQuantity < 0.0 ? broker.Side.buy : broker.Side.sell
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.close, side, na, this.idx))
 
+	/**
+	 * Submits an order that moves the position to a target size at a later
+	 * bar's open, or at a close when the broker processes orders on close.
+	 *
+	 * When it fills, the broker trades the difference between the target and
+	 * the position at that moment, in one fill even when the target is on the
+	 * other side of zero, and cancels the order when the difference is at most
+	 * 0.0000001. Submitting again under the same `commandId` while the order is
+	 * pending replaces the target. It returns `na` when another order is
+	 * pending, when the target or its value is `na`, or when a percent target
+	 * is beyond `100` in either direction.
+	 *
+	 * The position can stop short of the target. Unless the portfolio's
+	 * `marginLong` is `0`, a buy from a flat or long position is cut, without a
+	 * rejection, to the quantity whose notional plus commission spends the
+	 * cash. A sell that opens or adds to a short, and a fill that crosses zero,
+	 * must pass a capital check, or the broker rejects it with
+	 * `invalidAccountState`; {@link trade.targetQuantity} gives the rules.
+	 *
+	 * `pyramiding` never limits a rebalance. A rebalance that opens or reverses
+	 * the position counts as its first entry, and its `commandId` becomes the
+	 * position's entry id, so a later `entry` on that side must use that id or
+	 * returns `na` (`entryIdMismatch`). A rebalance that adds to or reduces the
+	 * position leaves the entry id and the entry count unchanged, and one that
+	 * closes it clears them.
+	 * @param commandId Name of the order; `cancel` takes it.
+	 * @param target Target from {@link trade.targetQuantity} or
+	 * {@link trade.targetPercentOfEquity}.
+	 * @returns `broker.Order`: the accepted order, or `na` when the broker
+	 * rejects it on submission.
+	 * @example
+	 * Bar 1 buys the 4 units of the first target. The target of 20 needs 16
+	 * more, but the 600 of cash buys only 6, so bar 2 stops at 10 units without
+	 * a rejection. The target of -2 sells 12 units in one fill at bar 3's open.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * filled = strat.begin_bar(open, bar_index)
+	 * if bar_index == 0
+	 *     strat.rebalance("Target", trade.targetQuantity(4.0))
+	 * if bar_index == 1
+	 *     strat.rebalance("Target", trade.targetQuantity(20.0))
+	 * if bar_index == 2
+	 *     strat.rebalance("Target", trade.targetQuantity(-2.0))
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "fill qty" na(filled) ? na : filled.quantity
+	 * emit "position" strat.position_quantity()
+	 * emit "cash" strat.cash()
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,100
+	 * 2,100,100
+	 * 3,120,120
+	 * ```
+	 * @example
+	 * The rebalance opens the position at bar 1, counts as its first entry and
+	 * gives it the id `Target`. An entry named `Long` then returns `na`; one
+	 * named `Target` is accepted and adds the second entry that
+	 * `pyramiding = 2` allows.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0, pyramiding = 2))
+	 * strat.begin_bar(open, bar_index)
+	 * int accepted = na
+	 * if bar_index == 0
+	 *     strat.rebalance("Target", trade.targetQuantity(5.0))
+	 * if bar_index == 1
+	 *     order = strat.entry("Long", trade.Direction.long, qty = 1.0)
+	 *     accepted := na(order) ? 0 : 1
+	 * if bar_index == 2
+	 *     order = strat.entry("Target", trade.Direction.long, qty = 1.0)
+	 *     accepted := na(order) ? 0 : 1
+	 * strat.end_bar(close, false)
+	 * emit "accepted" accepted
+	 * emit "position" strat.position_quantity()
+	 * emit "entries" strat.snapshot().openTradeCount
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,100
+	 * 2,100,100
+	 * 3,100,100
+	 * ```
+	 * @see trade.targetQuantity
+	 * @see trade.targetPercentOfEquity
+	 */
 	broker.Order rebalance(string commandId, broker.PositionTarget target) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = target.value > 0.0 ? broker.Side.buy : target.value < 0.0 ? broker.Side.sell : currentQuantity > 0.0 ? broker.Side.sell : broker.Side.buy
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.rebalance, side, na, this.idx, positionTarget = target))
 
+	/**
+	 * Cancels the pending order named `commandId`.
+	 * @param commandId Name the order was submitted with.
+	 * @returns `int`: `1` when the pending order had that name, otherwise `0`.
+	 * @example
+	 * No pending order is named `Short`, so that call returns 0. Cancelling
+	 * `Long` on bar 0 returns 1, and nothing fills at bar 1's open.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, bar_index)
+	 * int none = na
+	 * int cancelled = na
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     none := strat.cancel("Short")
+	 *     cancelled := strat.cancel("Long")
+	 * strat.end_bar(close, false)
+	 * emit "cancel Short" none
+	 * emit "cancel Long" cancelled
+	 * emit "pending" strat.has_pending() ? 1 : 0
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,120
+	 * 3,120,125
+	 * ```
+	 */
 	int cancel(string commandId) =>
 		this.broker.cancel(commandId)
 
+	/**
+	 * Fills the pending order at `closePrice` when the broker processes orders
+	 * on close, and applies the fill.
+	 *
+	 * Without `processOrdersOnClose = true` on the broker it fills nothing. Use
+	 * it with `mark` and `finish` in place of `end_bar` to act between those
+	 * steps: after one fill at the close, a new order submitted on the same bar
+	 * fills at the same close with a second call. A bar has at most two fills;
+	 * a third order waits for the next open, and so does the opening fill of a
+	 * reversal that would be the third.
+	 * @param closePrice The bar's close.
+	 * @returns `broker.Fill`: the last fill applied, or `na` when nothing
+	 * filled.
+	 * @example
+	 * On bar 1, the entry fills at the close of 110, and a close sent next
+	 * fills at the same close: the bar's two fills. The third order waits and
+	 * fills at bar 2's open of 112.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(processOrdersOnClose = true),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * opened = strat.begin_bar(open, bar_index)
+	 * float first = na
+	 * float second = na
+	 * float third = na
+	 * if bar_index == 1
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     a = strat.process_close(close)
+	 *     strat.close("Exit")
+	 *     b = strat.process_close(close)
+	 *     strat.entry("Long", trade.Direction.long, qty = 2.0)
+	 *     c = strat.process_close(close)
+	 *     first := na(a) ? na : a.quantity
+	 *     second := na(b) ? na : b.quantity
+	 *     third := na(c) ? na : c.quantity
+	 * strat.mark(close)
+	 * emit "close" close
+	 * emit "first" first
+	 * emit "second" second
+	 * emit "third" third
+	 * emit "at open" na(opened) ? na : opened.quantity
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,112,115
+	 * 3,115,118
+	 * ```
+	 */
 	broker.Fill process_close(float closePrice) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -87,12 +665,85 @@ export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		not na(continuation) ? continuation : firstExecution
 
+	/**
+	 * Values the portfolio at `price` and updates equity, peak equity and
+	 * maximum drawdown.
+	 *
+	 * Equity is cash plus the signed position times `price`. `end_bar` marks at
+	 * the close; call `mark` directly when using `process_close` and `finish`
+	 * instead.
+	 * @param price Price to value the position at, normally {@link close}.
+	 * @returns `float`: the new equity.
+	 * @example
+	 * The 5 units bought at 100 are valued at each close. Equity peaks at 1050
+	 * and falls to 950, a drawdown of 100 / 1050.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * equity = strat.mark(close)
+	 * emit "close" close
+	 * emit "equity" equity
+	 * emit "drawdown" strat.snapshot().maxDrawdown
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,90
+	 * 3,90,105
+	 * ```
+	 */
 	float mark(float price) =>
 		currentPortfolio = this.portfolio
 		value = currentPortfolio.mark(price)
 		this.portfolio := currentPortfolio
 		value
 
+	/**
+	 * On the last bar, expires the pending order without closing the position.
+	 *
+	 * Does nothing when `isLast` is `false`. Tea has no builtin that tells the
+	 * last bar, so the script has to know it, for example from an input.
+	 * @param isLast Whether this is the last bar of the data.
+	 * @returns `broker.FinishResult`: the expired order in `pending`, or `na`
+	 * when `isLast` is `false`.
+	 * @example
+	 * Bar 3 is the last bar. The close sent there can no longer fill, so
+	 * `finish` expires it, order 2, and the 5 units stay open.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, bar_index)
+	 * isLast = bar_index == 3
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if isLast
+	 *     strat.close("Exit")
+	 * strat.mark(close)
+	 * expired = strat.finish(isLast)
+	 * emit "expired" na(expired) ? na : expired.pending.id
+	 * emit "position" strat.position_quantity()
+	 * emit "pending" strat.has_pending() ? 1 : 0
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,120
+	 * 3,120,130
+	 * ```
+	 */
 	broker.FinishResult finish(bool isLast) =>
 		broker.FinishResult expired = na
 		if isLast
@@ -101,6 +752,48 @@ export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
 			this.broker := currentBroker
 		expired
 
+	/**
+	 * Ends the bar: runs `process_close`, `mark` and `finish` in that order.
+	 *
+	 * With `processOrdersOnClose = true` on the broker, the pending order can
+	 * fill at `closePrice`, including one submitted on this bar. The portfolio
+	 * is then marked at `closePrice`, and on the last bar the pending order
+	 * expires. Tea has no builtin that tells the last bar, so pass `false`
+	 * unless the script knows it, for example from an input.
+	 * @param closePrice The bar's close.
+	 * @param isLast Whether this is the last bar of the data.
+	 * @returns `broker.FinishResult`: the orders expired on the last bar, or
+	 * `na` when `isLast` is `false`.
+	 * @example
+	 * With `processOrdersOnClose = true`, the entry sent on bar 1 fills at that
+	 * bar's close of 110 before equity is marked, and the close sent on bar 2
+	 * fills at 120.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(processOrdersOnClose = true),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, bar_index)
+	 * if bar_index == 1
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 2
+	 *     strat.close("Exit")
+	 * strat.end_bar(close, false)
+	 * emit "close" close
+	 * emit "position" strat.position_quantity()
+	 * emit "cash" strat.cash()
+	 * emit "equity" strat.snapshot().equity
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,120
+	 * 3,120,130
+	 * ```
+	 */
 	broker.FinishResult end_bar(float closePrice, bool isLast) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -116,31 +809,342 @@ export type NextOpenTrade<B: broker.NextOpenBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		expired
 
+	/**
+	 * Returns the portfolio's cash balance.
+	 *
+	 * A buy subtracts its notional and commission; a sell, including a short
+	 * sale, adds its notional and subtracts its commission.
+	 * @returns `float`: the cash balance.
+	 * @example
+	 * With a 1% commission, buying 5 units at 100 takes 500 + 5 from cash, and
+	 * selling them at 110 adds 550 - 5.5.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(
+	 *     broker.new(commission = broker.commissionPercent(1.0)),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 1
+	 *     strat.close("Exit")
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "cash" strat.cash()
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,105
+	 * 2,110,110
+	 * 3,110,112
+	 * ```
+	 */
 	float cash() const =>
 		this.portfolio.cash()
 
+	/**
+	 * Returns the signed position: positive when long, negative when short, `0`
+	 * when flat.
+	 * @returns `float`: the position quantity.
+	 * @example
+	 * A long of 5 units from bar 1 reverses to a short of 3 at bar 3's open.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 2
+	 *     strat.entry("Short", trade.Direction.short, qty = 3.0)
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,115
+	 * 3,120,125
+	 * ```
+	 */
 	float position_quantity() const =>
 		this.portfolio.position_quantity()
 
+	/**
+	 * Returns the average entry price of the open position, or `na` when flat.
+	 *
+	 * It is the quantity-weighted mean of the execution prices, after slippage,
+	 * of the fills that opened and added to the position; a fill that reduces
+	 * the position does not change it.
+	 * @returns `float`: the average entry price, or `na` when flat.
+	 * @example
+	 * With 1% slippage and `pyramiding = 2`, 5 units bought at 101 (open 100)
+	 * and 5 more at 111.1 (open 110) average 106.05. The close at bar 3 leaves
+	 * `na`.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(
+	 *     broker.new(slippage = broker.slippagePercent(1.0)),
+	 *     portfolio.new(initialCash = 2000.0, pyramiding = 2))
+	 * strat.begin_bar(open, bar_index)
+	 * if bar_index <= 1
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 2
+	 *     strat.close("Exit")
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "position" strat.position_quantity()
+	 * emit "average" strat.position_avg_price()
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,110
+	 * 3,120,120
+	 * ```
+	 */
 	float position_avg_price() const =>
 		this.portfolio.position_avg_price()
 
+	/**
+	 * Returns the portfolio's metrics as one
+	 * {@link portfolio.PortfolioSnapshot}.
+	 *
+	 * Its `equity` is from the latest `mark` or `end_bar`, so before `end_bar`
+	 * it still holds the previous bar's value.
+	 * @returns `portfolio.PortfolioSnapshot`: cash, position, equity, profit
+	 * and risk statistics.
+	 * @example
+	 * One round trip, 5 units bought at 100 and sold at 120, realizes 100 and
+	 * counts as a win.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 2
+	 *     strat.close("Exit")
+	 * strat.end_bar(close, false)
+	 * metrics = strat.snapshot()
+	 * emit "equity" metrics.equity
+	 * emit "realized" metrics.realizedPnl
+	 * emit "round trips" metrics.roundTripCount
+	 * emit "win rate" metrics.winRate
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,115
+	 * 3,120,125
+	 * ```
+	 */
 	portfolio.PortfolioSnapshot snapshot() const =>
 		this.portfolio.snapshot()
 
+	/**
+	 * Returns whether an order is pending.
+	 * @returns `bool`: `true` from submission until the order fills, is
+	 * rejected when it would fill, is cancelled or expires.
+	 * @example
+	 * The entry sent on bar 0 is pending until it fills at bar 1's open.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * strat.end_bar(close, false)
+	 * emit "pending" strat.has_pending() ? 1 : 0
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,120
+	 * 3,120,125
+	 * ```
+	 */
 	bool has_pending() const =>
 		this.broker.has_pending()
 
+	/**
+	 * Returns whether the pending order is an entry.
+	 * @returns `bool`: `true` when an entry is pending; `false` for a pending
+	 * close or rebalance, or when nothing is pending.
+	 * @example
+	 * The entry pending after bar 0 counts; the close pending after bar 2 does
+	 * not, although `has_pending` is true for both.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.nextOpen(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 2
+	 *     strat.close("Exit")
+	 * strat.end_bar(close, false)
+	 * emit "pending" strat.has_pending() ? 1 : 0
+	 * emit "pending entry" strat.has_pending_entry() ? 1 : 0
+	 * ```
+	 * ```csv
+	 * time,open,close
+	 * 0,100,100
+	 * 1,100,110
+	 * 2,110,115
+	 * 3,120,125
+	 * ```
+	 */
 	bool has_pending_entry() const =>
 		this.broker.has_pending_entry()
 
-// OhlcTrade coordinates unordered OHLC range matching without deterministic
-// path or trailing-exit state in its public policy surface.
+/**
+ * Coordinator that matches orders, stop entries and one stop-loss and/or
+ * take-profit exit against each bar's open, high and low.
+ *
+ * Create it with {@link trade.ohlc}. Each bar, call `begin_bar`, submit orders
+ * and exits, then call `end_bar`. `begin_bar` gives the matching rules,
+ * including which level fills when the bar reaches both an exit's stop and its
+ * target. {@link trade.PathTrade} replays each bar as an ordered path instead,
+ * so an exit only sees prices after its entry, and it adds trailing exits. The
+ * broker holds one pending order and one attached exit at a time, and makes at
+ * most two fills per bar. Strategies call these methods rather than the
+ * broker's or the portfolio's own.
+ * @example
+ * The buy stop at 105 fills when bar 1's high reaches it. On bar 2 the range
+ * reaches both exit levels; the high of 112 is nearer the open of 106 than the
+ * low of 95 is, so the target of 111 fills.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.ohlc(broker.new(),
+ *     portfolio.new(initialCash = 1000.0))
+ * matches = strat.begin_bar(open, high, low, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Breakout", trade.Direction.long, qty = 5.0,
+ *         stop = 105.0)
+ *     strat.exit("Bracket", fromEntry = "Breakout", stop = 96.0,
+ *         target = 111.0)
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "high" high
+ * emit "low" low
+ * emit "entry" na(matches.pending) ? na : matches.pending.price
+ * emit "exit" na(matches.exit) ? na : matches.exit.price
+ * emit "position" strat.position_quantity()
+ * ```
+ * ```csv
+ * time,open,high,low,close
+ * 0,100,102,98,101
+ * 1,101,106,100,105
+ * 2,106,112,95,100
+ * 3,100,101,99,100
+ * ```
+ * @see trade.ohlc
+ * @see trade.PathTrade
+ * @category Coordinators
+ */
 export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
+	/** Broker that validates and fills this coordinator's orders. */
 	B broker
+	/** Portfolio that records this coordinator's fills. */
 	P portfolio
+	/**
+	 * Bar index from the latest `begin_bar`, or `-1` before the first; orders
+	 * submitted later in the bar record it as their `signalBarIndex`.
+	 */
 	int idx = -1
 
+	/**
+	 * Starts a bar: fills the pending order, then the attached exit, against
+	 * this bar's open, high and low.
+	 *
+	 * The pending order can fill from the bar after it was submitted. A market
+	 * order fills at the open. A stop entry fills at the open when the bar
+	 * opens at or past its stop, otherwise at the stop when the high, for a
+	 * buy, or the low, for a sell, reaches it. A reversal's opening fill
+	 * follows at the same price; one left waiting because the previous bar
+	 * already had two fills completes at this open.
+	 *
+	 * The exit is then checked against the whole bar, from the bar after its
+	 * entry filled, or from the entry's own bar with `activateOnEntryBar` when
+	 * the entry filled at that bar's open. It
+	 * fills at the open when the bar opens at or past its stop or target,
+	 * otherwise at the level the range reaches, and closes the whole position.
+	 * When the range reaches both levels, the extreme nearer the open is taken
+	 * to come first: a long's target fills when the high is nearer the open
+	 * than the low, a short's target when the low is nearer than the high, and
+	 * otherwise the stop fills, including when both are equally far.
+	 * @param openPrice The bar's open.
+	 * @param highPrice The bar's high.
+	 * @param lowPrice The bar's low.
+	 * @param barIndex The bar's index, normally `bar_index`.
+	 * @returns `broker.BarMatches`: `pending` holds the order's fill (after a
+	 * reversal, the opening fill), `reversalClose` the closing fill of a
+	 * reversal, and `exit` the exit's fill; each is `na` when absent. When a
+	 * reversal's opening fill is rejected, `pending` holds the closing fill and
+	 * `reversalClose` is `na`.
+	 * @example
+	 * The market entry fills at bar 1's open. On bar 2 the high and the low
+	 * are both 6 from the open of 100, so the stop of 95 fills rather than the
+	 * target of 105.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * matches = strat.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     strat.exit("Bracket", fromEntry = "Long", stop = 95.0,
+	 *         target = 105.0)
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "high" high
+	 * emit "low" low
+	 * emit "entry" na(matches.pending) ? na : matches.pending.price
+	 * emit "exit" na(matches.exit) ? na : matches.exit.price
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,103,97,101
+	 * 2,100,106,94,98
+	 * 3,98,100,96,99
+	 * ```
+	 */
 	broker.BarMatches begin_bar(float openPrice, float highPrice, float lowPrice, int barIndex) =>
 		this.idx := barIndex
 		currentBroker = this.broker
@@ -156,6 +1160,67 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		broker.BarMatches.new(pendingExecution, exitExecution, not na(continuation) ? firstExecution : na)
 
+	/**
+	 * Submits a market or stop entry order that opens, adds to or reverses the
+	 * position on a later bar, or at a close when the broker processes orders
+	 * on close.
+	 *
+	 * Without `stop` it is a market order. With `stop` it fills once price
+	 * reaches the stop: a buy at or above it, a sell at or below it.
+	 * `begin_bar` and `process_close` give the fill prices. Resubmitting a
+	 * pending stop entry under the same `commandId` with a `stop` replaces it,
+	 * and an exit attached to it stays attached.
+	 *
+	 * Sizing, reversals, adding to a position and the checks work as for
+	 * {@link trade.NextOpenTrade.entry}. Give at most one of `qty` and
+	 * `sizing`; without either, the entry spends all available capital. It
+	 * returns `na` when another order is pending, when an entry on the
+	 * position's side uses another `commandId`, or when `stop` is not positive.
+	 * Size, room under `pyramiding` and capital are checked when the order
+	 * would fill.
+	 * @param commandId Name of the order; exits and `cancel` refer to it, and
+	 * later entries that add to the position reuse it.
+	 * @param direction `trade.Direction.long` to buy or `trade.Direction.short`
+	 * to sell.
+	 * @param qty Quantity to open or add; must be positive.
+	 * @param sizing Percent-of-equity sizing from {@link trade.percentOfEquity}
+	 * or {@link trade.percentOfEquityAtFill}.
+	 * @param stop Stop price that makes this a stop entry, or `na` for a market
+	 * order.
+	 * @returns `broker.Order`: the accepted order, or `na` when the broker
+	 * rejects it on submission.
+	 * @example
+	 * The buy stop at 110 is not reached on bar 1, so the same id moves it to
+	 * 105. Bar 2 opens at 106, past the stop, so the order fills at the open.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * matches = strat.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Breakout", trade.Direction.long, qty = 5.0,
+	 *         stop = 110.0)
+	 * if bar_index == 1
+	 *     strat.entry("Breakout", trade.Direction.long, qty = 5.0,
+	 *         stop = 105.0)
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "high" high
+	 * emit "fill" na(matches.pending) ? na : matches.pending.price
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,104,99,103
+	 * 2,106,108,105,107
+	 * 3,107,109,106,108
+	 * ```
+	 * @see trade.NextOpenTrade.entry
+	 */
 	broker.Order entry(string commandId, Direction direction, float qty = na, Sizing sizing = na, float stop = na) =>
 		side = direction == Direction.long ? broker.Side.buy : broker.Side.sell
 		float notional = na
@@ -178,24 +1243,266 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 					notional := budget
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.entry, side, qty, this.idx, notional, na, stop, false, na, cashBudget, equityPercent, commissionIncluded))
 
+	/**
+	 * Attaches a stop-loss and/or take-profit exit that closes the whole
+	 * position opened by entry `fromEntry`.
+	 *
+	 * Give `stop`, `target` or both, positive; for a long the stop must be
+	 * below the target, for a short above it. `fromEntry` must name the pending
+	 * entry or the entry that opened the position. `begin_bar` checks the exit
+	 * from the bar after its entry fills, or from the entry's own bar with
+	 * `activateOnEntryBar`, and gives the fill prices. On the entry's own bar
+	 * it checks the whole bar only when the entry filled at the open: after a
+	 * stop entry that filled later in the bar, the high and low cannot tell
+	 * whether a level came before or after the entry, so the exit starts on
+	 * the next bar. {@link trade.PathTrade} checks the rest of the bar instead.
+	 * Adverse
+	 * slippage applies to exit fills too, so a target is not a limit price.
+	 *
+	 * One exit is attached at a time: resubmitting with the same `commandId`
+	 * and `fromEntry` replaces it, and another exit returns `na`, as do invalid
+	 * prices and a `fromEntry` that matches no entry. A fill that closes or
+	 * reverses the position cancels the exit, unless the exit is attached to
+	 * the reversing entry itself, and so does the failure of the pending entry
+	 * it is attached to.
+	 * @param commandId Name of the exit; `cancel` takes it.
+	 * @param fromEntry `commandId` of the entry the exit belongs to.
+	 * @param stop Stop-loss price, or `na` for none.
+	 * @param target Take-profit price, or `na` for none.
+	 * @param activateOnEntryBar Whether the exit may fill on the bar its entry
+	 * fills; it applies when the entry fills at that bar's open.
+	 * @returns `broker.Order`: the accepted exit, or `na` when the broker
+	 * rejects it on submission.
+	 * @example
+	 * Both coordinators attach a stop at 97 to their pending entry. Bar 1's low
+	 * of 96 reaches it on the bar the entries fill: only the stop with
+	 * `activateOnEntryBar = true` fills there, and the other one fills on bar
+	 * 2.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var later = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * var sameBar = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * a = later.begin_bar(open, high, low, bar_index)
+	 * b = sameBar.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     later.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     later.exit("Stop", fromEntry = "Long", stop = 97.0)
+	 *     sameBar.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     sameBar.exit("Stop", fromEntry = "Long", stop = 97.0,
+	 *         activateOnEntryBar = true)
+	 * later.end_bar(close, false)
+	 * sameBar.end_bar(close, false)
+	 * emit "open" open
+	 * emit "low" low
+	 * emit "later exit" na(a.exit) ? na : a.exit.price
+	 * emit "same bar exit" na(b.exit) ? na : b.exit.price
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,101,96,99
+	 * 2,99,100,96,98
+	 * 3,98,99,97,98
+	 * ```
+	 */
 	broker.Order exit(string commandId, string fromEntry, float stop = na, float target = na, bool activateOnEntryBar = false) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = currentQuantity < 0.0 ? broker.Side.buy : broker.Side.sell
 		this.broker.submit_exit(broker.Command.new(commandId, broker.CommandKind.exit, side, na, this.idx, na, fromEntry, stop, activateOnEntryBar, target))
 
+	/**
+	 * Submits an order that closes the whole position at a later bar's open, or
+	 * at a close when the broker processes orders on close.
+	 *
+	 * When it fills, it also cancels the attached exit. It returns `na` when
+	 * another order is pending; if the position is flat when it would fill, the
+	 * broker rejects it with `invalidAccountState`.
+	 * @param commandId Name of the order; `cancel` takes it.
+	 * @returns `broker.Order`: the accepted order, or `na` when another order
+	 * is pending.
+	 * @example
+	 * The close sent on bar 1 sells the 5 units at bar 2's open of 104 and
+	 * cancels the attached stop, so nothing is pending afterward.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     strat.exit("Stop", fromEntry = "Long", stop = 90.0)
+	 * if bar_index == 1
+	 *     strat.close("Exit")
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "position" strat.position_quantity()
+	 * emit "pending" strat.has_pending() ? 1 : 0
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,103,99,102
+	 * 2,104,105,103,104
+	 * 3,104,106,103,105
+	 * ```
+	 */
 	broker.Order close(string commandId) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = currentQuantity < 0.0 ? broker.Side.buy : broker.Side.sell
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.close, side, na, this.idx))
 
+	/**
+	 * Submits an order that moves the position to a target size at a later
+	 * bar's open, or at a close when the broker processes orders on close.
+	 *
+	 * It works as {@link trade.NextOpenTrade.rebalance} does. When it fills,
+	 * the broker trades the difference between the target and the position in
+	 * one fill, and cancels the order when the difference is at most 0.0000001.
+	 * Unless the portfolio's `marginLong` is `0`, a buy from a flat or long
+	 * position is cut, without a rejection, to what the cash pays for; a sell
+	 * that opens or adds to a short, and a fill that crosses zero, must pass a
+	 * capital check. A fill that closes the position or crosses zero also
+	 * cancels the attached exit.
+	 *
+	 * `pyramiding` never limits a rebalance. A rebalance that opens or reverses
+	 * the position counts as its first entry, and its `commandId` becomes the
+	 * position's entry id, which a later `entry` on that side must use and an
+	 * exit can name in `fromEntry`. A rebalance that adds to or reduces the
+	 * position leaves the entry id and the entry count unchanged.
+	 * @param commandId Name of the order; `cancel` takes it.
+	 * @param target Target from {@link trade.targetQuantity} or
+	 * {@link trade.targetPercentOfEquity}.
+	 * @returns `broker.Order`: the accepted order, or `na` when the broker
+	 * rejects it on submission.
+	 * @example
+	 * The 50% target buys 5 units at bar 1's open of 100. The rebalance's id
+	 * becomes the position's entry id, so a stop can name it in `fromEntry`;
+	 * the stop fills at 95 on bar 2.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * matches = strat.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     strat.rebalance("Alloc", trade.targetPercentOfEquity(50.0))
+	 * if bar_index == 1
+	 *     strat.exit("Stop", fromEntry = "Alloc", stop = 95.0)
+	 * strat.end_bar(close, false)
+	 * emit "low" low
+	 * emit "fill qty" na(matches.pending) ? na : matches.pending.quantity
+	 * emit "exit" na(matches.exit) ? na : matches.exit.price
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,102,98,101
+	 * 2,101,102,94,96
+	 * 3,96,97,95,96
+	 * ```
+	 * @see trade.targetQuantity
+	 * @see trade.targetPercentOfEquity
+	 */
 	broker.Order rebalance(string commandId, broker.PositionTarget target) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = target.value > 0.0 ? broker.Side.buy : target.value < 0.0 ? broker.Side.sell : currentQuantity > 0.0 ? broker.Side.sell : broker.Side.buy
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.rebalance, side, na, this.idx, positionTarget = target))
 
+	/**
+	 * Cancels the pending order or the attached exit named `commandId`.
+	 *
+	 * Cancelling a pending entry also cancels an exit attached to it, unless
+	 * that exit protects the open position of the same entry id.
+	 * @param commandId Name the order or exit was submitted with.
+	 * @returns `int`: the number of orders cancelled, from `0` to `2`.
+	 * @example
+	 * Cancelling the pending stop entry on bar 1 also cancels the stop attached
+	 * to it, so `cancel` returns 2, and bar 2's high of 108 fills nothing.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * int cancelled = na
+	 * if bar_index == 0
+	 *     strat.entry("Breakout", trade.Direction.long, qty = 5.0,
+	 *         stop = 105.0)
+	 *     strat.exit("Stop", fromEntry = "Breakout", stop = 95.0)
+	 * if bar_index == 1
+	 *     cancelled := strat.cancel("Breakout")
+	 * strat.end_bar(close, false)
+	 * emit "high" high
+	 * emit "cancelled" cancelled
+	 * emit "pending" strat.has_pending() ? 1 : 0
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,104,99,103
+	 * 2,103,108,102,107
+	 * 3,107,109,106,108
+	 * ```
+	 */
 	int cancel(string commandId) =>
 		this.broker.cancel(commandId)
 
+	/**
+	 * Fills the pending order at `closePrice` when the broker processes orders
+	 * on close, and applies the fill.
+	 *
+	 * Without `processOrdersOnClose = true` on the broker it fills nothing. A
+	 * market order fills at the close, and a stop entry fills at the close when
+	 * the close is at or past its stop. It never checks the attached exit; the
+	 * next `begin_bar` does. Use it with `mark` and `finish` in place of
+	 * `end_bar` to act between those steps: after one fill, a new order fills
+	 * at the same close with a second call. A bar has at most two fills.
+	 * @param closePrice The bar's close.
+	 * @returns `broker.Fill`: the last fill applied, or `na` when nothing
+	 * filled.
+	 * @example
+	 * The buy stop at 104 is sent on bar 1, after `begin_bar`. The close of 105
+	 * is past the stop, so `process_close` fills it at the close, not at 104.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(processOrdersOnClose = true),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * float price = na
+	 * if bar_index == 1
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0, stop = 104.0)
+	 *     filled = strat.process_close(close)
+	 *     price := na(filled) ? na : filled.price
+	 * strat.mark(close)
+	 * emit "close" close
+	 * emit "fill price" price
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,106,99,105
+	 * 2,105,107,104,106
+	 * 3,106,108,105,107
+	 * ```
+	 */
 	broker.Fill process_close(float closePrice) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -207,12 +1514,87 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		not na(continuation) ? continuation : firstExecution
 
+	/**
+	 * Values the portfolio at `price` and updates equity, peak equity and
+	 * maximum drawdown.
+	 *
+	 * Equity is cash plus the signed position times `price`. `end_bar` marks at
+	 * the close; call `mark` directly when using `process_close` and `finish`
+	 * instead.
+	 * @param price Price to value the position at, normally {@link close}.
+	 * @returns `float`: the new equity.
+	 * @example
+	 * The 5 units bought at bar 1's open of 100 are valued at each close:
+	 * equity is 500 of cash plus 5 times the close.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * equity = strat.mark(close)
+	 * emit "close" close
+	 * emit "equity" equity
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,108,99,106
+	 * 2,106,107,95,96
+	 * 3,96,99,95,98
+	 * ```
+	 */
 	float mark(float price) =>
 		currentPortfolio = this.portfolio
 		value = currentPortfolio.mark(price)
 		this.portfolio := currentPortfolio
 		value
 
+	/**
+	 * On the last bar, expires the pending order and the attached exit without
+	 * closing the position.
+	 *
+	 * Does nothing when `isLast` is `false`. Tea has no builtin that tells the
+	 * last bar, so the script has to know it, for example from an input.
+	 * @param isLast Whether this is the last bar of the data.
+	 * @returns `broker.FinishResult`: the expired order in `pending` and the
+	 * expired exit in `exit`, or `na` when `isLast` is `false`.
+	 * @example
+	 * The buy stop at 110 is never reached. On the last bar, bar 3, `finish`
+	 * expires it, order 1, and the stop attached to it, order 2.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * isLast = bar_index == 3
+	 * if bar_index == 0
+	 *     strat.entry("Breakout", trade.Direction.long, qty = 5.0,
+	 *         stop = 110.0)
+	 *     strat.exit("Stop", fromEntry = "Breakout", stop = 95.0)
+	 * strat.process_close(close)
+	 * strat.mark(close)
+	 * expired = strat.finish(isLast)
+	 * emit "high" high
+	 * emit "expired entry" na(expired) ? na : expired.pending.id
+	 * emit "expired exit" na(expired) ? na : expired.exit.id
+	 * emit "pending" strat.has_pending() ? 1 : 0
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,102,99,101
+	 * 2,101,103,100,102
+	 * 3,102,104,101,103
+	 * ```
+	 */
 	broker.FinishResult finish(bool isLast) =>
 		broker.FinishResult expired = na
 		if isLast
@@ -221,6 +1603,49 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 			this.broker := currentBroker
 		expired
 
+	/**
+	 * Ends the bar: runs `process_close`, `mark` and `finish` in that order.
+	 *
+	 * With `processOrdersOnClose = true` on the broker, the pending order can
+	 * fill at `closePrice`, including one submitted on this bar; the attached
+	 * exit is not checked. The portfolio is then marked at `closePrice`, and on
+	 * the last bar the pending order and the attached exit expire. Tea has no
+	 * builtin that tells the last bar, so pass `false` unless the script knows
+	 * it, for example from an input.
+	 * @param closePrice The bar's close.
+	 * @param isLast Whether this is the last bar of the data.
+	 * @returns `broker.FinishResult`: the orders expired on the last bar, or
+	 * `na` when `isLast` is `false`.
+	 * @example
+	 * Without close processing, the entry sent on bar 0 fills at bar 1's open
+	 * and equity is marked at each close. On the last bar, bar 3, the attached
+	 * stop expires: `end_bar` returns it, order 2.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * isLast = bar_index == 3
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     strat.exit("Stop", fromEntry = "Long", stop = 90.0)
+	 * expired = strat.end_bar(close, isLast)
+	 * emit "close" close
+	 * emit "equity" strat.snapshot().equity
+	 * emit "expired exit" na(expired) ? na : expired.exit.id
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,104,99,103
+	 * 2,103,106,102,105
+	 * 3,105,107,104,106
+	 * ```
+	 */
 	broker.FinishResult end_bar(float closePrice, bool isLast) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -236,31 +1661,346 @@ export type OhlcTrade<B: broker.OhlcBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		expired
 
+	/**
+	 * Returns the portfolio's cash balance.
+	 *
+	 * Every fill, an exit's included, changes it: a buy subtracts its notional
+	 * and commission, and a sell, including a short sale, adds its notional
+	 * and subtracts its commission.
+	 * @returns `float`: the cash balance.
+	 * @example
+	 * With a 1% commission, the stop entry buys 5 units at 105 for 525 + 5.25,
+	 * and the target exit sells them at 111 for 555 - 5.55.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(
+	 *     broker.new(commission = broker.commissionPercent(1.0)),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Breakout", trade.Direction.long, qty = 5.0,
+	 *         stop = 105.0)
+	 *     strat.exit("Target", fromEntry = "Breakout", target = 111.0)
+	 * strat.end_bar(close, false)
+	 * emit "high" high
+	 * emit "cash" strat.cash()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,102,98,101
+	 * 1,101,106,100,105
+	 * 2,106,112,104,110
+	 * 3,110,111,108,109
+	 * ```
+	 */
 	float cash() const =>
 		this.portfolio.cash()
 
+	/**
+	 * Returns the signed position: positive when long, negative when short, `0`
+	 * when flat.
+	 * @returns `float`: the position quantity.
+	 * @example
+	 * A sell stop at 95 opens a short of 5 units when bar 1's low reaches it;
+	 * the stop exit at 100 closes it on bar 2.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Short", trade.Direction.short, qty = 5.0, stop = 95.0)
+	 *     strat.exit("Cover", fromEntry = "Short", stop = 100.0)
+	 * strat.end_bar(close, false)
+	 * emit "high" high
+	 * emit "low" low
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,99,99,94,96
+	 * 2,96,101,95,100
+	 * 3,100,101,99,100
+	 * ```
+	 */
 	float position_quantity() const =>
 		this.portfolio.position_quantity()
 
+	/**
+	 * Returns the average entry price of the open position, or `na` when flat.
+	 *
+	 * It is the quantity-weighted mean of the execution prices, after slippage,
+	 * of the fills that opened and added to the position; a fill that reduces
+	 * the position does not change it.
+	 * @returns `float`: the average entry price, or `na` when flat.
+	 * @example
+	 * With `pyramiding = 2`, a market entry buys 5 units at bar 1's open of 100
+	 * and a stop entry adds 5 at 106; the average is 103.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 2000.0, pyramiding = 2))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 1
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0, stop = 106.0)
+	 * strat.end_bar(close, false)
+	 * emit "high" high
+	 * emit "position" strat.position_quantity()
+	 * emit "average" strat.position_avg_price()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,104,99,103
+	 * 2,103,108,102,107
+	 * 3,107,109,106,108
+	 * ```
+	 */
 	float position_avg_price() const =>
 		this.portfolio.position_avg_price()
 
+	/**
+	 * Returns the portfolio's metrics as one
+	 * {@link portfolio.PortfolioSnapshot}.
+	 *
+	 * Its `equity` is from the latest `mark` or `end_bar`, so before `end_bar`
+	 * it still holds the previous bar's value.
+	 * @returns `portfolio.PortfolioSnapshot`: cash, position, equity, profit
+	 * and risk statistics.
+	 * @example
+	 * The stop exit sells the 5 units bought at 100 for 97, so the round trip
+	 * realizes -15 and counts as a loss.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     strat.exit("Stop", fromEntry = "Long", stop = 97.0)
+	 * strat.end_bar(close, false)
+	 * metrics = strat.snapshot()
+	 * emit "low" low
+	 * emit "equity" metrics.equity
+	 * emit "realized" metrics.realizedPnl
+	 * emit "round trips" metrics.roundTripCount
+	 * emit "win rate" metrics.winRate
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,102,98,101
+	 * 2,101,102,96,98
+	 * 3,98,99,97,98
+	 * ```
+	 */
 	portfolio.PortfolioSnapshot snapshot() const =>
 		this.portfolio.snapshot()
 
+	/**
+	 * Returns whether an order or an attached exit is pending.
+	 * @returns `bool`: `true` while an order waits to fill or an exit is
+	 * attached.
+	 * @example
+	 * After the entry fills at bar 1's open, the attached target keeps
+	 * `has_pending` true until it fills on bar 2; `has_pending_entry` is false
+	 * once the entry has filled.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     strat.exit("Target", fromEntry = "Long", target = 105.0)
+	 * strat.end_bar(close, false)
+	 * emit "high" high
+	 * emit "pending" strat.has_pending() ? 1 : 0
+	 * emit "pending entry" strat.has_pending_entry() ? 1 : 0
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,103,99,102
+	 * 2,102,106,101,104
+	 * 3,104,105,103,104
+	 * ```
+	 */
 	bool has_pending() const =>
 		this.broker.has_pending()
 
+	/**
+	 * Returns whether the pending order is an entry.
+	 * @returns `bool`: `true` when an entry is pending; `false` for a pending
+	 * close or rebalance, for an attached exit alone, or when nothing is
+	 * pending.
+	 * @example
+	 * The buy stop at 105 is a pending entry until bar 2's high reaches it.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.ohlc(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("Breakout", trade.Direction.long, qty = 5.0,
+	 *         stop = 105.0)
+	 * strat.end_bar(close, false)
+	 * emit "high" high
+	 * emit "pending entry" strat.has_pending_entry() ? 1 : 0
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,104,99,103
+	 * 2,103,107,102,106
+	 * 3,106,108,105,107
+	 * ```
+	 */
 	bool has_pending_entry() const =>
 		this.broker.has_pending_entry()
 
-// PathTrade coordinates deterministic intrabar path matching and therefore
-// exposes the full fixed and trailing exit command surface.
+/**
+ * Coordinator that replays each bar as an ordered price path and matches
+ * orders, stop entries and fixed or trailing exits along it.
+ *
+ * Create it with {@link trade.path}. The path runs from the open to the nearer
+ * of the high and the low, then to the farther one, then to the close; when the
+ * high and the low are equally far from the open, the low comes first. An exit
+ * only sees the part of the path after its entry filled. Each bar, call
+ * `begin_bar`, attach or adjust exits, call `continue_bar`, submit new orders,
+ * then call `end_bar`. Orders never fill at a close in this family. The broker
+ * holds one pending order and one attached exit at a time, and makes at most
+ * two fills per bar. Strategies call these methods rather than the broker's or
+ * the portfolio's own.
+ * @example
+ * On bar 1 the path runs 100, 95, 106, 104. The buy stop at 105 fills on the
+ * way up from 95, so its exit, active on the entry's bar, only sees 105, 106
+ * and 104: the low of 95, earlier on the path, does not trigger the exit's stop
+ * of 96.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.path(broker.new(),
+ *     portfolio.new(initialCash = 1000.0))
+ * matches = strat.begin_bar(open, high, low, close, bar_index)
+ * exitFill = strat.continue_bar(open, high, low, close)
+ * if bar_index == 0
+ *     strat.entry("Breakout", trade.Direction.long, qty = 5.0,
+ *         stop = 105.0)
+ *     strat.exit("Stop", fromEntry = "Breakout", stop = 96.0,
+ *         activateOnEntryBar = true)
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "entry" na(matches.pending) ? na : matches.pending.price
+ * emit "exit" na(exitFill) ? na : exitFill.price
+ * emit "position" strat.position_quantity()
+ * ```
+ * ```csv
+ * time,open,high,low,close
+ * 0,100,101,99,100
+ * 1,100,106,95,104
+ * 2,104,105,103,104
+ * 3,104,106,103,105
+ * ```
+ * @see trade.path
+ * @see trade.OhlcTrade
+ * @category Coordinators
+ */
 export type PathTrade<B: broker.PathBroker, P: portfolio.NetLedger>
+	/** Broker that validates and fills this coordinator's orders. */
 	B broker
+	/** Portfolio that records this coordinator's fills. */
 	P portfolio
+	/**
+	 * Bar index from the latest `begin_bar`, or `-1` before the first; orders
+	 * submitted later in the bar record it as their `signalBarIndex`.
+	 */
 	int idx = -1
 
+	/**
+	 * Starts a bar: fills the pending order along this bar's path and records
+	 * where on the path it filled.
+	 *
+	 * The pending order can fill from the bar after it was submitted. A market
+	 * order fills at the open. A stop entry fills at the open when the bar
+	 * opens at or past its stop, otherwise at the stop on the first segment of
+	 * the path that reaches it. A reversal completes at the same price. The
+	 * attached exit is not checked here: `continue_bar` checks it on the rest
+	 * of the path, so an exit derived from this fill can be attached first.
+	 * @param openPrice The bar's open.
+	 * @param highPrice The bar's high.
+	 * @param lowPrice The bar's low.
+	 * @param closePrice The bar's close.
+	 * @param barIndex The bar's index, normally `bar_index`.
+	 * @returns `broker.BarMatches`: `pending` holds the order's fill (after a
+	 * reversal, the opening fill) and `reversalClose` the closing fill of a
+	 * reversal, each `na` when absent; `exit` is always `na`. When a
+	 * reversal's opening fill is rejected, `pending` holds the closing fill and
+	 * `reversalClose` is `na`.
+	 * @example
+	 * On bar 1, `pending` holds the long's fill at the open. The sell stop at
+	 * 98, sent on bar 1, is reached on bar 2's path 99, 100, 96, 97 on the way
+	 * down from 100. It reverses the long: `reversalClose` holds the sale of
+	 * the 5 units and `pending` the 3-unit short at 98.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * matches = strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 1
+	 *     strat.entry("Short", trade.Direction.short, qty = 3.0, stop = 98.0)
+	 * strat.end_bar(close, false)
+	 * closed = matches.reversalClose
+	 * emit "open" open
+	 * emit "high" high
+	 * emit "low" low
+	 * emit "closed qty" na(closed) ? na : closed.quantity
+	 * emit "opened qty" na(matches.pending) ? na : matches.pending.quantity
+	 * emit "price" na(matches.pending) ? na : matches.pending.price
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,102,99,101
+	 * 2,99,100,96,97
+	 * 3,97,98,96,97
+	 * ```
+	 */
 	broker.BarMatches begin_bar(float openPrice, float highPrice, float lowPrice, float closePrice, int barIndex) =>
 		this.idx := barIndex
 		currentBroker = this.broker
@@ -274,6 +2014,57 @@ export type PathTrade<B: broker.PathBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		broker.BarMatches.new(pendingExecution, na, not na(continuation) ? firstExecution : na)
 
+	/**
+	 * Checks the attached exit, including its trailing stop, along the part of
+	 * the bar's path after `begin_bar`'s fill.
+	 *
+	 * Call it after `begin_bar` and any exit changes, with the same prices.
+	 * When `begin_bar` filled nothing, or filled at the open, it checks the
+	 * whole path. The exit fills at the first price on the path that reaches
+	 * its stop or target: at the level, or at the starting point when that is
+	 * already past it. Once the path reaches `trailPrice`, the trailing stop
+	 * moves at the end of each segment that goes the position's way and applies
+	 * from the next segment.
+	 * @param openPrice The bar's open.
+	 * @param highPrice The bar's high.
+	 * @param lowPrice The bar's low.
+	 * @param closePrice The bar's close.
+	 * @returns `broker.Fill`: the exit's fill, or `na` when the exit did not
+	 * trigger.
+	 * @example
+	 * The entry fills at bar 1's open of 100, and a stop 3 below the fill is
+	 * attached before `continue_bar`. The path then runs 101, 96, 98, so the
+	 * stop fills at 97 on the same bar.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * matches = strat.begin_bar(open, high, low, close, bar_index)
+	 * if not na(matches.pending)
+	 *     stopPrice = matches.pending.price - 3.0
+	 *     strat.exit("Stop", fromEntry = "Long", stop = stopPrice,
+	 *         activateOnEntryBar = true)
+	 * exitFill = strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "high" high
+	 * emit "low" low
+	 * emit "exit" na(exitFill) ? na : exitFill.price
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,101,96,98
+	 * 2,98,99,97,98
+	 * 3,98,100,97,99
+	 * ```
+	 */
 	broker.Fill continue_bar(float openPrice, float highPrice, float lowPrice, float closePrice) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -283,6 +2074,66 @@ export type PathTrade<B: broker.PathBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		execution
 
+	/**
+	 * Submits a market or stop entry order that opens, adds to or reverses the
+	 * position on a later bar.
+	 *
+	 * Without `stop` it is a market order that fills at the next open. With
+	 * `stop` it fills where the path first reaches the stop: a buy at or above
+	 * it, a sell at or below it; `begin_bar` gives the fill price. Resubmitting
+	 * a pending stop entry under the same `commandId` with a `stop` replaces
+	 * it, and an exit attached to it stays attached.
+	 *
+	 * Sizing, reversals, adding to a position and the checks work as for
+	 * {@link trade.NextOpenTrade.entry}. Give at most one of `qty` and
+	 * `sizing`; without either, the entry spends all available capital. It
+	 * returns `na` when another order is pending, when an entry on the
+	 * position's side uses another `commandId`, or when `stop` is not positive.
+	 * Size, room under `pyramiding` and capital are checked when the order
+	 * would fill.
+	 * @param commandId Name of the order; exits and `cancel` refer to it, and
+	 * later entries that add to the position reuse it.
+	 * @param direction `trade.Direction.long` to buy or `trade.Direction.short`
+	 * to sell.
+	 * @param qty Quantity to open or add; must be positive.
+	 * @param sizing Percent-of-equity sizing from {@link trade.percentOfEquity}
+	 * or {@link trade.percentOfEquityAtFill}.
+	 * @param stop Stop price that makes this a stop entry, or `na` for a market
+	 * order.
+	 * @returns `broker.Order`: the accepted order, or `na` when the broker
+	 * rejects it on submission.
+	 * @example
+	 * The buy stop at 125 is sized at 50% of the 1000 equity. Bar 2's path runs
+	 * 122, 121, 127, 126 and reaches the stop on the way up, buying 500 / 125 =
+	 * 4 units at 125.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * matches = strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.entry("Breakout", trade.Direction.long, stop = 125.0,
+	 *         sizing = trade.percentOfEquity(50.0))
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "high" high
+	 * emit "low" low
+	 * emit "fill price" na(matches.pending) ? na : matches.pending.price
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,120,121,119,120
+	 * 1,120,124,119,122
+	 * 2,122,127,121,126
+	 * 3,126,128,125,127
+	 * ```
+	 * @see trade.NextOpenTrade.entry
+	 */
 	broker.Order entry(string commandId, Direction direction, float qty = na, Sizing sizing = na, float stop = na) =>
 		side = direction == Direction.long ? broker.Side.buy : broker.Side.sell
 		float notional = na
@@ -305,24 +2156,269 @@ export type PathTrade<B: broker.PathBroker, P: portfolio.NetLedger>
 					notional := budget
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.entry, side, qty, this.idx, notional, na, stop, false, na, cashBudget, equityPercent, commissionIncluded))
 
+	/**
+	 * Attaches a fixed and/or trailing exit that closes the whole position
+	 * opened by entry `fromEntry`.
+	 *
+	 * Give any of `stop`, `target` and the trailing pair `trailPrice` with
+	 * `trailOffset`, all positive; for a long the stop must be below the
+	 * target, for a short above it. `trailPrice` is a price and `trailOffset` a
+	 * price distance: once the path reaches `trailPrice`, the trailing stop
+	 * sits `trailOffset` behind the best price reached since, and it replaces
+	 * `stop` whenever it is tighter. `continue_bar` checks the exit, from the
+	 * bar after its entry fills, or from the entry's own bar with
+	 * `activateOnEntryBar`. Adverse slippage applies to exit fills too, so a
+	 * target is not a limit price.
+	 *
+	 * `fromEntry` must name the pending entry or the entry that opened the
+	 * position. One exit is attached at a time: resubmitting with the same
+	 * `commandId` and `fromEntry` replaces it and starts its trailing stop
+	 * over, and another exit returns `na`, as do invalid prices, only one of
+	 * the trailing pair, and a `fromEntry` that matches no entry. A fill that
+	 * closes or reverses the position cancels the exit, unless the exit is
+	 * attached to the reversing entry itself, and so does the failure of the
+	 * pending entry it is attached to.
+	 * @param commandId Name of the exit; `cancel` takes it.
+	 * @param fromEntry `commandId` of the entry the exit belongs to.
+	 * @param stop Stop-loss price, or `na` for none.
+	 * @param target Take-profit price, or `na` for none.
+	 * @param activateOnEntryBar Whether the exit may fill on the bar its entry
+	 * fills.
+	 * @param trailPrice Price the path must reach to start the trailing stop,
+	 * or `na` for none.
+	 * @param trailOffset Distance the trailing stop keeps behind the best price
+	 * reached since it started, or `na` for none.
+	 * @returns `broker.Order`: the accepted exit, or `na` when the broker
+	 * rejects it on submission.
+	 * @example
+	 * The trailing stop starts when bar 1's path rises from 99 to 112, past the
+	 * activation price of 105, and then sits 2 below that best price, at 110.
+	 * Bar 2's path falls from 111.5 to 108, so the exit fills at 110.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * matches = strat.begin_bar(open, high, low, close, bar_index)
+	 * if not na(matches.pending)
+	 *     strat.exit("Trail", fromEntry = "Long", stop = 95.0,
+	 *         activateOnEntryBar = true, trailPrice = 105.0, trailOffset = 2.0)
+	 * exitFill = strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "high" high
+	 * emit "low" low
+	 * emit "exit" na(exitFill) ? na : exitFill.price
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,112,99,111
+	 * 2,111,111.5,108,109
+	 * 3,109,110,108,109
+	 * ```
+	 */
 	broker.Order exit(string commandId, string fromEntry, float stop = na, float target = na, bool activateOnEntryBar = false, float trailPrice = na, float trailOffset = na) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = currentQuantity < 0.0 ? broker.Side.buy : broker.Side.sell
 		this.broker.submit_exit(broker.Command.new(commandId, broker.CommandKind.exit, side, na, this.idx, na, fromEntry, stop, activateOnEntryBar, target, trailPrice = trailPrice, trailOffset = trailOffset))
 
+	/**
+	 * Submits an order that closes the whole position at a later bar's open.
+	 *
+	 * When it fills, it also cancels the attached exit. It returns `na` when
+	 * another order is pending; if the position is flat when it would fill, the
+	 * broker rejects it with `invalidAccountState`.
+	 * @param commandId Name of the order; `cancel` takes it.
+	 * @returns `broker.Order`: the accepted order, or `na` when another order
+	 * is pending.
+	 * @example
+	 * Even with `processOrdersOnClose = true` on the broker, the close sent on
+	 * bar 1 does not fill at that bar's close of 104; it fills at bar 2's open
+	 * of 106.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(processOrdersOnClose = true),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 1
+	 *     strat.close("Exit")
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "close" close
+	 * emit "position" strat.position_quantity()
+	 * emit "cash" strat.cash()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,105,99,104
+	 * 2,106,107,105,106
+	 * 3,106,108,105,107
+	 * ```
+	 */
 	broker.Order close(string commandId) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = currentQuantity < 0.0 ? broker.Side.buy : broker.Side.sell
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.close, side, na, this.idx))
 
+	/**
+	 * Submits an order that moves the position to a target size at a later
+	 * bar's open.
+	 *
+	 * It works as {@link trade.NextOpenTrade.rebalance} does. When it fills,
+	 * the broker trades the difference between the target and the position in
+	 * one fill, and cancels the order when the difference is at most 0.0000001.
+	 * Unless the portfolio's `marginLong` is `0`, a buy from a flat or long
+	 * position is cut, without a rejection, to what the cash pays for; a sell
+	 * that opens or adds to a short, and a fill that crosses zero, must pass a
+	 * capital check. A fill that closes the position or crosses zero also
+	 * cancels the attached exit.
+	 *
+	 * `pyramiding` never limits a rebalance. A rebalance that opens or reverses
+	 * the position counts as its first entry, and its `commandId` becomes the
+	 * position's entry id, which a later `entry` on that side must use and an
+	 * exit can name in `fromEntry`. A rebalance that adds to or reduces the
+	 * position leaves the entry id and the entry count unchanged.
+	 * @param commandId Name of the order; `cancel` takes it.
+	 * @param target Target from {@link trade.targetQuantity} or
+	 * {@link trade.targetPercentOfEquity}.
+	 * @returns `broker.Order`: the accepted order, or `na` when the broker
+	 * rejects it on submission.
+	 * @example
+	 * The rebalance opens 5 units at bar 1 under the id `Alloc`, which the stop
+	 * then names in `fromEntry`. A target of 0 sells the 5 units at bar 3's
+	 * open and cancels the stop.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.rebalance("Alloc", trade.targetQuantity(5.0))
+	 * if bar_index == 1
+	 *     strat.exit("Stop", fromEntry = "Alloc", stop = 90.0)
+	 * if bar_index == 2
+	 *     strat.rebalance("Alloc", trade.targetQuantity(0.0))
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "position" strat.position_quantity()
+	 * emit "pending" strat.has_pending() ? 1 : 0
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,103,99,102
+	 * 2,102,104,101,103
+	 * 3,104,105,103,104
+	 * ```
+	 * @see trade.targetQuantity
+	 * @see trade.targetPercentOfEquity
+	 */
 	broker.Order rebalance(string commandId, broker.PositionTarget target) =>
 		currentQuantity = this.portfolio.position_quantity()
 		side = target.value > 0.0 ? broker.Side.buy : target.value < 0.0 ? broker.Side.sell : currentQuantity > 0.0 ? broker.Side.sell : broker.Side.buy
 		this.broker.submit(broker.Command.new(commandId, broker.CommandKind.rebalance, side, na, this.idx, positionTarget = target))
 
+	/**
+	 * Cancels the pending order or the attached exit named `commandId`.
+	 *
+	 * Cancelling a pending entry also cancels an exit attached to it, unless
+	 * that exit protects the open position of the same entry id.
+	 * @param commandId Name the order or exit was submitted with.
+	 * @returns `int`: the number of orders cancelled, from `0` to `2`.
+	 * @example
+	 * Cancelling the attached stop on bar 1 returns 1. Bar 2's low of 94 would
+	 * have reached it; the 5 units stay open.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * int cancelled = na
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     strat.exit("Stop", fromEntry = "Long", stop = 95.0)
+	 * if bar_index == 1
+	 *     cancelled := strat.cancel("Stop")
+	 * strat.end_bar(close, false)
+	 * emit "low" low
+	 * emit "cancelled" cancelled
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,102,98,101
+	 * 2,101,102,94,96
+	 * 3,96,98,95,97
+	 * ```
+	 */
 	int cancel(string commandId) =>
 		this.broker.cancel(commandId)
 
+	/**
+	 * Ends the bar: marks the portfolio at `closePrice` and, on the last bar,
+	 * expires the pending order and the attached exit.
+	 *
+	 * This family never fills orders at a close, even with
+	 * `processOrdersOnClose = true` on the broker. Tea has no builtin that
+	 * tells the last bar, so pass `false` unless the script knows it, for
+	 * example from an input.
+	 * @param closePrice The bar's close.
+	 * @param isLast Whether this is the last bar of the data.
+	 * @returns `broker.FinishResult`: the orders expired on the last bar, or
+	 * `na` when `isLast` is `false`.
+	 * @example
+	 * Equity is marked at each close. The close sent on the last bar, bar 3,
+	 * can no longer fill, so `end_bar` returns it as expired, order 2.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * isLast = bar_index == 3
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if isLast
+	 *     strat.close("Exit")
+	 * expired = strat.end_bar(close, isLast)
+	 * emit "close" close
+	 * emit "equity" strat.snapshot().equity
+	 * emit "expired" na(expired) ? na : expired.pending.id
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,104,99,103
+	 * 2,103,106,102,105
+	 * 3,105,107,104,106
+	 * ```
+	 */
 	broker.FinishResult end_bar(float closePrice, bool isLast) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -334,35 +2430,397 @@ export type PathTrade<B: broker.PathBroker, P: portfolio.NetLedger>
 		this.portfolio := currentPortfolio
 		expired
 
+	/**
+	 * Returns the portfolio's cash balance.
+	 *
+	 * A buy subtracts its notional and commission; a sell, including a short
+	 * sale, adds its notional and subtracts its commission.
+	 * @returns `float`: the cash balance.
+	 * @example
+	 * With a 1% commission, the short sale of 5 units at 100 adds 500 - 5, and
+	 * the stop exit at 104 buys them back for 520 + 5.2.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(
+	 *     broker.new(commission = broker.commissionPercent(1.0)),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.entry("Short", trade.Direction.short, qty = 5.0)
+	 *     strat.exit("Cover", fromEntry = "Short", stop = 104.0)
+	 * strat.end_bar(close, false)
+	 * emit "open" open
+	 * emit "high" high
+	 * emit "cash" strat.cash()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,102,98,101
+	 * 2,101,105,100,103
+	 * 3,103,104,102,103
+	 * ```
+	 */
 	float cash() const =>
 		this.portfolio.cash()
 
+	/**
+	 * Returns the signed position: positive when long, negative when short, `0`
+	 * when flat.
+	 * @returns `float`: the position quantity.
+	 * @example
+	 * A long of 5 units from bar 1's open is reversed to a short of 3 when bar
+	 * 2's path falls through the sell stop at 98.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 1
+	 *     strat.entry("Short", trade.Direction.short, qty = 3.0, stop = 98.0)
+	 * strat.end_bar(close, false)
+	 * emit "low" low
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,102,99,101
+	 * 2,99,100,96,97
+	 * 3,97,98,96,97
+	 * ```
+	 */
 	float position_quantity() const =>
 		this.portfolio.position_quantity()
 
+	/**
+	 * Returns the average entry price of the open position, or `na` when flat.
+	 *
+	 * It is the quantity-weighted mean of the execution prices, after slippage,
+	 * of the fills that opened and added to the position; a fill that reduces
+	 * the position does not change it.
+	 * @returns `float`: the average entry price, or `na` when flat.
+	 * @example
+	 * With `pyramiding = 2`, 5 units bought at bar 1's open of 100 and 5 added
+	 * by the buy stop at 104 average 102.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 2000.0, pyramiding = 2))
+	 * strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 * if bar_index == 1
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0, stop = 104.0)
+	 * strat.end_bar(close, false)
+	 * emit "high" high
+	 * emit "position" strat.position_quantity()
+	 * emit "average" strat.position_avg_price()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,103,99,102
+	 * 2,102,106,101,105
+	 * 3,105,107,104,106
+	 * ```
+	 */
 	float position_avg_price() const =>
 		this.portfolio.position_avg_price()
 
+	/**
+	 * Returns the portfolio's metrics as one
+	 * {@link portfolio.PortfolioSnapshot}.
+	 *
+	 * Its `equity` is from the latest `end_bar`.
+	 * @returns `portfolio.PortfolioSnapshot`: cash, position, equity, profit
+	 * and risk statistics.
+	 * @example
+	 * The target exit sells the 5 units bought at 100 for 106, so the round
+	 * trip realizes 30 and counts as a win.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     strat.exit("Target", fromEntry = "Long", target = 106.0)
+	 * strat.end_bar(close, false)
+	 * metrics = strat.snapshot()
+	 * emit "high" high
+	 * emit "equity" metrics.equity
+	 * emit "realized" metrics.realizedPnl
+	 * emit "round trips" metrics.roundTripCount
+	 * emit "win rate" metrics.winRate
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,104,99,103
+	 * 2,103,107,102,104
+	 * 3,104,105,103,104
+	 * ```
+	 */
 	portfolio.PortfolioSnapshot snapshot() const =>
 		this.portfolio.snapshot()
 
+	/**
+	 * Returns whether an order or an attached exit is pending.
+	 * @returns `bool`: `true` while an order waits to fill or an exit is
+	 * attached.
+	 * @example
+	 * After the entry fills at bar 1's open, the attached stop keeps
+	 * `has_pending` true; `has_pending_entry` is false once the entry has
+	 * filled.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+	 *     strat.exit("Stop", fromEntry = "Long", stop = 90.0)
+	 * strat.end_bar(close, false)
+	 * emit "pending" strat.has_pending() ? 1 : 0
+	 * emit "pending entry" strat.has_pending_entry() ? 1 : 0
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,102,99,101
+	 * 2,101,103,100,102
+	 * 3,102,104,101,103
+	 * ```
+	 */
 	bool has_pending() const =>
 		this.broker.has_pending()
 
+	/**
+	 * Returns whether the pending order is an entry.
+	 * @returns `bool`: `true` when an entry is pending; `false` for a pending
+	 * close or rebalance, for an attached exit alone, or when nothing is
+	 * pending.
+	 * @example
+	 * The buy stop at 105 is a pending entry until bar 2's path reaches it.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.path(broker.new(),
+	 *     portfolio.new(initialCash = 1000.0))
+	 * strat.begin_bar(open, high, low, close, bar_index)
+	 * strat.continue_bar(open, high, low, close)
+	 * if bar_index == 0
+	 *     strat.entry("Breakout", trade.Direction.long, qty = 5.0,
+	 *         stop = 105.0)
+	 * strat.end_bar(close, false)
+	 * emit "high" high
+	 * emit "pending entry" strat.has_pending_entry() ? 1 : 0
+	 * emit "position" strat.position_quantity()
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,100,104,99,103
+	 * 2,103,107,102,106
+	 * 3,106,108,105,107
+	 * ```
+	 */
 	bool has_pending_entry() const =>
 		this.broker.has_pending_entry()
 
+/**
+ * Coordinator for separately accounted lots whose orders execute at once, at
+ * the bar's close or at a stop.
+ *
+ * Create it with {@link trade.lots}. Each bar, call `begin_bar`, then `entry`,
+ * `close_trade` or `close_trade_at_stop`, then `mark`. Orders do not wait for a
+ * later bar: `entry` and `close_trade` execute at the close captured by
+ * `begin_bar`, and `close_trade_at_stop` executes when the bar reached the
+ * stop. Each entry opens a lot with its own trade id, counting up from `1`, and
+ * later closes name the lot by that id. Exit rules such as stops stay in the
+ * script's own state, keyed by trade id. Strategies call these methods rather
+ * than the broker's or the portfolio's own.
+ * @example
+ * Lot 1 buys 2 units at bar 0's close of 100 and lot 2 buys 3 at 104. Closing
+ * lot 1 by its id at bar 2's close of 110 realizes 20 and leaves lot 2 open.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.lots(broker.new(),
+ *     portfolio.lots(initialCash = 1000.0, maxOpenTrades = 2))
+ * var int first = 0
+ * strat.begin_bar(close, bar_index)
+ * if bar_index == 0
+ *     filled = strat.entry("A", "Flip", trade.Direction.long, qty = 2.0)
+ *     first := na(filled) ? 0 : filled.tradeId
+ * if bar_index == 1
+ *     strat.entry("B", "Flip", trade.Direction.long, qty = 3.0)
+ * if bar_index == 2
+ *     strat.close_trade("Exit A", first)
+ * strat.mark()
+ * metrics = strat.snapshot()
+ * emit "close" close
+ * emit "lots" metrics.openTradeCount
+ * emit "position" metrics.positionQuantity
+ * emit "realized" metrics.realizedPnl
+ * ```
+ * ```csv
+ * time,close
+ * 0,100
+ * 1,104
+ * 2,110
+ * 3,108
+ * ```
+ * @see trade.lots
+ * @see portfolio.LotPortfolio
+ * @category Coordinators
+ */
 export type LotTrade<B: broker.ImmediateBroker, P: portfolio.LotLedger>
+	/** Broker that validates and executes this coordinator's orders. */
 	B broker
+	/** Portfolio that records each lot. */
 	P portfolio
+	/**
+	 * Bar index from the latest `begin_bar`, or `-1` before the first; orders
+	 * record it as their `signalBarIndex`.
+	 */
 	int idx = -1
+	/**
+	 * Close captured by the latest `begin_bar`; `entry`, `close_trade` and
+	 * `mark` use it as their price.
+	 */
 	float closePrice = na
 
+	/**
+	 * Starts a bar by recording the close and the bar index that later calls in
+	 * the bar use.
+	 * @param closePrice The bar's close.
+	 * @param barIndex The bar's index, normally `bar_index`.
+	 * @returns `int`: `barIndex`.
+	 * @example
+	 * `begin_bar` returns the bar index it records. The entry on bar 1 executes
+	 * at that bar's close of 104, the price `begin_bar` captured.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.lots(broker.new(),
+	 *     portfolio.lots(initialCash = 1000.0))
+	 * started = strat.begin_bar(close, bar_index)
+	 * float price = na
+	 * if bar_index == 1
+	 *     filled = strat.entry("Long", "Flip", trade.Direction.long, qty = 2.0)
+	 *     price := na(filled) ? na : filled.price
+	 * strat.mark()
+	 * emit "close" close
+	 * emit "begin_bar" started
+	 * emit "fill price" price
+	 * ```
+	 * ```csv
+	 * time,close
+	 * 0,100
+	 * 1,104
+	 * 2,103
+	 * 3,105
+	 * ```
+	 */
 	int begin_bar(float closePrice, int barIndex) =>
 		this.closePrice := closePrice
 		this.idx := barIndex
 		this.idx
 
+	/**
+	 * Opens a new lot at the captured close, after closing every lot on the
+	 * opposite side.
+	 *
+	 * Give exactly one of `qty` and `notional`, positive; otherwise the broker
+	 * rejects the entry with `invalidQuantity` before anything closes. The
+	 * entry first closes each open lot on the other side, one fill per lot
+	 * under `reversalCommandId`, realizing its profit and loss; if one of those
+	 * closes fails, the entry stops there and returns `na`. Then the new lot
+	 * executes at the captured close plus adverse slippage. The broker rejects
+	 * it with `invalidAccountState` when the portfolio already holds
+	 * `maxOpenTrades` lots, or, unless the portfolio's margin for the side is
+	 * `0` (the default of {@link portfolio.lots}), when
+	 * `notional * marginLong / 100 + fee` is more than the cash for a buy, or
+	 * `notional * marginShort / 100 + fee` is more than the equity at the
+	 * close for a sell. Lots closed before a rejected entry stay closed.
+	 * @param commandId Name of the entry order.
+	 * @param reversalCommandId Name of the orders that close opposite lots.
+	 * @param direction `trade.Direction.long` to buy or `trade.Direction.short`
+	 * to sell.
+	 * @param qty Quantity of the new lot.
+	 * @param notional Value of the new lot; the quantity is `notional` divided
+	 * by the execution price.
+	 * @returns `broker.Fill`: the entry's fill, whose `tradeId` names the new
+	 * lot, or `na` when no lot opened.
+	 * @example
+	 * Lots 1 and 2 buy 5 units at 100 and 2 at 104. The short entry on bar 2
+	 * first closes both at 110, realizing 5 * 10 + 2 * 6 = 62. Its 50 units at
+	 * 110 need 5500 of equity under `marginShort = 100`, more than the 1062
+	 * left, so it is rejected and returns `na`, and the account is left flat.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.lots(broker.new(), portfolio.lots(initialCash = 1000.0,
+	 *     maxOpenTrades = 2, marginShort = 100.0))
+	 * strat.begin_bar(close, bar_index)
+	 * int lot = na
+	 * if bar_index == 0
+	 *     filled = strat.entry("A", "Flip", trade.Direction.long, qty = 5.0)
+	 *     lot := na(filled) ? na : filled.tradeId
+	 * if bar_index == 1
+	 *     filled = strat.entry("B", "Flip", trade.Direction.long, qty = 2.0)
+	 *     lot := na(filled) ? na : filled.tradeId
+	 * if bar_index == 2
+	 *     filled = strat.entry("S", "Flip", trade.Direction.short, qty = 50.0)
+	 *     lot := na(filled) ? na : filled.tradeId
+	 * strat.mark()
+	 * emit "close" close
+	 * emit "new lot" lot
+	 * emit "position" strat.position_quantity()
+	 * emit "cash" strat.cash()
+	 * emit "realized" strat.snapshot().realizedPnl
+	 * ```
+	 * ```csv
+	 * time,close
+	 * 0,100
+	 * 1,104
+	 * 2,110
+	 * 3,110
+	 * ```
+	 */
 	broker.Fill entry(string commandId, string reversalCommandId, Direction direction, float qty = na, float notional = na) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -395,6 +2853,53 @@ export type LotTrade<B: broker.ImmediateBroker, P: portfolio.LotLedger>
 		this.portfolio := currentPortfolio
 		execution
 
+	/**
+	 * Closes the open lot `tradeId` now, at the captured close.
+	 *
+	 * The fill sells a long lot or buys back a short one at the close plus
+	 * adverse slippage, and realizes the lot's profit net of its entry and exit
+	 * commissions. The broker rejects the close with `invalidAccountState` when
+	 * no open lot has that id.
+	 * @param commandId Name of the closing order.
+	 * @param tradeId Trade id of the lot, from its entry fill.
+	 * @returns `broker.Fill`: the closing fill, or `na` when the close was
+	 * rejected.
+	 * @example
+	 * Closing lot 1 at bar 1's close of 105 realizes 2 * 5 = 10 and leaves lot
+	 * 2 open. Trade id 7 names no open lot, so that close returns `na`.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.lots(broker.new(),
+	 *     portfolio.lots(initialCash = 1000.0, maxOpenTrades = 2))
+	 * strat.begin_bar(close, bar_index)
+	 * int closedId = na
+	 * int unknownId = na
+	 * if bar_index == 0
+	 *     strat.entry("A", "Flip", trade.Direction.long, qty = 2.0)
+	 *     strat.entry("B", "Flip", trade.Direction.long, qty = 3.0)
+	 * if bar_index == 1
+	 *     closed = strat.close_trade("Exit", 1)
+	 *     unknown = strat.close_trade("Exit", 7)
+	 *     closedId := na(closed) ? na : closed.tradeId
+	 *     unknownId := na(unknown) ? na : unknown.tradeId
+	 * strat.mark()
+	 * emit "close" close
+	 * emit "closed lot" closedId
+	 * emit "unknown lot" unknownId
+	 * emit "lots" strat.snapshot().openTradeCount
+	 * emit "realized" strat.snapshot().realizedPnl
+	 * ```
+	 * ```csv
+	 * time,close
+	 * 0,100
+	 * 1,105
+	 * 2,110
+	 * 3,108
+	 * ```
+	 */
 	broker.Fill close_trade(string commandId, int tradeId) =>
 		currentBroker = this.broker
 		currentPortfolio = this.portfolio
@@ -421,6 +2926,73 @@ export type LotTrade<B: broker.ImmediateBroker, P: portfolio.LotLedger>
 		this.portfolio := currentPortfolio
 		execution
 
+	/**
+	 * Closes lot `tradeId` if this bar reached `stopPrice`; the broker decides
+	 * the fill price.
+	 *
+	 * With `entrySide` buy, a long lot, the stop is reached when the low is at
+	 * or below it; with sell, when the high is at or above it. The fill is at
+	 * the open when the bar opened at or past the stop, otherwise at the stop,
+	 * plus adverse slippage. When the stop was not reached, nothing happens;
+	 * when it was, the broker rejects the close with `invalidAccountState` if
+	 * no open lot has that id or the lot was not opened on `entrySide`.
+	 * @param commandId Name of the closing order.
+	 * @param tradeId Trade id of the lot, from its entry fill.
+	 * @param entrySide Side the lot was opened on: `broker.Side.buy` for a long
+	 * lot, `broker.Side.sell` for a short one.
+	 * @param openPrice The bar's open.
+	 * @param highPrice The bar's high.
+	 * @param lowPrice The bar's low.
+	 * @param stopPrice The lot's stop price.
+	 * @returns `broker.Fill`: the closing fill, or `na` when the stop was not
+	 * reached or the close was rejected.
+	 * @example
+	 * Bar 1's low of 97 reaches lot 1's stop of 97, so it closes at the stop.
+	 * Bar 2 opens at 95, below lot 2's stop of 96, so lot 2 closes at the open.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.lots(broker.new(),
+	 *     portfolio.lots(initialCash = 1000.0, maxOpenTrades = 2))
+	 * var int lotA = 0
+	 * var int lotB = 0
+	 * strat.begin_bar(close, bar_index)
+	 * float exitA = na
+	 * float exitB = na
+	 * if bar_index == 0
+	 *     a = strat.entry("A", "Flip", trade.Direction.long, qty = 2.0)
+	 *     b = strat.entry("B", "Flip", trade.Direction.long, qty = 3.0)
+	 *     lotA := na(a) ? 0 : a.tradeId
+	 *     lotB := na(b) ? 0 : b.tradeId
+	 * if bar_index > 0 and lotA > 0
+	 *     filled = strat.close_trade_at_stop("Stop A", lotA, broker.Side.buy,
+	 *         open, high, low, 97.0)
+	 *     if not na(filled)
+	 *         exitA := filled.price
+	 *         lotA := 0
+	 * if bar_index > 0 and lotB > 0
+	 *     filled = strat.close_trade_at_stop("Stop B", lotB, broker.Side.buy,
+	 *         open, high, low, 96.0)
+	 *     if not na(filled)
+	 *         exitB := filled.price
+	 *         lotB := 0
+	 * strat.mark()
+	 * emit "open" open
+	 * emit "low" low
+	 * emit "lot 1 exit" exitA
+	 * emit "lot 2 exit" exitB
+	 * emit "lots" strat.snapshot().openTradeCount
+	 * ```
+	 * ```csv
+	 * time,open,high,low,close
+	 * 0,100,101,99,100
+	 * 1,99,100,97,98
+	 * 2,95,96,90,92
+	 * 3,92,94,91,93
+	 * ```
+	 */
 	broker.Fill close_trade_at_stop(string commandId, int tradeId, broker.Side entrySide, float openPrice, float highPrice, float lowPrice, float stopPrice) =>
 		broker.Fill execution = na
 		closeSide = entrySide == broker.Side.buy ? broker.Side.sell : broker.Side.buy
@@ -450,44 +3022,733 @@ export type LotTrade<B: broker.ImmediateBroker, P: portfolio.LotLedger>
 			this.portfolio := currentPortfolio
 		execution
 
+	/**
+	 * Values the open lots at the close captured by `begin_bar` and updates
+	 * equity, peak equity and maximum drawdown.
+	 *
+	 * Equity is cash plus each lot's signed quantity times that close.
+	 * @returns `float`: the new equity.
+	 * @example
+	 * After 2 units bought at 100 and 3 at 110, cash is 470, so equity at bar
+	 * 1's close is 470 + 5 * 110 = 1020, and 995 at 105.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.lots(broker.new(),
+	 *     portfolio.lots(initialCash = 1000.0, maxOpenTrades = 2))
+	 * strat.begin_bar(close, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("A", "Flip", trade.Direction.long, qty = 2.0)
+	 * if bar_index == 1
+	 *     strat.entry("B", "Flip", trade.Direction.long, qty = 3.0)
+	 * equity = strat.mark()
+	 * emit "close" close
+	 * emit "cash" strat.cash()
+	 * emit "equity" equity
+	 * ```
+	 * ```csv
+	 * time,close
+	 * 0,100
+	 * 1,110
+	 * 2,105
+	 * 3,115
+	 * ```
+	 */
 	float mark() =>
 		currentPortfolio = this.portfolio
 		value = currentPortfolio.mark(this.closePrice)
 		this.portfolio := currentPortfolio
 		value
 
+	/**
+	 * Returns the portfolio's cash balance.
+	 *
+	 * A buy subtracts its notional and commission; a sell, including a short
+	 * sale, adds its notional and subtracts its commission.
+	 * @returns `float`: the cash balance.
+	 * @example
+	 * With a 1% commission, the lot of 2 units bought at 100 takes 200 + 2 from
+	 * cash, and closing it at 110 adds 220 - 2.2.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.lots(
+	 *     broker.new(commission = broker.commissionPercent(1.0)),
+	 *     portfolio.lots(initialCash = 1000.0))
+	 * strat.begin_bar(close, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("A", "Flip", trade.Direction.long, qty = 2.0)
+	 * if bar_index == 1
+	 *     strat.close_trade("Exit", 1)
+	 * strat.mark()
+	 * emit "close" close
+	 * emit "cash" strat.cash()
+	 * ```
+	 * ```csv
+	 * time,close
+	 * 0,100
+	 * 1,110
+	 * 2,108
+	 * 3,112
+	 * ```
+	 */
 	float cash() const =>
 		this.portfolio.cash()
 
+	/**
+	 * Returns the signed total of the open lots: positive when long, negative
+	 * when short, `0` when none are open.
+	 * @returns `float`: the position quantity.
+	 * @example
+	 * Two long lots make 5 units. The short entry on bar 2 closes both, then
+	 * opens a short lot of 4.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.lots(broker.new(),
+	 *     portfolio.lots(initialCash = 1000.0, maxOpenTrades = 2))
+	 * strat.begin_bar(close, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("A", "Flip", trade.Direction.long, qty = 2.0)
+	 * if bar_index == 1
+	 *     strat.entry("B", "Flip", trade.Direction.long, qty = 3.0)
+	 * if bar_index == 2
+	 *     strat.entry("S", "Flip", trade.Direction.short, qty = 4.0)
+	 * strat.mark()
+	 * emit "close" close
+	 * emit "position" strat.position_quantity()
+	 * emit "lots" strat.snapshot().openTradeCount
+	 * ```
+	 * ```csv
+	 * time,close
+	 * 0,100
+	 * 1,104
+	 * 2,110
+	 * 3,108
+	 * ```
+	 */
 	float position_quantity() const =>
 		this.portfolio.position_quantity()
 
+	/**
+	 * Returns the quantity-weighted average entry price of the open lots, or
+	 * `na` when none are open.
+	 *
+	 * Entry prices are execution prices, after slippage.
+	 * @returns `float`: the average entry price, or `na` when no lot is open.
+	 * @example
+	 * Lots of 2 units at 100 and 3 at 110 average (200 + 330) / 5 = 106. After
+	 * lot 1 closes, the average is lot 2's price.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.lots(broker.new(),
+	 *     portfolio.lots(initialCash = 1000.0, maxOpenTrades = 2))
+	 * strat.begin_bar(close, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("A", "Flip", trade.Direction.long, qty = 2.0)
+	 * if bar_index == 1
+	 *     strat.entry("B", "Flip", trade.Direction.long, qty = 3.0)
+	 * if bar_index == 2
+	 *     strat.close_trade("Exit", 1)
+	 * strat.mark()
+	 * emit "close" close
+	 * emit "average" strat.position_avg_price()
+	 * ```
+	 * ```csv
+	 * time,close
+	 * 0,100
+	 * 1,110
+	 * 2,108
+	 * 3,112
+	 * ```
+	 */
 	float position_avg_price() const =>
 		this.portfolio.position_avg_price()
 
+	/**
+	 * Returns the portfolio's metrics as one
+	 * {@link portfolio.PortfolioSnapshot}.
+	 *
+	 * Its `equity` is from the latest `mark`, and `openTradeCount` counts the
+	 * open lots.
+	 * @returns `portfolio.PortfolioSnapshot`: cash, position, equity, profit
+	 * and risk statistics.
+	 * @example
+	 * Two lots are open at once on bar 1, so `maxLongStack` is 2. Closing lot 1
+	 * at 110 is one winning round trip.
+	 * ```tea
+	 * import broker
+	 * import portfolio
+	 * import trade
+	 *
+	 * var strat = trade.lots(broker.new(),
+	 *     portfolio.lots(initialCash = 1000.0, maxOpenTrades = 2))
+	 * strat.begin_bar(close, bar_index)
+	 * if bar_index == 0
+	 *     strat.entry("A", "Flip", trade.Direction.long, qty = 2.0)
+	 * if bar_index == 1
+	 *     strat.entry("B", "Flip", trade.Direction.long, qty = 3.0)
+	 * if bar_index == 2
+	 *     strat.close_trade("Exit", 1)
+	 * strat.mark()
+	 * metrics = strat.snapshot()
+	 * emit "lots" metrics.openTradeCount
+	 * emit "max long stack" metrics.maxLongStack
+	 * emit "round trips" metrics.roundTripCount
+	 * emit "win rate" metrics.winRate
+	 * emit "equity" metrics.equity
+	 * ```
+	 * ```csv
+	 * time,close
+	 * 0,100
+	 * 1,104
+	 * 2,110
+	 * 3,112
+	 * ```
+	 */
 	portfolio.PortfolioSnapshot snapshot() const =>
 		this.portfolio.snapshot()
 
+/**
+ * Sizes an entry as a percentage of the portfolio's equity, read when `entry`
+ * is called.
+ *
+ * The equity is the one from the latest `mark` or `end_bar`, or the initial
+ * cash before the first. When the order fills, the budget is divided by the
+ * execution price, the matched price after adverse slippage. With
+ * `commissionIncluded`, the commission comes out of the budget; otherwise it is
+ * charged on top.
+ *
+ * The broker checks capital when the order fills, unless the portfolio's margin
+ * for the order's side is `0`. The capital is the cash for a buy and the equity
+ * at the matched price for a sell. With the commission on top, a buy needs
+ * `notional * marginLong / 100 + fee <= cash` and a sell
+ * `notional * marginShort / 100 + fee <= equity`; with the commission included,
+ * the budget must be at most the capital. So with a commission above `0` and a
+ * margin of `100`, the default of {@link portfolio.new},
+ * `percentOfEquity(100)` is rejected whenever the marked equity is at least
+ * the capital, as on a flat account with no fill since the last mark. A
+ * `percent` of `0` or less, above `100` or `na`, or marked equity that is not
+ * positive, makes the broker reject the order with `invalidQuantity` when it
+ * would fill.
+ *
+ * In the formula, B is the budget, E the marked equity, q the quantity, x the
+ * execution price, c the commission setting, f the commission on the fill, m
+ * the margin for the order's side and A the capital. The opening fill of a
+ * reversal pays no per-order commission, as the closing fill already did.
+ * @param percent Percentage of equity, above `0` and at most `100`.
+ * @param commissionIncluded Whether the budget also pays the commission.
+ * @returns `trade.Sizing`: sizing for the `sizing` argument of `entry`.
+ * @formula
+ * \begin{aligned}
+ * B &= \frac{\mathit{percent}}{100} \cdot E \\
+ * q &= \begin{cases}
+ * B / x & \text{commission on top} \\
+ * B / \bigl(x\,(1 + c)\bigr) & \text{included, commission rate } c \\
+ * B / (x + c) & \text{included, } c \text{ per contract} \\
+ * (B - c) / x & \text{included, } c \text{ per order}
+ * \end{cases} \\
+ * \text{fills only if } & m = 0 \text{ or } \begin{cases}
+ * q\,x\,m / 100 + f \le A & \text{commission on top} \\
+ * B \le A & \text{included}
+ * \end{cases}
+ * \end{aligned}
+ * @example
+ * Three coordinators send the same buy on bar 0. One tick of slippage turns bar
+ * 1's open of 99 into an execution price of 100, and each order pays a
+ * commission of 5. Half of the 1000 equity buys 500 / 100 = 5 units with the
+ * commission on top, or (500 - 5) / 100 = 4.95 with it included. The 100% order
+ * is rejected: 1000 of notional plus 5 of commission is more than the cash.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * fees = broker.commissionCashPerOrder(5.0)
+ * slip = broker.slippageTicks(1.0, 1.0)
+ * var onTop = trade.nextOpen(broker.new(commission = fees, slippage = slip),
+ *     portfolio.new(initialCash = 1000.0))
+ * var included = trade.nextOpen(broker.new(commission = fees, slippage = slip),
+ *     portfolio.new(initialCash = 1000.0))
+ * var whole = trade.nextOpen(broker.new(commission = fees, slippage = slip),
+ *     portfolio.new(initialCash = 1000.0))
+ * onTop.begin_bar(open, bar_index)
+ * included.begin_bar(open, bar_index)
+ * whole.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     onTop.entry("Long", trade.Direction.long,
+ *         sizing = trade.percentOfEquity(50.0))
+ *     included.entry("Long", trade.Direction.long,
+ *         sizing = trade.percentOfEquity(50.0, true))
+ *     whole.entry("Long", trade.Direction.long,
+ *         sizing = trade.percentOfEquity(100.0))
+ * onTop.end_bar(close, false)
+ * included.end_bar(close, false)
+ * whole.end_bar(close, false)
+ * emit "open" open
+ * emit "on top qty" onTop.position_quantity()
+ * emit "on top cash" onTop.cash()
+ * emit "included qty" included.position_quantity()
+ * emit "included cash" included.cash()
+ * emit "100% qty" whole.position_quantity()
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,99,99
+ * 1,99,100
+ * 2,100,101
+ * 3,101,102
+ * ```
+ * @see trade.percentOfEquityAtFill
+ * @see broker.Commission
+ * @category Sizing and targets
+ */
 export percentOfEquity(float percent, bool commissionIncluded = false) =>
 	Sizing.new(SizingKind.percentOfEquity, percent, commissionIncluded)
 
+/**
+ * Sizes an entry as a percentage of the equity at the moment the order fills.
+ *
+ * The broker values equity as cash plus the position at the matched price,
+ * before slippage; for the opening fill of a reversal, that is after the
+ * closing fill, with no position left. The quantity is the budget divided by
+ * the execution price, the matched price after adverse slippage, once an
+ * included commission is taken out, and the capital check of
+ * {@link trade.percentOfEquity} applies. When the order would fill, the broker
+ * rejects it with `invalidQuantity` for a `percent` of `0` or less, above
+ * `100` or `na`, and with `invalidAccountState` when that equity is not
+ * positive.
+ *
+ * In the formula, Q is the position just before the fill, r the matched price,
+ * B the budget, q the quantity, x the execution price and c the commission
+ * setting. The opening fill of a reversal pays no per-order commission, as the
+ * closing fill already did.
+ * @param percent Percentage of equity, above `0` and at most `100`.
+ * @param commissionIncluded Whether the budget also pays the commission.
+ * @returns `trade.Sizing`: sizing for the `sizing` argument of `entry`.
+ * @formula
+ * \begin{aligned}
+ * E &= \mathit{cash} + Q \cdot r \\
+ * B &= \frac{\mathit{percent}}{100} \cdot E \\
+ * q &= \begin{cases}
+ * B / x & \text{commission on top} \\
+ * B / \bigl(x\,(1 + c)\bigr) & \text{included, commission rate } c \\
+ * B / (x + c) & \text{included, } c \text{ per contract} \\
+ * (B - c) / x & \text{included, } c \text{ per order}
+ * \end{cases}
+ * \end{aligned}
+ * @example
+ * The short entry sent on bar 2 reverses the long at bar 3's open of 125.
+ * Selling the 5 units leaves 1125 of cash and no position, so 50% of equity at
+ * the fill is 562.5, which sells 562.5 / 125 = 4.5 units short.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.nextOpen(broker.new(),
+ *     portfolio.new(initialCash = 1000.0))
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.entry("Long", trade.Direction.long, qty = 5.0)
+ * if bar_index == 2
+ *     strat.entry("Short", trade.Direction.short,
+ *         sizing = trade.percentOfEquityAtFill(50.0))
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "fill qty" na(filled) ? na : filled.quantity
+ * emit "position" strat.position_quantity()
+ * emit "cash" strat.cash()
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,100,110
+ * 2,110,120
+ * 3,125,125
+ * ```
+ * @see trade.percentOfEquity
+ * @category Sizing and targets
+ */
 export percentOfEquityAtFill(float percent, bool commissionIncluded = false) =>
 	Sizing.new(SizingKind.percentOfEquityAtFill, percent, commissionIncluded)
 
+/**
+ * Creates a rebalance target for an exact signed position size.
+ *
+ * When the rebalance fills, the broker trades the difference between `quantity`
+ * and the position at that moment, at the execution price, and cancels the
+ * order when the difference is at most 0.0000001. The result is not always
+ * exact. Unless the portfolio's `marginLong` is `0`, a buy from a flat or long
+ * position is capped, without a rejection, at the quantity whose notional plus
+ * commission spends the cash; when the cash buys nothing, the broker rejects
+ * the order with `invalidAccountState`. A sell that opens or adds to a short,
+ * and a fill that crosses zero, must pass a capital check unless the
+ * portfolio's margin for the new side is `0`, or the broker rejects it with
+ * `invalidAccountState`: the opened quantity times the execution price, plus
+ * the fee, plus, when crossing zero, the slippage paid on closing the old
+ * position, must be at most the equity at the matched price.
+ *
+ * In the formula, Q is the position before the fill, q the quantity traded, x
+ * the execution price and c the commission setting.
+ * @param quantity Target position: positive for long, negative for short, `0`
+ * for flat.
+ * @returns `broker.PositionTarget`: a target for a coordinator's `rebalance`.
+ * @formula
+ * \begin{aligned}
+ * \Delta &= \mathit{quantity} - Q \\
+ * q &= \begin{cases}
+ * \min\bigl(|\Delta|,\ \max(0,\ q_{\text{cash}})\bigr)
+ *   & \Delta > 0,\ Q \ge 0,\ \mathit{marginLong} \ne 0 \\
+ * |\Delta| & \text{otherwise}
+ * \end{cases} \\
+ * q_{\text{cash}} &= \begin{cases}
+ * \mathit{cash} / \bigl(x\,(1 + c)\bigr) & \text{commission rate } c \\
+ * \mathit{cash} / (x + c) & c \text{ per contract} \\
+ * (\mathit{cash} - c) / x & c \text{ per order}
+ * \end{cases}
+ * \end{aligned}
+ * @example
+ * A target of 1000 units fills only 10 at bar 1, because the 1000 of cash buys
+ * no more; no rejection is reported. A target of 4 then sells 6. The same
+ * target again needs no change, so bar 3 cancels it without a fill.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.nextOpen(broker.new(),
+ *     portfolio.new(initialCash = 1000.0))
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.rebalance("Target", trade.targetQuantity(1000.0))
+ * if bar_index == 1 or bar_index == 2
+ *     strat.rebalance("Target", trade.targetQuantity(4.0))
+ * strat.end_bar(close, false)
+ * emit "fill qty" na(filled) ? na : filled.quantity
+ * emit "position" strat.position_quantity()
+ * emit "cash" strat.cash()
+ * emit "pending" strat.has_pending() ? 1 : 0
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,100,100
+ * 2,100,100
+ * 3,100,100
+ * ```
+ * @see trade.targetPercentOfEquity
+ * @see trade.NextOpenTrade.rebalance
+ * @category Sizing and targets
+ */
 export targetQuantity(float quantity) =>
 	broker.PositionTarget.new(broker.PositionTargetKind.quantity, quantity)
 
+/**
+ * Creates a rebalance target worth a signed percentage of equity when the order
+ * fills.
+ *
+ * When the rebalance fills, the broker values equity at the matched price,
+ * before slippage, converts the percentage to a quantity at that same price,
+ * and trades the difference as {@link trade.targetQuantity} does, including its
+ * cap on buys. The fill pays the execution price, so with a slippage rate s a
+ * buy from flat costs (1 + s) times the target value: a 50% target with 1%
+ * slippage costs 50.5% of equity. A percentage beyond `100` in either direction
+ * makes `rebalance` return `na`, and the broker rejects the order with
+ * `invalidAccountState` when the matched price or the equity is not positive.
+ *
+ * In the formula, Q is the position before the fill, r the matched price and T
+ * the target quantity.
+ * @param percent Target position value as a percentage of equity, from `-100`
+ * to `100`; negative means short.
+ * @returns `broker.PositionTarget`: a target for a coordinator's `rebalance`.
+ * @formula
+ * \begin{aligned}
+ * E &= \mathit{cash} + Q \cdot r \\
+ * T &= \frac{\mathit{percent}}{100} \cdot \frac{E}{r} \\
+ * \Delta &= T - Q
+ * \end{aligned}
+ * @example
+ * With 1% slippage, a 50% target of the 1000 equity is converted at bar 1's
+ * open of 100 into 5 units, which fill at 101 and cost 505, 50.5% of equity.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * var strat = trade.nextOpen(
+ *     broker.new(slippage = broker.slippagePercent(1.0)),
+ *     portfolio.new(initialCash = 1000.0))
+ * filled = strat.begin_bar(open, bar_index)
+ * if bar_index == 0
+ *     strat.rebalance("Half", trade.targetPercentOfEquity(50.0))
+ * strat.end_bar(close, false)
+ * emit "open" open
+ * emit "fill qty" na(filled) ? na : filled.quantity
+ * emit "fill price" na(filled) ? na : filled.price
+ * emit "cost" na(filled) ? na : filled.notional
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,100,100
+ * 2,100,100
+ * 3,100,100
+ * ```
+ * @see trade.targetQuantity
+ * @see trade.NextOpenTrade.rebalance
+ * @category Sizing and targets
+ */
 export targetPercentOfEquity(float percent) =>
 	broker.PositionTarget.new(broker.PositionTargetKind.percentOfEquity, percent)
 
+/**
+ * Creates a coordinator whose orders fill at a later bar's open, or at a bar's
+ * close when the broker processes orders on close.
+ *
+ * Each bar, call `begin_bar(open, bar_index)` before the signal logic and
+ * `end_bar(close, false)` after it. With a broker created with
+ * `processOrdersOnClose = true`, `end_bar` also fills orders at the close,
+ * including orders submitted earlier in the same bar. A broker or portfolio
+ * without the required methods is a compile error.
+ * @param broker A broker with the {@link broker.NextOpenBroker} methods,
+ * normally from {@link broker.new}.
+ * @param portfolio A portfolio with the {@link portfolio.NetLedger} methods,
+ * normally from {@link portfolio.new}.
+ * @returns `trade.NextOpenTrade`: a coordinator that owns both values.
+ * @example
+ * A close above the highest of the three previous closes buys with 50% of
+ * equity, and a close below the lowest of them sells. With
+ * `processOrdersOnClose = true`, each order fills at the close of the bar that
+ * sends it: the buy of 500 / 125 = 4 units at bar 3's close of 125, and the
+ * sale at bar 6's close of 110.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * highest = ta.highest(close, 3)
+ * lowest = ta.lowest(close, 3)
+ * var strat = trade.nextOpen(broker.new(processOrdersOnClose = true),
+ *     portfolio.new(initialCash = 1000.0))
+ * strat.begin_bar(open, bar_index)
+ * if close > highest[1] and strat.position_quantity() == 0.0
+ *     strat.entry("Breakout", trade.Direction.long,
+ *         sizing = trade.percentOfEquity(50.0))
+ * if close < lowest[1] and strat.position_quantity() > 0.0
+ *     strat.close("Breakdown")
+ * strat.end_bar(close, false)
+ * emit "close" close
+ * emit "position" strat.position_quantity()
+ * emit "equity" strat.snapshot().equity
+ * ```
+ * ```csv
+ * time,open,close
+ * 0,100,100
+ * 1,100,102
+ * 2,102,101
+ * 3,101,125
+ * 4,125,130
+ * 5,130,120
+ * 6,120,110
+ * 7,110,105
+ * ```
+ * @see trade.NextOpenTrade
+ * @category Creating coordinators
+ */
 export nextOpen(broker, portfolio) =>
 	NextOpenTrade.new(broker, portfolio)
 
+/**
+ * Creates a coordinator that matches orders and one stop-loss and/or
+ * take-profit exit against each bar's open, high and low.
+ *
+ * Each bar, call `begin_bar(open, high, low, bar_index)`, submit orders and
+ * exits, then call `end_bar(close, false)`. {@link trade.path} replays the bar
+ * as an ordered path instead and has trailing exits. A broker or portfolio
+ * without the required methods is a compile error.
+ * @param broker A broker with the {@link broker.OhlcBroker} methods, normally
+ * from {@link broker.new}.
+ * @param portfolio A portfolio with the {@link portfolio.NetLedger} methods,
+ * normally from {@link portfolio.new}.
+ * @returns `trade.OhlcTrade`: a coordinator that owns both values.
+ * @example
+ * From bar 2, a buy stop sits at the highest high of the last three bars, 125,
+ * with an exit 5% below and 10% above it. Bar 3's high reaches 125 and buys 50%
+ * of the 1000 equity, 4 units. Bar 5's high reaches the target of 137.5, which
+ * sells them for a gain of 50.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * upper = ta.highest(high, 3)
+ * var strat = trade.ohlc(broker.new(),
+ *     portfolio.new(initialCash = 1000.0))
+ * matches = strat.begin_bar(open, high, low, bar_index)
+ * if strat.position_quantity() == 0.0 and not na(upper)
+ *     // The same ids move the pending stop entry and its exit each bar.
+ *     strat.entry("Breakout", trade.Direction.long, stop = upper,
+ *         sizing = trade.percentOfEquity(50.0))
+ *     strat.exit("Bracket", fromEntry = "Breakout", stop = upper * 0.95,
+ *         target = upper * 1.1)
+ * strat.end_bar(close, false)
+ * emit "high" high
+ * emit "entry" na(matches.pending) ? na : matches.pending.price
+ * emit "exit" na(matches.exit) ? na : matches.exit.price
+ * emit "position" strat.position_quantity()
+ * emit "equity" strat.snapshot().equity
+ * ```
+ * ```csv
+ * time,open,high,low,close
+ * 0,120,125,119,124
+ * 1,124,124,121,122
+ * 2,122,123,120,121
+ * 3,121,128,120,127
+ * 4,127,132,126,131
+ * 5,131,139,130,138
+ * 6,138,138,134,135
+ * ```
+ * @see trade.OhlcTrade
+ * @category Creating coordinators
+ */
 export ohlc(broker, portfolio) =>
 	OhlcTrade.new(broker, portfolio)
 
+/**
+ * Creates a coordinator that replays each bar as an ordered price path, with
+ * fixed and trailing exits.
+ *
+ * Each bar, call `begin_bar(open, high, low, close, bar_index)`, attach or
+ * adjust exits, call `continue_bar(open, high, low, close)`, submit new orders,
+ * then call `end_bar(close, false)`. A broker or portfolio without the required
+ * methods is a compile error.
+ * @param broker A broker with the {@link broker.PathBroker} methods, normally
+ * from {@link broker.new}.
+ * @param portfolio A portfolio with the {@link portfolio.NetLedger} methods,
+ * normally from {@link portfolio.new}.
+ * @returns `trade.PathTrade`: a coordinator that owns both values.
+ * @example
+ * The 2-bar average crosses above the 3-bar average on bar 3, and the entry
+ * buys 50% of the 1000 equity, 5 units, at bar 4's open of 100. The exit
+ * attached from that fill has a stop at 95 and a trailing stop that starts at
+ * 105 and keeps 2 below the best price. Bar 4's path rises to 112, which puts
+ * the trailing stop at 110, and bar 5's path falls through it.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * crossedUp = ta.crossover(ta.sma(close, 2), ta.sma(close, 3))
+ * var strat = trade.path(broker.new(),
+ *     portfolio.new(initialCash = 1000.0))
+ * matches = strat.begin_bar(open, high, low, close, bar_index)
+ * if not na(matches.pending) and strat.position_quantity() > 0.0
+ *     // Levels from the fill; continue_bar checks the rest of this bar.
+ *     price = matches.pending.price
+ *     strat.exit("Trail", fromEntry = "Long", stop = price * 0.95,
+ *         activateOnEntryBar = true, trailPrice = price * 1.05,
+ *         trailOffset = price * 0.02)
+ * exitFill = strat.continue_bar(open, high, low, close)
+ * if crossedUp and strat.position_quantity() == 0.0
+ *     strat.entry("Long", trade.Direction.long,
+ *         sizing = trade.percentOfEquity(50.0))
+ * strat.end_bar(close, false)
+ * emit "close" close
+ * emit "entry" na(matches.pending) ? na : matches.pending.price
+ * emit "exit" na(exitFill) ? na : exitFill.price
+ * emit "position" strat.position_quantity()
+ * ```
+ * ```csv
+ * time,open,high,low,close
+ * 0,104,105,101,102
+ * 1,102,103,99,100
+ * 2,100,101,97,98
+ * 3,98,105,97,104
+ * 4,100,112,99,111
+ * 5,111,111.5,108,109
+ * 6,109,110,107,108
+ * ```
+ * @see trade.PathTrade
+ * @category Creating coordinators
+ */
 export path(broker, portfolio) =>
 	PathTrade.new(broker, portfolio)
 
+/**
+ * Creates a coordinator that opens and closes separately accounted lots at
+ * once, within the current bar.
+ *
+ * Each bar, call `begin_bar(close, bar_index)`, then `entry`, `close_trade` or
+ * `close_trade_at_stop`, then `mark()`. Each entry fill carries the `tradeId`
+ * that later closes name. A broker or portfolio without the required methods is
+ * a compile error.
+ * @param broker A broker with the {@link broker.ImmediateBroker} methods,
+ * normally from {@link broker.new}.
+ * @param portfolio A portfolio with the {@link portfolio.LotLedger} methods,
+ * normally from {@link portfolio.lots}.
+ * @returns `trade.LotTrade`: a coordinator that owns both values.
+ * @example
+ * The close crosses above its 3-bar average on bar 3, and lot 1 buys 500 of
+ * notional, 5 units, at the close of 100, with a stop 3% below at 97. Bar 4's
+ * low reaches the stop, which closes the lot at 97. Lot 2 opens at the next
+ * cross, on bar 5, and closes at bar 7's close of 101, when the close crosses
+ * back under the average.
+ * ```tea
+ * import broker
+ * import portfolio
+ * import trade
+ *
+ * basis = ta.sma(close, 3)
+ * crossedUp = ta.crossover(close, basis)
+ * crossedDown = ta.crossunder(close, basis)
+ * var strat = trade.lots(broker.new(),
+ *     portfolio.lots(initialCash = 1000.0))
+ * var int lot = 0
+ * var float lotStop = na
+ * strat.begin_bar(close, bar_index)
+ * if lot > 0
+ *     stopFill = strat.close_trade_at_stop("Stop", lot, broker.Side.buy, open,
+ *         high, low, lotStop)
+ *     if not na(stopFill)
+ *         lot := 0
+ * if lot > 0 and crossedDown
+ *     strat.close_trade("Exit", lot)
+ *     lot := 0
+ * if lot == 0 and crossedUp
+ *     entryFill = strat.entry("Long", "Cover", trade.Direction.long,
+ *         notional = 500.0)
+ *     if not na(entryFill)
+ *         lot := entryFill.tradeId
+ *         lotStop := close * 0.97
+ * strat.mark()
+ * emit "close" close
+ * emit "lot" lot
+ * emit "cash" strat.cash()
+ * emit "equity" strat.snapshot().equity
+ * ```
+ * ```csv
+ * time,open,high,low,close
+ * 0,104,105,101,102
+ * 1,102,103,99,100
+ * 2,100,101,97,98
+ * 3,98,101,97,100
+ * 4,99,100,96,97
+ * 5,97,101,97,100
+ * 6,100,104,99,103
+ * 7,103,104,100,101
+ * ```
+ * @see trade.LotTrade
+ * @category Creating coordinators
+ */
 export lots(broker, portfolio) =>
 	LotTrade.new(broker, portfolio)

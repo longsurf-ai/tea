@@ -1,7 +1,17 @@
 // Purpose: Captured-value arithmetic, type domains, and transactional series contracts.
 
 import {expect, expectTypeOf, test} from 'vitest';
-import {colors, historyDepth, math, na, nz, rangeNext, str} from '../native';
+import {
+  colors,
+  historyDepth,
+  math,
+  na,
+  nz,
+  rangeNext,
+  runtime,
+  str,
+} from '../native';
+import {ExecutionError} from '../errors';
 import {Input, Series} from './series';
 import {Context} from './context';
 import {Module} from '../module-binding';
@@ -127,13 +137,20 @@ test('native methods share numeric, color, missing-value, and progress rules', (
   expect(math.floor(float(-1.1)).value).toBe(-2);
   expect(math.round(float(1.235), int(2)).value).toBe(1.24);
   expect(math.sqrt(float(-1)).value).toBeNaN();
+  expect(() => runtime.error(text('stop'))).toThrow(
+    new ExecutionError('RUNTIME_ERROR', 'stop'),
+  );
+  // Math.pow(NaN, 0) is 1; an na base still gives na.
+  expect(math.pow(float(NaN), int(0)).value).toBeNaN();
+  expect(math.pow(int(NaN), int(0)).value).toBeNaN();
+  expect(math.pow(float(2), int(0)).value).toBe(1);
   expect(math.avg(int(2), float(4)).value).toBe(3);
   expect(math.max(int(2), float(4)).kind).toBe('float');
   expect(colors.rgb(int(255), int(0), int(0)).value?.toString()).toBe(
     '#FF0000',
   );
   expect(colors.new(color('#FF0000'), float(50)).value?.toString()).toBe(
-    '#FF00007F',
+    '#FF000080',
   );
   expect(colors.rgb(float(NaN), int(0), int(0)).value).toBeNull();
   expect(na(bool(false)).value).toBe(false);

@@ -1,6 +1,7 @@
 // Purpose: Scalar Tea intrinsics shared by handwritten and generated programs.
 
 import {fatal} from '../base/print';
+import {ExecutionError} from './errors';
 import {Color} from './color';
 import type {Scalar} from './value';
 import {Value, bool, color, float, int, text, type Numeric} from './js/value';
@@ -35,8 +36,13 @@ export const math = {
   ceil: (x: Value<number, Numeric>) => int(Math.ceil(x.value)),
   round,
   sqrt: (x: Value<number, Numeric>) => float(Math.sqrt(x.value)),
+  // Math.pow(NaN, 0) is 1, but an na argument gives na.
   pow: (x: Value<number, Numeric>, y: Value<number, Numeric>) =>
-    float(Math.pow(x.value, y.value)),
+    float(
+      Number.isNaN(x.value) || Number.isNaN(y.value)
+        ? NaN
+        : Math.pow(x.value, y.value),
+    ),
   log: (x: Value<number, Numeric>) => float(Math.log(x.value)),
   log10: (x: Value<number, Numeric>) => float(Math.log10(x.value)),
   exp: (x: Value<number, Numeric>) => float(Math.exp(x.value)),
@@ -90,6 +96,21 @@ export const colors = {
   },
 };
 
+/**
+ * Tea's `str` intrinsics for generated and handwritten programs.
+ *
+ * `str.tostring(value, titles?)` formats a captured value as a Tea string: a
+ * missing value (`null` or `NaN`) becomes `'NaN'`, an enum member listed in
+ * `titles` (`[name, title]` pairs, which generated code passes for enum
+ * values) becomes its title, and anything else uses JavaScript `String()`, so
+ * colors format as canonical hex.
+ *
+ * @example
+ * ```ts
+ * str.tostring(float(2.5)).value; // '2.5'
+ * str.tostring(int(NaN)).value; // 'NaN'
+ * ```
+ */
 export const str = {
   tostring(
     value: Value<unknown>,
@@ -101,6 +122,19 @@ export const str = {
         ? 'NaN'
         : (titles.find(([name]) => name === raw)?.[1] ?? String(raw)),
     );
+  },
+};
+
+/**
+ * `runtime.error(message)`: stops the run with an {@link ExecutionError} whose
+ * code is `RUNTIME_ERROR` and whose message is the script's.
+ *
+ * @example `runtime.error(text('length must be at least 1'))` throws
+ * `RUNTIME_ERROR: length must be at least 1`.
+ */
+export const runtime = {
+  error(message: Value<string | null, 'string'>): never {
+    throw new ExecutionError('RUNTIME_ERROR', message.value ?? 'na');
   },
 };
 
@@ -150,7 +184,18 @@ export function rangeNext<N extends Numeric>(
   );
 }
 
-/** @internal Read a bind-visible builtin; execution-only builtins have no value here. */
+/**
+ * Read a bind-visible builtin inside a module's generated binding
+ * calculation; hosts supply these values through {@link Module.bind} rather
+ * than calling this.
+ *
+ * Throws when `values` has no entry for `id`. `Module.bind` treats that error
+ * as context not supplied yet: the configuration stays incomplete instead of
+ * failing or keeping stale results. Execution-only builtins, which change per
+ * row, never have a value here.
+ *
+ * @internal
+ */
 export function contextValue(
   values: ReadonlyMap<number, Scalar> | undefined,
   id: number,

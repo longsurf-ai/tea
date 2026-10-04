@@ -2,54 +2,79 @@
 title: Program Structure
 ---
 
-Every entry is an ordinary Tea program. Imports select reusable libraries;
-declarations and statements describe one step of computation over the bound
-input streams.
+Let's write a program that keeps a running score as prices arrive. The rule is
+simple: when the price is above a threshold, add the difference multiplied by a
+`gain`; when it's below, subtract the difference. At the threshold, leave the
+score unchanged.
+
+In Tea, we'd write something like this:
 
 ```tea
-length = input.int(20, "Length", minval=1)
-average = ta.sma(close, length)
-emit "average" average
-plot("average-plot", average, "Average")
+gain = input.float(1.5, "Gain")
+threshold = input.float(10.0, "Threshold")
+
+var float score = 0.0
+if close > threshold
+    score := score + (close - threshold) * gain
+else if close < threshold
+    score := score - (threshold - close)
+
+regime = close > threshold ? 1 : close < threshold ? -1 : 0
+
+emit "score" score
+plot("score-plot", score, "Running score")
+plot("regime-plot", regime, "Regime")
 ```
 
-The first output column contains a number. The second contains the ordinary
-visual value returned by the library's `plot` function. Each ID identifies one
-column and must be known during compilation. Display titles do not allocate IDs.
+That's the whole program. Let's go through it.
 
-Use `emit.append` when one step may produce multiple values for a column:
+## Inputs
 
-```tea
-if close > open
-    emit.append "signals" "up"
-if close < open
-    emit.append "signals" "down"
-```
+There are two kinds of inputs here. `gain` and `threshold` are **parameters**:
+values we choose before a run. Their defaults are `1.5` and `10.0`. We can run
+the same program with a different gain without editing the calculation.
 
-The column is a `List<string>`; a step with no signal produces an empty list.
-Its element type and append mode must agree at every emission site. Plain `emit`
-allows one writer per column; conflicting modes and potentially repeated plain
-writes are compile-time errors.
+`close` is a **time-series input**. It takes its value from the row currently
+being processed. On price bars, that's the closing price. The application
+running Tea supplies this data; the script doesn't need to open a CSV file or
+connect to a market-data service.
 
-Functions can return explicitly, including from a branch or loop:
+The variable name `gain` identifies the parameter. The string "Gain" is its
+label, which an application can show in a settings panel.
 
-```tea
-direction(float value) =>
-    if value > 0
-        return 1
-    return -1
+## Calculation and state
 
-emit "direction" direction(close - open)
-```
+`score` starts at zero. The `var` keyword means this initialization happens once,
+and the value is kept for the next step. `:=` updates that value. So if the first
+close is `12`, we add `(12 - 10) * 1.5 = 3`. If the next close is `9`, we subtract
+`1`, leaving a score of `2`.
 
-Implicit final-expression returns remain supported. The entry body does not need
-a return. `library("name")` identifies a reusable source module; it does not
-classify an entry program's execution mode.
+`regime` is calculated again on each step: `1` above the threshold, `-1` below,
+and `0` at it. The `? :` expression chooses between these values. Tea infers its
+type; the `float` annotation on `score` explicitly makes it a floating-point value.
+
+Blocks use indentation. The two statements under `if` and `else if` run only
+when their respective conditions are true.
+
+## Outputs
+
+`emit "score" score` produces the numeric score for this step. The two `plot`
+calls produce descriptions of what to draw. An application can turn these into
+chart lines, while another application might just collect the numeric output.
+
+The first argument to `plot` is a stable output ID, the second is the value,
+and the third is a display title. `plot` is available without an import.
+
+An ordinary Tea program can produce numbers, plots, and events together.
+As it grows, we can move calculations into [functions](./values-and-control-flow.md#functions-and-loops)
+or [libraries](../imports.md).
+
+## Optional chart metadata
 
 An entry may begin with an `indicator()` header that tells a host how to show
 it: a title and whether to draw over the price chart. It must be the first
-statement, appear once, and use literal arguments with a non-empty title. It never changes how the
-program runs, and there is no `strategy()` header.
+statement, appear once, and use literal arguments with a non-empty title.
+It never changes how the program runs, and there is no `strategy()` header.
 
 ```tea
 indicator("RSI", overlay = false)
@@ -57,15 +82,14 @@ length = input.int(14, "Length", minval=1)
 plot("rsi", ta.rsi(close, length), "RSI")
 ```
 
-A script can import its own library files by a path relative to itself. The
-path has no extension, and the namespace is the name the file declares:
+## Life cycle of a Tea program
 
-```tea
-import ./lib/bands
-import ../shared/risk as limits
+There are three stages to running this program:
 
-emit "capped" limits.cap(bands.upper(close, 2.0), 100.0)
-```
+1. **Compilation:** Tea checks the source and compiles it with its dependencies.
+2. **Binding:** the application supplies parameters and input data streams.
+3. **Execution:** the runtime repeatedly evaluates the program as data arrives.
 
-Here `lib/bands.tea` begins with `library("bands")` and exports `upper`.
-[Imports](../imports.md) has the full rule.
+This separation lets us use the same source with another dataset or another set
+of parameters. The [execution model](./execution-model.md) shows what that
+repeated evaluation actually looks like.

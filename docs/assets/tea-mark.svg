@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="296" height="296" viewBox="28 40 296 296" fill="none" role="img" aria-label="Tea">
+  <title>Tea</title>
+  <defs>
+    <linearGradient id="tea-canopy" x1="267" y1="58" x2="96" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#93b95d"/>
+      <stop offset=".5" stop-color="#519650"/>
+      <stop offset="1" stop-color="#24674b"/>
+    </linearGradient>
+    <linearGradient id="tea-stem" x1="178" y1="180" x2="217" y2="325" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1c513d"/>
+      <stop offset=".48" stop-color="#377e49"/>
+      <stop offset="1" stop-color="#79aa53"/>
+    </linearGradient>
+  </defs>
+    <path fill="url(#tea-canopy)" d="M70 131 201 56Q215 48 228 55L286 87Q301 95 289 103L149 180Q136 188 122 182L67 157Q53 149 63 139Q65 135 70 131Z"/>
+    <path fill="url(#tea-stem)" d="M142 208 185 182Q208 168 221 185Q225 191 225 201V310Q225 330 209 320L155 289Q142 282 142 265Z"/>
+</svg>

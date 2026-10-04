@@ -7,6 +7,14 @@ import type {Module} from './module-binding';
 import type {CollectionValue, Scalar} from './value';
 import type {Value} from './js/value';
 
+/**
+ * Version of the generated-module contract: the shape of {@link Module} data
+ * and the typed {@link Context} execution interface.
+ *
+ * Constructing a Module whose `abi` differs throws {@link BindError}, so a
+ * module generated for another runtime version fails when it loads rather than
+ * misbehaving later.
+ */
 export const RUNTIME_ABI_VERSION = 13 as const;
 
 /** True when a value can address or retain committed history. */

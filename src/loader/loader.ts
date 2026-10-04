@@ -1,6 +1,7 @@
 // Purpose: Source loading and import resolution — the driver-side half of the import seam: parses entry files, resolves import paths through a registry, loads source packages recursively with cycle detection, and hands the checker an Importer. Never reports user errors; the checker positions them.
 
 import {readFileSync} from 'node:fs';
+import {OperationalError} from '../base/operational-error';
 import {dirname, join, normalize} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {formatPos, newFileBase} from '../base/pos';
@@ -23,13 +24,31 @@ export function loadPackage(
   return inputs.map(input => {
     const {filename, source} =
       typeof input === 'string'
-        ? {filename: input, source: readFileSync(input, 'utf8')}
+        ? {filename: input, source: readEntry(input)}
         : input;
     captured?.set(filename, source);
     return parse(newFileBase(filename), source, (pos, msg) =>
       errors.errorAt(pos, msg),
     );
   });
+}
+
+/**
+ * The text of an entry file named by path. A file that cannot be read is the
+ * caller's input, not a compiler defect, so it fails as an
+ * {@link OperationalError} that a command line can print as one line.
+ */
+function readEntry(filename: string): string {
+  try {
+    return readFileSync(filename, 'utf8');
+  } catch (error) {
+    const code = (error as {code?: unknown}).code;
+    throw new OperationalError(
+      code === 'ENOENT'
+        ? `cannot read '${filename}': no such file`
+        : `cannot read '${filename}': ${(error as Error).message}`,
+    );
+  }
 }
 
 /**
@@ -112,7 +131,7 @@ export function importedFile(path: string, from: string): string | null {
 // Compiler-shipped libraries use single-segment import paths. Shipping a
 // library and placing it in the implicit prelude are separate decisions:
 // trade components stay visible as explicit source imports.
-const BUILTIN_FILES: ReadonlyMap<string, string> = new Map([
+export const BUILTIN_FILES: ReadonlyMap<string, string> = new Map([
   ['ta', 'ta.tea'],
   ['geometry', 'geometry.tea'],
   ['visual', 'visual.tea'],
@@ -124,8 +143,8 @@ const BUILTIN_FILES: ReadonlyMap<string, string> = new Map([
 
 // Namespaced implicit packages and flattened prelude packages are distinct.
 // The checker checks preludes first, because implicit `ta` reads pine's close.
-const DEFAULT_IMPLICIT: readonly string[] = ['ta'];
-const DEFAULT_PRELUDE: readonly string[] = ['visual', 'pine'];
+export const DEFAULT_IMPLICIT: readonly string[] = ['ta'];
+export const DEFAULT_PRELUDE: readonly string[] = ['visual', 'pine'];
 const LOADER_DIR = dirname(fileURLToPath(import.meta.url));
 
 function builtinFilename(filename: string): string {
@@ -158,7 +177,10 @@ export function resolveImports(
   implicitPaths: readonly string[] = DEFAULT_IMPLICIT,
   preludePaths: readonly string[] = DEFAULT_PRELUDE,
   read: ReadSource = readSourceFile,
-): Importer & {readonly files: ReadonlySet<string>} {
+): Importer & {
+  readonly files: ReadonlySet<string>;
+  readonly sources: ReadonlyMap<string, string>;
+} {
   const preludeSet = new Set(preludePaths);
   const registryWithPrelude: Registry = path =>
     preludeSet.has(path)
@@ -184,6 +206,9 @@ export function resolveImports(
 
 class Resolver implements Importer {
   readonly files = new Set<string>();
+  // The text of every library parsed, by filename, compiler-shipped ones
+  // included: tooling reads doc comments from it.
+  readonly sources = new Map<string, string>();
   private readonly cache = new Map<string, ImportOutcome>();
   private readonly loading: string[] = [];
   private implicitPackages: readonly SourcePackage[] | null = null;
@@ -267,6 +292,7 @@ class Resolver implements Importer {
   }
 
   private load(path: string, {filename, source}: PackageSource): ImportOutcome {
+    this.sources.set(filename, source);
     const problems: string[] = [];
     const file = parse(newFileBase(filename), source, (pos, msg) =>
       problems.push(`${formatPos(pos)}: ${msg}`),

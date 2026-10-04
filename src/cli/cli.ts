@@ -1,6 +1,6 @@
 // Purpose: Commander parsing, command dispatch, logging, and exit-code policy.
 
-import {Command, CommanderError, InvalidArgumentError} from 'commander';
+import {Command, CommanderError, InvalidArgumentError, Option} from 'commander';
 import {createConnection} from 'vscode-languageserver/node';
 import {configureLog, parseLogLevel} from '../base/log';
 import {formatPos} from '../base/pos';
@@ -11,7 +11,7 @@ import {cliFailure, type CliResult} from './result';
 import {startDocsServer} from '../docs/server';
 import {startLanguageServer} from '../lsp/server';
 
-type CliCommand =
+export type CliCommand =
   | {readonly kind: 'docs'; readonly port: number; readonly open: boolean}
   | {readonly kind: 'lsp'}
   | {
@@ -43,8 +43,12 @@ const executionHost = {
   print: (line: string) => console.log(line),
 };
 
-function parseArgs(argv: readonly string[]): CliCommand | null {
-  let selected: CliCommand | null = null;
+/**
+ * The `tea` command tree. Each action hands its parsed command to `select`;
+ * the reference documentation renders this same tree, so `--help` and the
+ * published CLI page never disagree.
+ */
+export function cliProgram(select: (command: CliCommand) => void): Command {
   const tea = new Command('tea')
     .description('Tea language compiler and runner')
     .version('0.1.0')
@@ -53,15 +57,14 @@ function parseArgs(argv: readonly string[]): CliCommand | null {
   tea
     .command('docs')
     .description('Serve the documentation website locally')
-    .option(
-      '--port <number>',
-      'port to bind (default: any available port)',
-      parsePort,
-      0,
+    .addOption(
+      new Option('--port <number>', 'port to bind')
+        .argParser(parsePort)
+        .default(0, 'any available port'),
     )
     .option('--no-open', 'do not open the documentation in a browser')
     .action((options: {port: number; open: boolean}) => {
-      selected = {kind: 'docs', port: options.port, open: options.open};
+      select({kind: 'docs', port: options.port, open: options.open});
     });
 
   tea
@@ -69,17 +72,31 @@ function parseArgs(argv: readonly string[]): CliCommand | null {
     .description('Serve the Language Server Protocol over stdin and stdout')
     .option('--stdio', 'accepted and ignored: stdio is the only transport')
     .action(() => {
-      selected = {kind: 'lsp'};
+      select({kind: 'lsp'});
     });
 
   tea
     .command('run')
-    .description('Compile and execute a Tea script over a CSV dataset')
+    .usage('<file> --input <file> [--trace] [--<input name> <value>...]')
+    .summary('Compile and execute a Tea script over a CSV dataset')
+    .description(
+      [
+        'Compile and execute a Tea script over a CSV dataset, one bar per row, and print its outputs.',
+        'CSV file: the first row holds unique column names. Each column feeds the series of the same name, such as close or volume, and every cell must be a number or empty, which reads as na. An optional time column holds integer epoch milliseconds that increase from row to row, with no empty cells; a script that reads time requires it. When the file has no hl2, hlc3, ohlc4 or hlcc4 column, that series is computed from the open, high, low and close columns it uses.',
+        "Inputs: override an input with a flag anywhere after the file, before or after --input, such as --length 20 or --length=20 for length = input.int(14); a flag before the file is read as the file name, and the command stops because that file does not exist. One dash also works, except for a name that begins with i or V, which the command reads as its own -i or -V. An input is named after the variable it initializes at the top level of the script. An input inside a function, a block or an expression, one declared with var or varip, or one whose variable is reassigned is named after the position where its input call begins instead, such as input@7:5 for line 7, column 5, both counted from 1. The Parameters table shows each input's name. Inputs named i, h, V, help, trace or version clash with the command's own options, and the script cannot run.",
+        'Output: a System table with the row count and timings, a Parameters table with the value of each input, and an Outputs table with one row per bar and one column per output. With --trace it prints a line declaring each output, then one line per output cell, instead of the tables.',
+        'Exit status: 0 on success; 1 when the arguments, compilation, the CSV file or the run fails; 2 when the script uses a feature Tea does not implement yet. A compile error prints each diagnostic to stderr as file:line:column: message, sorted by position, at most one per line, and only from the first stage that failed, so a syntax error hides the type errors after it.',
+        'Limits: a script that calls request.* cannot run, because tea run binds no data for requests. syminfo.* and timeframe.* hold na, or false for the timeframe.is* flags. timenow reads the system clock.',
+      ].join('\n\n'),
+    )
     .argument('<file>', 'Tea source file')
-    .requiredOption('-i, --input <file>', 'CSV dataset to bind as input series')
+    .requiredOption(
+      '-i, --input <file>',
+      'CSV file whose columns feed the series of the same name',
+    )
     .option(
       '--trace',
-      'print the machine trace format (golden-compatible) instead of a table',
+      'print a line declaring each output, then one line per output cell (index, name, value), instead of tables',
     )
     .allowUnknownOption()
     .allowExcessArguments()
@@ -89,35 +106,47 @@ function parseArgs(argv: readonly string[]): CliCommand | null {
         options: {input: string; trace?: boolean},
         command: Command,
       ) => {
-        selected = {
+        select({
           kind: 'run',
           file,
           input: options.input,
           trace: options.trace === true,
           parameters: command.args.slice(1),
-        };
+        });
       },
     );
 
   tea
     .command('build')
-    .description('Compile a Tea script and emit TypeScript')
+    .summary('Compile a Tea script and emit TypeScript')
+    .description(
+      [
+        'Compile a Tea script and emit TypeScript.',
+        'A compile error prints its diagnostics to stderr as tea run does, writes no file and exits 1.',
+      ].join('\n\n'),
+    )
     .argument('<file>', 'Tea source file')
     .option(
       '-o, --out <file>',
       'write emitted TypeScript here instead of stdout',
     )
     .action((file: string, options: {out?: string}) => {
-      selected = {
+      select({
         kind: 'build',
         file,
         ...(options.out === undefined ? {} : {out: options.out}),
-      };
+      });
     });
 
   tea
     .command('parse')
-    .description('Run the frontend and dump intermediate artifacts')
+    .summary('Run the frontend and dump intermediate artifacts')
+    .description(
+      [
+        'Run the frontend and dump intermediate artifacts.',
+        '--tokens and --ast, the default, only scan and parse: a syntax error is reported, what was parsed is still printed, and the command exits 1, but names and types are not checked. --ir runs the whole frontend, checking names and types and building the Program; a script with errors prints its diagnostics instead of the IR and exits 1.',
+      ].join('\n\n'),
+    )
     .argument('<file>', 'Tea source file')
     .option('--tokens', 'dump the token stream')
     .option('--ast', 'dump the syntax tree (default)')
@@ -127,17 +156,24 @@ function parseArgs(argv: readonly string[]): CliCommand | null {
         file: string,
         options: {tokens?: boolean; ast?: boolean; ir?: boolean},
       ) => {
-        selected = {
+        select({
           kind: 'parse',
           file,
           tokens: options.tokens === true,
           ast: options.ast === true,
           ir: options.ir === true,
-        };
+        });
       },
     );
 
-  tea.parse(argv);
+  return tea;
+}
+
+function parseArgs(argv: readonly string[]): CliCommand | null {
+  let selected: CliCommand | null = null;
+  cliProgram(command => {
+    selected = command;
+  }).parse(argv);
   return selected;
 }
 

@@ -4,14 +4,148 @@
 // input column named "close" with no import line. Each alias is exactly an
 // input.series call: it runs no per-bar code and owns no state or history.
 // hl2, hlc3, ohlc4 and hlcc4 are columns the host supplies.
+
+/**
+ * Price and volume of the current bar, read from input columns the host supplies.
+ *
+ * Each name reads the input column of the same name, as {@link close}
+ * describes. A script computes none of them itself, not even {@link hl2},
+ * {@link hlc3}, {@link ohlc4} and {@link hlcc4}: the host supplies those too.
+ * The host must supply every column a script reads, or binding the script
+ * fails with an error such as "source schema does not provide series 'hl2'".
+ * `tea run` supplies the columns of its CSV file, and computes `hl2`, `hlc3`,
+ * `ohlc4` and `hlcc4` from `open`, `high`, `low` and `close` when the file
+ * lacks them. Library files can read these names too, and no file can
+ * redeclare or assign them.
+ *
+ * @example
+ * The CSV has no `hl2`, `hlc3`, `ohlc4` or `hlcc4` column, so `tea run`
+ * computes them from the columns beside them. At index 0, `hl2` is
+ * `(16 + 8) / 2 = 12` and `hlcc4` is `(16 + 8 + 2 * 15) / 4 = 13.5`.
+ * ```tea
+ * emit "open" open
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "hl2" hl2
+ * emit "hlc3" hlc3
+ * emit "ohlc4" ohlc4
+ * emit "hlcc4" hlcc4
+ * ```
+ * ```csv
+ * time,open,high,low,close
+ * 0,9,16,8,15
+ * 1,15,18,12,12
+ * 2,12,13,7,10
+ * ```
+ */
 library("pine")
 
+/**
+ * Opening price of the current bar.
+ *
+ * Reads the host-supplied `open` column, like {@link close}.
+ *
+ * @category Price and volume
+ */
 export open = input.series("open")
+
+/**
+ * Highest price of the current bar.
+ *
+ * Reads the host-supplied `high` column, like {@link close}.
+ *
+ * @category Price and volume
+ */
 export high = input.series("high")
+
+/**
+ * Lowest price of the current bar.
+ *
+ * Reads the host-supplied `low` column, like {@link close}.
+ *
+ * @category Price and volume
+ */
 export low = input.series("low")
+
+/**
+ * Closing price of the current bar.
+ *
+ * Reads the `close` column of the host's input stream. A bar is one row of
+ * that stream, and `close` is `na` on a bar where the host supplies `NaN`,
+ * such as an empty CSV cell in `tea run`. Inside a [request](/requests)
+ * expression, it reads the stream bound to that request instead. `close[1]`
+ * is the close one bar earlier, `na` on the first bar.
+ *
+ * @example
+ * The close is missing at index 2, so `change` is `na` there. `previous` is
+ * `na` at index 0, before the first bar, and at index 3, after the missing
+ * close; {@link nz} turns a missing previous close into no change.
+ * ```tea
+ * emit "close" close
+ * emit "previous" close[1]
+ * emit "change" close - nz(close[1], close)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,
+ * 3,11
+ * ```
+ * @category Price and volume
+ */
 export close = input.series("close")
+
+/**
+ * Traded volume of the current bar.
+ *
+ * Reads the host-supplied `volume` column, like {@link close}.
+ *
+ * @category Price and volume
+ */
 export volume = input.series("volume")
+
+/**
+ * Median price of the current bar, `(high + low) / 2`.
+ *
+ * The script does not compute it: it reads the host-supplied `hl2` column,
+ * like {@link close}. `tea run` derives that column from `high` and `low` when
+ * the CSV file lacks it.
+ *
+ * @category Price and volume
+ */
 export hl2 = input.series("hl2")
+
+/**
+ * Typical price of the current bar, `(high + low + close) / 3`.
+ *
+ * The script does not compute it: it reads the host-supplied `hlc3` column,
+ * like {@link close}. `tea run` derives that column from `high`, `low` and
+ * `close` when the CSV file lacks it.
+ *
+ * @category Price and volume
+ */
 export hlc3 = input.series("hlc3")
+
+/**
+ * Average price of the current bar, `(open + high + low + close) / 4`.
+ *
+ * The script does not compute it: it reads the host-supplied `ohlc4` column,
+ * like {@link close}. `tea run` derives that column from `open`, `high`, `low`
+ * and `close` when the CSV file lacks it.
+ *
+ * @category Price and volume
+ */
 export ohlc4 = input.series("ohlc4")
+
+/**
+ * Weighted close of the current bar, `(high + low + 2 * close) / 4`.
+ *
+ * The script does not compute it: it reads the host-supplied `hlcc4` column,
+ * like {@link close}. `tea run` derives that column from `high`, `low` and
+ * `close` when the CSV file lacks it.
+ *
+ * @category Price and volume
+ */
 export hlcc4 = input.series("hlcc4")

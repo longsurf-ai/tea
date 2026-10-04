@@ -109,6 +109,35 @@ emit "invalid" geometry.rectangleContacts(0.0, 0.0, 0.0, 0.0, 1.0, 1.0, false, 2
   expect(degenerate[0].invalid).toEqual([]);
 });
 
+test('an exact tangent is one tangent contact, wherever it touches', () => {
+  // The curve (0,0),(1,2),(2,0) is x = 2u, y = 4u(1 - u). Its tangent at
+  // u = k/8 runs from (0, 4u²) to (2, 4u² + 4 - 8u); every value is exact.
+  const tangents = Array.from({length: 8}, (_, i) => (i + 1) / 8);
+  const rows = execute(
+    `import geometry
+${tangents
+  .map(
+    (u, i) =>
+      `emit "k${i + 1}" geometry.quadraticContacts(0.0, 0.0, 1.0, 2.0, 2.0, 0.0, 0.0, ${4 * u * u}, 2.0, ${4 * u * u + 4 - 8 * u})`,
+  )
+  .join('\n')}
+emit "edge" geometry.rectangleContacts(0.0, 0.0, 1.0, 5.0, 2.0, 2.0, true, 1.0, 3.125, 2.0, 4.0)`,
+    [{close: 1}],
+  );
+  tangents.forEach((u, i) =>
+    expect(rows[0][`k${i + 1}`]).toEqual([
+      {
+        boundaryParameter: u,
+        observationParameter: u,
+        transverse: false,
+        overlap: false,
+      },
+    ]),
+  );
+  // The curve (0,0),(1,5),(2,2) peaks at (1.25, 3.125), on the bottom edge.
+  expect(rows[0].edge).toEqual([{x: 1.25, y: 3.125}]);
+});
+
 // Pinned development dependencies are independent upstream oracles; runtime
 // geometry imports none of them.
 const require = createRequire(import.meta.url);
@@ -463,4 +492,23 @@ test('quadratic intersections agree with KLD on deterministic noncoincident curv
       ).toBe(true);
     }
   });
+});
+
+test('the crossing of nearly parallel segments is placed accurately', () => {
+  // The two segments differ in slope by about 1e-4. Exact rational
+  // arithmetic over the stored values places the crossing at u =
+  // 0.3234567901234568 on the first segment and v = 0.32098765432098764 on
+  // the second; the leading expansion term alone gave u = 0.483.
+  const [row] = execute(
+    `import geometry
+emit "contacts" geometry.segmentContacts(736.0, 135.55157142857144, 1301.0, 172.9222857142857, 739.0, 135.75, 1299.0, 172.79)
+`,
+    [{close: 0}],
+  );
+  const [contact] = row.contacts as {
+    boundaryParameter: number;
+    observationParameter: number;
+  }[];
+  expect(contact.boundaryParameter).toBeCloseTo(0.3234567901234568, 6);
+  expect(contact.observationParameter).toBeCloseTo(0.32098765432098764, 6);
 });

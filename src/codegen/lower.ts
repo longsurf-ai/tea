@@ -600,7 +600,12 @@ export function lowerExpr(e: IrExpr, out: string[], ctx: LowerCtx): string {
       out.push(`let ${temp} = ${ctx.emptyOf(e.type)};`);
       const fromT = capture(e.from, out, ctx);
       const toT = capture(e.to, out, ctx);
-      const stepT = e.step !== null ? capture(e.step, out, ctx) : 'int(1)';
+      const stepT =
+        e.step !== null
+          ? capture(e.step, out, ctx)
+          : e.index.type.kind === TypeKind.Float
+            ? 'float(1)'
+            : 'int(1)';
       const index = localRef(ctx, e.index);
       const idx = `${index}.hist(0)`;
       const bodyLines: string[] = [];
@@ -777,6 +782,7 @@ function lowerNative(
         : '';
     return `str.tostring(${args[0]}${titles})`;
   }
+  if (native === 'runtime.error') return `runtime.error(${args[0]})`;
   if (native === 'color.new' || native === 'color.rgb')
     return `colors.${native.slice(6)}(${args.join(', ')})`;
   if (native.startsWith('math.')) {

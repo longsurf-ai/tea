@@ -1,4 +1,4 @@
-// Purpose: One LSP session — startLanguageServer() registers every handler on a host-supplied connection: open documents, debounced analysis, versioned diagnostics, the position queries and tea/libraryText.
+// Purpose: One LSP session — startLanguageServer() registers every handler on a host-supplied connection: open documents, debounced analysis, versioned diagnostics, the position queries, tea/libraryText and tea/referenceName.
 
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {
@@ -6,12 +6,13 @@ import {
   TextDocuments,
   TextDocumentSyncKind,
   type Connection,
+  type TextDocumentPositionParams,
   type PublishDiagnosticsParams,
 } from 'vscode-languageserver';
 import {TextDocument} from 'vscode-languageserver-textdocument';
 import {defaultRegistry} from '../loader/loader';
 import {analyze, type Analysis} from './analysis';
-import {definition, hover, references} from './name-queries';
+import {definition, hover, referenceName, references} from './name-queries';
 import {completion, signatureHelp} from './text-queries';
 
 // Coalesces keystrokes; an analysis itself takes 4 to 40 ms.
@@ -35,16 +36,21 @@ const LIBRARY_SCHEME = 'tea-lib:/';
  *   `Analysis`, dropped when it closes.
  * - Diagnostics are pushed, never pulled: 150 ms after the last change, with
  *   the document version they were computed from, and again for every open
- *   document on `workspace/didChangeWatchedFiles`. Closing a document clears
- *   them. Analysis is synchronous, so a published version never goes back.
+ *   document 150 ms after the last `workspace/didChangeWatchedFiles` or
+ *   `invalidateFiles()`. Closing a document clears them. Analysis is
+ *   synchronous, so a published version never goes back.
  * - Hover, definition, references, completion and signature help answer
  *   against the current text: a cache older than the document is refreshed
- *   first.
+ *   first. Hover, completion and signature help carry the documentation of
+ *   the names they show: doc comments, and the catalog's for natives.
  * - A `file:` URI is analyzed under its file-system path, so relative imports
  *   resolve against the real file; any other URI is its own filename. A
- *   definition in a compiler-shipped library is a `tea-lib:/ta.tea` location,
- *   and `tea/libraryText`, the one non-standard request, takes `{uri}` and
- *   returns that library's source text, or null.
+ *   definition in a compiler-shipped library is a `tea-lib:/ta.tea` location.
+ * - Two requests are Tea's own. `tea/libraryText` takes `{uri}` and returns
+ *   that library's source text, or null. `tea/referenceName` takes
+ *   `{textDocument, position}` and returns the name the Tea reference
+ *   documents the name there under, such as `ta.sma` for the `sma` of
+ *   `ta.sma(close, 9)`, or null for a name the reference does not document.
  * - A throw while analyzing or answering is a compiler defect. It is logged
  *   to the client, the request answers null, the diagnostics published
  *   before stay, and the session goes on.
@@ -68,6 +74,7 @@ export function startLanguageServer(
     {readonly version: number; readonly analysis: Analysis}
   >();
   const debounces = new Map<string, ReturnType<typeof setTimeout>>();
+  let republish: ReturnType<typeof setTimeout> | undefined;
   let registersFileWatcher = false;
   let invalidatingFiles = false;
   function publishDependencies(): void {
@@ -183,16 +190,25 @@ export function startLanguageServer(
   });
 
   // A file on disk changed, and any open document may import it. Analysis
-  // is cheap enough that no import graph is kept to find out which.
+  // is cheap enough that no import graph is kept to find out which. A
+  // checkout or a save-all is a burst of changes: stale analyses go at once,
+  // so a request answers from the files as they are now, and diagnostics are
+  // republished once, after the burst.
   function invalidateFiles(): void {
-    invalidatingFiles = true;
-    try {
-      analyses.clear();
-      documents.all().forEach(document => publish(document.uri));
-    } finally {
-      invalidatingFiles = false;
-      publishDependencies();
-    }
+    analyses.clear();
+    clearTimeout(republish);
+    republish = setTimeout(() => {
+      republish = undefined;
+      invalidatingFiles = true;
+      // The host may have disposed the connection while this waited.
+      try {
+        documents.all().forEach(document => publish(document.uri));
+      } catch {
+      } finally {
+        invalidatingFiles = false;
+        publishDependencies();
+      }
+    }, DEBOUNCE_MS);
   }
   connection.onDidChangeWatchedFiles(invalidateFiles);
 
@@ -227,6 +243,11 @@ export function startLanguageServer(
   );
   connection.onRequest('tea/libraryText', ({uri}: {uri: string}) =>
     libraryText(uri),
+  );
+  connection.onRequest(
+    'tea/referenceName',
+    ({textDocument, position}: TextDocumentPositionParams) =>
+      ask(textDocument.uri, analysis => referenceName(analysis, position)),
   );
 
   documents.listen(connection);

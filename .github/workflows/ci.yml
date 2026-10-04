@@ -12,6 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Plans are local notes: .gitignore keeps them out, and this catches a
+      # forced add or old history, which still holds them, merged back in.
+      - name: Reject committed plans
+        run: |
+          if git log --oneline -- plans '**/plans/**' | grep .; then
+            echo 'Plans are local notes and must not be committed.' >&2
+            exit 1
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version

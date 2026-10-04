@@ -1,12 +1,10 @@
-// Purpose: Build the JavaScript package, compiler-owned Tea libraries and matching reference.
+// Purpose: Build the JavaScript package and compiler-owned Tea libraries. The generated reference is committed; `npm run docs:generate` refreshes it and `docs:check:generated` keeps it current.
 
 import {copyFileSync, mkdirSync, readdirSync, rmSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
-import {generateReference} from './docs/generate-reference';
 
-await generateReference();
 rmSync('dist', {force: true, recursive: true});
 execFileSync(
   process.execPath,
@@ -22,13 +20,8 @@ await build({
     'loader/index': 'src/index.ts',
     'runtime/index': 'src/runtime/index.ts',
     compiler: 'src/compiler.ts',
-    'base/print': 'src/base/print.ts',
-    'codegen/codegen': 'src/codegen/codegen.ts',
-    'runtime/load': 'src/runtime/load.ts',
-    'extension/pine': 'src/extension/pine.ts',
-    'codegen/wgsl/index': 'src/codegen/wgsl/index.ts',
-    'runtime/gpu/index': 'src/runtime/gpu/index.ts',
     'lsp/index': 'src/lsp/index.ts',
+    'reference/index': 'src/reference/index.ts',
   },
   outdir: 'dist',
   splitting: true,

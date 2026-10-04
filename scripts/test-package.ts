@@ -17,16 +17,11 @@ try {
   writeFileSync(
     consumer,
     `
-import {createNode, DataStream, tea, type Datum, type Node} from 'tea';
+import {createNode, DataStream, pineBuiltinSupplier, tea, type Datum, type Node} from 'tea';
 import {Module, Schema, Field, Float64, type Scalar} from 'tea/runtime';
-import {compileToProgram} from 'tea/compiler';
-import {Errors} from 'tea/base/print';
-import {generate} from 'tea/codegen/codegen';
-import {loadModule} from 'tea/runtime/load';
-import {pineBuiltinSupplier} from 'tea/extension/pine';
-import type {GpuExecution} from 'tea/runtime/gpu';
-import type {CompiledWgslProgram} from 'tea/codegen/wgsl';
+import {compileToProgram, Errors, generate, InternalError, loadModule} from 'tea/compiler';
 import {analyze, startLanguageServer} from 'tea/lsp';
+import {referenceManual} from 'tea/reference';
 import {of} from 'rxjs';
 const errors = new Errors();
 const ir = compileToProgram([{filename: 'consumer.tea', source: 'emit "value" close'}], errors);
@@ -37,7 +32,8 @@ const scalar: Scalar = 1;
 const stream = new DataStream(new Schema([new Field('close', new Float64(), false)]), of({close: scalar}));
 node.bind(stream).to({next: (row: Datum) => console.log(row.index)});
 tea\`emit "value" 1\`.ready();
-export type Gpu = readonly [GpuExecution, CompiledWgslProgram];
+export const internal: boolean = new InternalError('x') instanceof Error;
+export const manual = referenceManual.groups.length;
 export const languageServer = [startLanguageServer, analyze({filename: 'consumer.tea', source: 'x = 1'}).diagnostics];
 `,
   );
@@ -92,7 +88,7 @@ export const languageServer = [startLanguageServer, analyze({filename: 'consumer
 import assert from 'node:assert/strict';
 import {Context, Module} from 'tea/runtime';
 import {createNode, DataStream, tea} from 'tea';
-import {loadModule} from 'tea/runtime/load';
+import {loadModule} from 'tea/compiler';
 import {analyze} from 'tea/lsp';
 import {Schema, Field, Float64} from 'apache-arrow';
 import {of} from 'rxjs';

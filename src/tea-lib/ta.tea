@@ -4,30 +4,259 @@
 // site state falls out of function semantics (var locals, param history).
 // Implicitly imported into every script under its declared name.
 //
-// Coverage tracks Pine v6's ta.* functions. Not yet expressible:
+// Coverage tracks Pine v6's ta.* functions; the library doc's @pine lists
+// what is missing and why readers cannot use it yet:
 //   - median, mode, percentile_*, valuewhen: need collections (array slice).
-//   - ta.obv, ta.vwap, ta.accdist, ta.pvt, ta.iii, ta.nvi, ta.pvi, ta.wad,
-//     ta.wvad, ta.tr (variable form): need computed library exports with
-//     per-bar state; input aliases (the pine prelude) are the only exports
-//     that are variables today.
+//   - ta.vwap: needs a session anchor.
+//   - ta.tr as a variable: it would share its name with the ta.tr function.
 // Ambient reads (volume, high, low, close) are pine prelude input aliases.
+// Count guards read `not (length >= 1)`, so an na count fails too: every
+// comparison with na is false. A constant count folds, so a valid one leaves
+// no guard behind and an invalid one is a compile error at the call.
+
+/**
+ * Technical-analysis functions and variables: moving averages, oscillators,
+ * volatility bands, crosses, pivots, volume indicators and running statistics.
+ *
+ * Each written call keeps its own history and state, covering only the bars on
+ * which that call runs. A call does not run on a bar when the code around it
+ * is skipped, such as an `if` branch, `switch` arm or ternary arm that is not
+ * taken, the right side of an `and` or `or` whose left side already decides
+ * the result, or a loop that runs zero times. Its windows then read that bar
+ * as `na`, and its running state does not change on it. A call inside a loop
+ * shares one history and state across all iterations, so its running state
+ * advances on each iteration. Call these functions on every bar and combine
+ * their results with conditions afterwards; see
+ * [values and control flow](/language-guide/values-and-control-flow).
+ *
+ * ```tea
+ * // Call on every bar, then combine the result with the condition.
+ * risingThree = ta.rising(close, 3)
+ * emit "signal" close > open and risingThree
+ * ```
+ *
+ * The variables, such as {@link ta.obv} and {@link ta.wad}, are not calls:
+ * each is computed once per bar for the whole script, so every read sees the
+ * same value, even one inside an `if`.
+ *
+ * A window function reads the last `length` bars of its source and leaves out
+ * the `na` values among them. When none is left, the result is `na`, or
+ * `false` for {@link ta.rising} and {@link ta.falling}. In {@link ta.alma},
+ * {@link ta.linreg}, {@link ta.percentrank} and {@link ta.swma}, an `na` value
+ * anywhere in the window makes the result `na` instead, and {@link ta.change},
+ * {@link ta.mom} and {@link ta.roc} are `na` when either value they compare is
+ * `na`. {@link ta.cci}, {@link ta.stoch} and {@link ta.wpr} are `na`, and
+ * {@link ta.rising} and {@link ta.falling} are `false`, when the current value
+ * they measure is `na`. Most results are also `na` until enough bars have
+ * arrived; each entry says when.
+ *
+ * Most sources are typed `float`: an `int` source, such as {@link bar_index},
+ * is converted to `float`, and a `bool` or `string` source is a compile error.
+ * {@link ta.change} keeps an `int` source `int`. A `simple` parameter, such as
+ * the `length` of {@link ta.ema}, takes a value known when the script starts,
+ * like a constant or an input; a `series` value, such as `bar_index + 1`, is a
+ * compile error there.
+ *
+ * A count, such as `length`, has a minimum, which its parameter states. A
+ * value below it, or `na`, stops the run with an error that names the
+ * function, such as `ta.sma: length must be at least 1`; a constant that low,
+ * or `na`, is a compile error at the call. A `series` length, such as
+ * `bar_index + 1`, reaches back at most 500 bars: older values read as `na`.
+ * A constant or input length is not limited this way.
+ *
+ * @pine
+ * These differences apply across `ta`:
+ *
+ * - Not in Tea yet: `ta.median`, `ta.mode`,
+ *   `ta.percentile_linear_interpolation`, `ta.percentile_nearest_rank`,
+ *   `ta.pivot_point_levels`, `ta.rci`, `ta.valuewhen`, `ta.vwap` (the function
+ *   and the variable) and the variable `ta.tr`, which Tea writes as the call
+ *   `ta.tr(false)`.
+ * - The Pine manual states no minimum for counts such as `length`; in Tea a
+ *   count below its minimum, such as a `length` of `0`, or an `na` count is an
+ *   error.
+ * - The Pine manual says that `na` values are ignored, and for some functions
+ *   that the calculation uses `length` values that are not `na`. A Tea window
+ *   function reads the last `length` bars and leaves out the `na` values among
+ *   them, so it can use fewer than `length` values.
+ */
 library("ta")
 
 // ---- moving averages and smoothing ------------------------------------------
 
-export sma(source, length) =>
+/**
+ * Simple moving average: the mean of the last `length` values of `source`.
+ *
+ * Every value in the window has the same weight. Values that are `na` are
+ * left out, so the mean is over the window's other values.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the mean of the window.
+ * @formula
+ * \mathrm{sma}_t = \frac{1}{|K_t|} \sum_{i \in K_t} \mathit{source}_{t-i}
+ * \quad\text{where}\quad
+ * K_t = \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * @warmup `na` on the first `length - 1` bars, and when every value in the
+ * window is `na`.
+ * @example
+ * A 3-bar average. The first two bars are `na`. The close is missing at
+ * index 4, so the windows that hold it average their two known values.
+ * ```tea
+ * emit "close" close
+ * emit "sma" ta.sma(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,11
+ * 2,12
+ * 3,13
+ * 4,
+ * 5,15
+ * 6,16
+ * 7,17
+ * ```
+ * @see ta.ema
+ * @see ta.wma
+ * @category Moving averages
+ */
+export sma(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.sma: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	sum = 0.0
+	count = 0
 	for i = 0 to length - 1
-		sum += source[i]
-	sum / length
+		value = source[i]
+		if not na(value)
+			sum += value
+			count += 1
+	bars < length ? na : sum / count
 
-export ema(source, length) =>
+/**
+ * Exponential moving average of `source`: a running average that gives recent
+ * values more weight.
+ *
+ * Each bar moves the average toward `source` by `2 / (length + 1)` of the
+ * difference, so the weight of older values falls off exponentially. The
+ * average starts at the first value of `source` that is not `na`, without
+ * waiting for `length` bars, and a bar where `source` is `na` leaves it
+ * unchanged. {@link ta.rma} moves by `1 / length` instead and waits for
+ * `length` values.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Smoothing length in bars, at least 1; larger values react
+ * more slowly. It must be known when the script starts, such as a constant
+ * or an input.
+ * @returns `float`: the average.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{ema}_t &= \begin{cases}
+ * \mathrm{ema}_{t-1} & \text{if } \mathit{source}_t = \text{na} \\
+ * \mathit{source}_t & \text{if } \mathrm{ema}_{t-1} = \text{na} \\
+ * \alpha \cdot \mathit{source}_t + (1 - \alpha) \cdot \mathrm{ema}_{t-1}
+ * & \text{otherwise}
+ * \end{cases} \\
+ * \text{where}\quad \alpha &= \frac{2}{\mathit{length} + 1}
+ * \end{aligned}
+ * @warmup `na` until the first bar where `source` is not `na`. After that it
+ * is never `na`: a bar where `source` is `na` keeps the previous result.
+ * @example
+ * A 3-bar average moves half of the way, `2 / (3 + 1)`, toward each close.
+ * It is `na` before the first close and starts at that close, 10 at index 1.
+ * The missing close at index 5 keeps the previous value, 13.
+ * ```tea
+ * emit "close" close
+ * emit "ema" ta.ema(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,
+ * 1,10
+ * 2,12
+ * 3,11
+ * 4,15
+ * 5,
+ * 6,17
+ * 7,19
+ * ```
+ * @see ta.rma
+ * @see ta.sma
+ * @category Moving averages
+ */
+export ema(float source, simple int length) =>
+	if not (length >= 1)
+		runtime.error("ta.ema: length must be at least 1")
 	alpha = 2.0 / (length + 1)
 	var float e = na
-	e := na(e) ? source : alpha * source + (1 - alpha) * e
+	if not na(source)
+		e := na(e) ? source : alpha * source + (1 - alpha) * e
 	e
 
-export rma(source, length) =>
+/**
+ * Wilder's smoothed moving average of `source`, the running average behind
+ * {@link ta.rsi}, {@link ta.atr} and {@link ta.dmi}.
+ *
+ * It starts at the mean of the first `length` values of `source` that are not
+ * `na`, then moves toward each new value by `1 / length` of the difference. A
+ * bar where `source` is `na` is skipped: it does not count toward the first
+ * `length` values, and later it keeps the previous result. {@link ta.ema}
+ * moves by `2 / (length + 1)` instead and starts at the first value.
+ *
+ * @param source Series to average.
+ * @param length Smoothing length in bars, at least 1; also the number of
+ * values in the starting mean. It must be known when the script starts, such
+ * as a constant or an input.
+ * @returns `float`: the average.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{rma}_t &= \begin{cases}
+ * \text{na} & \text{if } c_t < \mathit{length} \\
+ * \dfrac{1}{\mathit{length}}
+ * \displaystyle\sum_{i \in K_t} \mathit{source}_{t-i}
+ * & \text{if } c_{t-1} < c_t = \mathit{length} \\
+ * \mathrm{rma}_{t-1} & \text{if } \mathit{source}_t = \text{na} \\
+ * \alpha \cdot \mathit{source}_t + (1 - \alpha) \cdot \mathrm{rma}_{t-1}
+ * & \text{otherwise}
+ * \end{cases} \\
+ * \text{where}\quad
+ * K_t &= \{\, i \ge 0 : \mathit{source}_{t-i} \ne \text{na} \,\},
+ * \quad c_t = |K_t|,
+ * \quad \alpha = \frac{1}{\mathit{length}}
+ * \end{aligned}
+ * @warmup `na` until `length` values of `source` that are not `na` have
+ * arrived, on consecutive bars or not. After that it is never `na`: a bar
+ * where `source` is `na` keeps the previous result.
+ * @example
+ * A 3-bar average. The close at index 1 is missing, so the third value
+ * arrives at index 3, where the average starts at `(10 + 12 + 14) / 3 = 12`.
+ * Each later close moves it a third of the way, and the missing close at
+ * index 5 keeps 14.
+ * ```tea
+ * emit "close" close
+ * emit "rma" ta.rma(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,
+ * 2,12
+ * 3,14
+ * 4,18
+ * 5,
+ * 6,20
+ * 7,22
+ * ```
+ * @see ta.ema
+ * @see ta.rsi
+ * @category Moving averages
+ */
+export rma(float source, simple int length) =>
+	if not (length >= 1)
+		runtime.error("ta.rma: length must be at least 1")
 	alpha = 1.0 / length
 	var float r = na
 	var float seedSum = 0.0
@@ -42,36 +271,392 @@ export rma(source, length) =>
 			r := alpha * source + (1 - alpha) * r
 	r
 
-export wma(source, length) =>
+/**
+ * Weighted moving average: the mean of the last `length` values of `source`,
+ * with weights falling linearly from the newest value to the oldest.
+ *
+ * The newest value has weight `length`, the one before it `length - 1`, and so
+ * on down to 1 for the oldest, and the weighted sum is divided by the sum of
+ * the weights. Values that are `na` are left out together with their weights.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the weighted mean of the window.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{wma}_t &= \frac
+ * {\sum_{i \in K_t} (\mathit{length} - i) \cdot \mathit{source}_{t-i}}
+ * {\sum_{i \in K_t} (\mathit{length} - i)} \\
+ * \text{where}\quad K_t &= \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, and when every value in the
+ * window is `na`.
+ * @example
+ * A 3-bar average weights the closes 3, 2 and 1 from newest to oldest, so at
+ * index 2 it is `(3 * 16 + 2 * 13 + 10) / 6 = 14`. The close at index 4 is
+ * missing, so at index 5 only the weights 3 and 1 remain:
+ * `(3 * 25 + 19) / 4 = 23.5`.
+ * ```tea
+ * emit "close" close
+ * emit "wma" ta.wma(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,13
+ * 2,16
+ * 3,19
+ * 4,
+ * 5,25
+ * 6,28
+ * 7,31
+ * ```
+ * @see ta.sma
+ * @see ta.hma
+ * @category Moving averages
+ */
+export wma(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.wma: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	norm = 0.0
 	sum = 0.0
 	for i = 0 to length - 1
-		weight = (length - i) * length
-		norm += weight
-		sum += source[i] * weight
-	sum / norm
+		value = source[i]
+		if not na(value)
+			weight = (length - i) * length
+			norm += weight
+			sum += value * weight
+	bars < length ? na : sum / norm
 
-export vwma(source, length) =>
-	sma(source * volume, length) / sma(volume, length)
+/**
+ * Volume-weighted moving average: the mean of the last `length` values of
+ * `source`, each weighted by its bar's {@link volume}.
+ *
+ * It is the sum of `source * volume` divided by the sum of `volume`, over the
+ * bars in the window where neither is `na`.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the weighted mean of the window.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{vwma}_t &= \frac
+ * {\sum_{i \in K_t} \mathit{source}_{t-i} \cdot \mathit{volume}_{t-i}}
+ * {\sum_{i \in K_t} \mathit{volume}_{t-i}} \\
+ * \text{where}\quad
+ * K_t &= \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na},
+ * \ \mathit{volume}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, when no bar in the window has
+ * both `source` and `volume`, and when the volumes of the bars used add up
+ * to 0.
+ * @example
+ * A 3-bar average. At index 3 it is
+ * `(12 * 300 + 11 * 100 + 14 * 200) / 600 = 12.5`. The close at index 4 is
+ * missing, so that bar's volume is left out too: at index 4 the result is
+ * `(11 * 100 + 14 * 200) / 300 = 13`.
+ * ```tea
+ * emit "close" close
+ * emit "volume" volume
+ * emit "vwma" ta.vwma(close, 3)
+ * ```
+ * ```csv
+ * time,close,volume
+ * 0,10,100
+ * 1,12,300
+ * 2,11,100
+ * 3,14,200
+ * 4,,300
+ * 5,16,200
+ * 6,19,100
+ * 7,21,100
+ * ```
+ * @pine Pine's manual defines it as
+ * `ta.sma(source * volume, length) / ta.sma(volume, length)`. The two differ
+ * when `source` is `na` on a bar whose volume is known: Tea leaves that
+ * volume out, while `ta.sma(volume, length)` still counts it.
+ * @see ta.sma
+ * @see ta.wma
+ * @category Moving averages
+ */
+export vwma(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.vwma: length must be at least 1")
+	var int bars = 0
+	bars += 1
+	sumPV = 0.0
+	sumV = 0.0
+	for i = 0 to length - 1
+		pv = source[i] * volume[i]
+		if not na(pv)
+			sumPV += pv
+			sumV += volume[i]
+	bars < length ? na : sumPV / sumV
 
-export hma(source, length) =>
-	wma(2 * wma(source, math.floor(length / 2)) - wma(source, length), math.round(math.sqrt(length)))
+/**
+ * Hull moving average of `source`, built from three {@link ta.wma} averages
+ * to reduce lag.
+ *
+ * It is a {@link ta.wma} over `math.floor(math.sqrt(length))` bars of
+ * `2 * ta.wma(source, length / 2) - ta.wma(source, length)`, with
+ * `length / 2` rounded down. Each of the three averages leaves out `na`
+ * values.
+ *
+ * The difference first exists on the bar where `ta.wma(source, length)`
+ * fills, and the result waits until the outer average holds
+ * `math.floor(math.sqrt(length))` differences, so it starts
+ * `math.floor(math.sqrt(length)) - 1` bars after `ta.wma(source, length)`:
+ * at index 8 rather than 7 for a `length` of 8. The formula applies from
+ * then on.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @param length Number of bars in the longest of the three averages, at
+ * least 2. It must be known when the script starts, such as a constant or an
+ * input.
+ * @returns `float`: the average.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{hma}_t &= \mathrm{wma}(d, r)_t \\
+ * d_t &= 2 \cdot \mathrm{wma}(\mathit{source}, h)_t
+ * - \mathrm{wma}(\mathit{source}, \mathit{length})_t \\
+ * \text{where}\quad h &= \lfloor \mathit{length} / 2 \rfloor,
+ * \quad r = \lfloor \sqrt{\mathit{length}} \rfloor
+ * \end{aligned}
+ * @warmup `na` on the first `length + math.floor(math.sqrt(length)) - 2`
+ * bars: 4 for a `length` of 4, 10 for 9. After that, `na` values are left
+ * out, and the result is `na` only while the last
+ * `math.floor(length / 2) + math.floor(math.sqrt(length)) - 1` values of
+ * `source` are all `na`: 3 for a `length` of 4, 6 for 9.
+ * @example
+ * With a `length` of 4 the first value is at index
+ * `4 + math.floor(math.sqrt(4)) - 2 = 4`. While the closes rise by 1 a bar it
+ * equals the close. The close at index 8 is missing; the averages leave it
+ * out, so the result there is still a number.
+ * ```tea
+ * emit "close" close
+ * emit "hma" ta.hma(close, 4)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,11
+ * 2,12
+ * 3,13
+ * 4,14
+ * 5,15
+ * 6,16
+ * 7,15
+ * 8,
+ * 9,13
+ * 10,12
+ * ```
+ * @see ta.wma
+ * @see ta.ema
+ * @category Moving averages
+ */
+export hma(float source, simple int length) =>
+	if not (length >= 2)
+		runtime.error("ta.hma: length must be at least 2")
+	var int bars = 0
+	bars += 1
+	root = math.floor(math.sqrt(length))
+	hull = wma(2 * wma(source, math.floor(length / 2)) - wma(source, length), root)
+	// The outer average would otherwise start on its inner averages' partial
+	// windows.
+	bars < length + root - 1 ? na : hull
 
-export swma(source) =>
-	source[3] / 6 + source[2] * 2 / 6 + source[1] * 2 / 6 + source / 6
+/**
+ * Symmetrically weighted moving average: the mean of the last four values of
+ * `source`, with weights 1, 2, 2 and 1.
+ *
+ * The weights are 1/6, 2/6, 2/6 and 1/6 from the oldest value to the newest.
+ * The window is always four bars; there is no `length` parameter. An `na`
+ * value in the window makes the result `na`.
+ *
+ * @param source Series to average, usually {@link close}.
+ * @returns `float`: the weighted mean of the four values.
+ * @formula
+ * \mathrm{swma}_t = \frac
+ * {\mathit{source}_{t-3} + 2 \cdot \mathit{source}_{t-2}
+ * + 2 \cdot \mathit{source}_{t-1} + \mathit{source}_t}
+ * {6}
+ * @warmup `na` on the first 3 bars, and while any of the four values is
+ * `na`.
+ * @example
+ * The first value is at index 3: `(12 + 2 * 12 + 2 * 18 + 18) / 6 = 15`. The
+ * close at index 7 is missing, so the four windows that hold it, at indexes 7
+ * to 10, are `na`.
+ * ```tea
+ * emit "close" close
+ * emit "swma" ta.swma(close)
+ * ```
+ * ```csv
+ * time,close
+ * 0,12
+ * 1,12
+ * 2,18
+ * 3,18
+ * 4,24
+ * 5,18
+ * 6,12
+ * 7,
+ * 8,18
+ * 9,24
+ * 10,24
+ * 11,18
+ * ```
+ * @see ta.wma
+ * @see ta.sma
+ * @category Moving averages
+ */
+export swma(float source) =>
+	source[3] / 6.0 + source[2] * 2 / 6.0 + source[1] * 2 / 6.0 + source / 6.0
 
-export alma(source, length, offset, sigma) =>
-	m = offset * (length - 1)
-	s = length / sigma
+/**
+ * Arnaud Legoux moving average: the mean of the last `length` values of
+ * `series`, weighted by a bell curve.
+ *
+ * The weights follow a Gaussian curve across the window. Its peak sits
+ * `offset * (length - 1)` positions after the oldest value, and its standard
+ * deviation is `length / sigma` bars. The weighted sum is divided by the sum
+ * of the weights. An `na` value in the window makes the result `na`.
+ *
+ * @param series Series to average, usually {@link close}.
+ * @param length Number of bars in the window, at least 1.
+ * @param offset Position of the peak weight, from 0 (the oldest value) to 1
+ * (the newest). It must be known when the script starts, such as a constant
+ * or an input.
+ * @param sigma Sharpness of the curve: its standard deviation is
+ * `length / sigma` bars, so a larger `sigma` puts more of the weight near the
+ * peak. It must be known when the script starts, such as a constant or an
+ * input.
+ * @param floor `true` rounds the peak position down to a whole bar; `false`,
+ * the default, keeps it as computed. It must be known when the script starts,
+ * such as a constant or an input.
+ * @returns `float`: the weighted mean of the window.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{alma}_t &= \frac
+ * {\sum_{j=0}^{\mathit{length}-1} w_j
+ * \cdot \mathit{series}_{t-\mathit{length}+1+j}}
+ * {\sum_{j=0}^{\mathit{length}-1} w_j},
+ * \qquad w_j = \exp\left(-\frac{(j - m)^2}{2 s^2}\right) \\
+ * \text{where}\quad m &= \begin{cases}
+ * \lfloor \mathit{offset} \cdot (\mathit{length} - 1) \rfloor
+ * & \text{if } \mathit{floor} \\
+ * \mathit{offset} \cdot (\mathit{length} - 1) & \text{otherwise}
+ * \end{cases},
+ * \qquad s = \frac{\mathit{length}}{\mathit{sigma}}
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, and while any value in the
+ * window is `na`.
+ * @example
+ * Over 4 bars with `offset` 0.85, the peak sits at position 2.55, between the
+ * two newest closes. `floor = true` moves it back to position 2, so older
+ * closes weigh more; as these closes trend up, the floored average is lower
+ * on every bar that has a value. The close at index 6 is missing, so indexes
+ * 6 to 9 are `na`.
+ * ```tea
+ * emit "close" close
+ * emit "alma" ta.alma(close, 4, 0.85, 6)
+ * emit "floored" ta.alma(close, 4, 0.85, 6, true)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,11
+ * 3,15
+ * 4,14
+ * 5,18
+ * 6,
+ * 7,17
+ * 8,20
+ * 9,22
+ * 10,21
+ * 11,24
+ * ```
+ * @see ta.wma
+ * @see ta.sma
+ * @category Moving averages
+ */
+export alma(float series, int length, simple float offset, simple float sigma, simple bool floor = false) =>
+	if not (length >= 1)
+		runtime.error("ta.alma: length must be at least 1")
+	m = floor ? math.floor(offset * (length - 1)) : offset * (length - 1)
+	s = float(length) / sigma
 	norm = 0.0
 	sum = 0.0
 	for i = 0 to length - 1
 		weight = math.exp(-math.pow(i - m, 2) / (2 * math.pow(s, 2)))
 		norm += weight
-		sum += weight * source[length - 1 - i]
+		sum += weight * series[length - 1 - i]
 	sum / norm
 
-export linreg(source, length, offset) =>
+/**
+ * Linear regression curve: the value of the least-squares line through the
+ * last `length` values of `source`, read `offset` bars back.
+ *
+ * The line is fitted with the oldest value at position 0 and the current
+ * value at position `length - 1`, then read at position
+ * `length - 1 - offset`. An `offset` of 0 gives the line's value on the
+ * current bar, also known as the least-squares moving average, and a negative
+ * `offset` extends the line past it. An `na` value in the window makes the
+ * result `na`.
+ *
+ * @param source Series to fit, usually {@link close}.
+ * @param length Number of bars in the window, at least 2.
+ * @param offset Bars back from the current bar at which to read the line; 0
+ * reads it on the current bar. It must be known when the script starts, such
+ * as a constant or an input.
+ * @returns `float`: the value of the fitted line.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{linreg}_t &= a + b \cdot (n - 1 - \mathit{offset}) \\
+ * b &= \frac
+ * {n \sum_j j \cdot y_j - \left(\sum_j j\right) \left(\sum_j y_j\right)}
+ * {n \sum_j j^2 - \left(\sum_j j\right)^2},
+ * \qquad a = \frac{\sum_j y_j - b \sum_j j}{n} \\
+ * \text{where}\quad n &= \mathit{length},
+ * \quad y_j = \mathit{source}_{t-n+1+j},
+ * \quad j = 0, \dots, n - 1
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, and while any value in the
+ * window is `na`.
+ * @example
+ * At index 2 the closes 10, 14 and 12, at positions 0 to 2, fit the line
+ * `11 + position`. It reads 13 on the current bar (`offset` 0) and 14 one bar
+ * ahead (`offset` -1). The close at index 6 is missing, so indexes 6 to 8 are
+ * `na`.
+ * ```tea
+ * emit "close" close
+ * emit "fit" ta.linreg(close, 3, 0)
+ * emit "ahead" ta.linreg(close, 3, -1)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,14
+ * 2,12
+ * 3,16
+ * 4,20
+ * 5,18
+ * 6,
+ * 7,22
+ * 8,26
+ * 9,24
+ * ```
+ * @see ta.sma
+ * @see ta.correlation
+ * @category Moving averages
+ */
+export linreg(float source, int length, simple int offset) =>
+	if not (length >= 2)
+		runtime.error("ta.linreg: length must be at least 2")
 	sumX = 0.0
 	sumY = 0.0
 	sumXY = 0.0
@@ -88,84 +673,768 @@ export linreg(source, length, offset) =>
 	intercept = (sumY - slope * sumX) / n
 	intercept + slope * (length - 1 - offset)
 
-export cog(source, length) =>
+/**
+ * Center of gravity (COG) of the last `length` values of `source`.
+ *
+ * It is minus the average bar position in the window, from `1` for the
+ * current bar to `length` for the oldest, with each position weighted by its
+ * value. Values that are `na` are left out, and the others keep their
+ * positions. For positive values it lies between `-length` and `-1`:
+ * `length` equal values give `-(length + 1) / 2`, and larger newer values
+ * move it toward `-1`.
+ *
+ * @param source Series to measure, usually {@link close}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the center of gravity.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{cog}_t &= -\frac{\sum_{i \in K_t} (i + 1) \cdot \mathit{source}_{t-i}}
+ * {\sum_{i \in K_t} \mathit{source}_{t-i}} \\
+ * \text{where}\quad K_t &= \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, when every value in the window
+ * is `na`, and when the known values sum to `0`.
+ * @example
+ * Equal closes give -2 at index 2, and the 20 moves the value to -1.75 while
+ * it is newest (index 3) and to -2.25 while it is oldest (index 5). At index 6
+ * the missing close is left out: `-(2 * 10 + 3 * 10) / 20` is -2.5.
+ * ```tea
+ * emit "close" close
+ * emit "cog" ta.cog(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,10
+ * 2,10
+ * 3,20
+ * 4,10
+ * 5,10
+ * 6,
+ * 7,10
+ * ```
+ * @see ta.wma
+ * @see ta.stoch
+ * @category Momentum
+ */
+export cog(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.cog: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	sum = 0.0
 	num = 0.0
 	for i = 0 to length - 1
 		price = source[i]
-		sum += price
-		num += price * (i + 1)
-	-num / sum
+		if not na(price)
+			sum += price
+			num += price * (i + 1)
+	bars < length ? na : -num / sum
 
 // ---- momentum ---------------------------------------------------------------
 
-export change(source, length = 1) =>
+/**
+ * Difference between `source` and its value `length` bars ago.
+ *
+ * @param source Series to compare.
+ * @param length Number of bars back, at least 1. Leaving it out compares with
+ * the previous bar.
+ * @returns `float`, or `int` for an `int` source: the difference.
+ * @formula
+ * \mathrm{change}_t = \mathit{source}_t - \mathit{source}_{t-\mathit{length}}
+ * @warmup `na` on the first `length` bars, and when either value is `na`.
+ * @example
+ * The change from the previous bar and from two bars back. The close is
+ * missing at index 4, so `change` is `na` at indexes 4 and 5, and `change2` at
+ * indexes 4 and 6.
+ * ```tea
+ * emit "close" close
+ * emit "change" ta.change(close)
+ * emit "change2" ta.change(close, 2)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,15
+ * 3,14
+ * 4,
+ * 5,18
+ * 6,20
+ * ```
+ * @pine Pine also accepts a `bool` source, returning `true` when it differs
+ * from the previous one; in Tea a `bool` source is a compile error.
+ * @see ta.mom
+ * @see ta.roc
+ * @category Momentum
+ */
+export change(source, int length = 1) =>
+	if not (length >= 1)
+		runtime.error("ta.change: length must be at least 1")
 	source - source[length]
 
-export mom(source, length) =>
+/**
+ * Momentum: `source` minus its value `length` bars ago.
+ *
+ * It is the same as {@link ta.change} with `length` required, except that an
+ * `int` source gives a `float` result.
+ *
+ * @param source Series to compare, usually {@link close}.
+ * @param length Number of bars back, at least 1.
+ * @returns `float`: the difference.
+ * @formula
+ * \mathrm{mom}_t = \mathit{source}_t - \mathit{source}_{t-\mathit{length}}
+ * @warmup `na` on the first `length` bars, and when either value is `na`.
+ * @example
+ * Momentum over 3 bars. The first value, at index 3, is `14 - 10`.
+ * ```tea
+ * emit "close" close
+ * emit "mom" ta.mom(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,15
+ * 3,14
+ * 4,18
+ * 5,20
+ * 6,19
+ * ```
+ * @see ta.change
+ * @see ta.roc
+ * @category Momentum
+ */
+export mom(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.mom: length must be at least 1")
 	source - source[length]
 
-export roc(source, length) =>
-	100 * (source - source[length]) / source[length]
+/**
+ * Rate of change (ROC): the percentage change of `source` from its value
+ * `length` bars ago.
+ *
+ * @param source Series to compare, usually {@link close}.
+ * @param length Number of bars back, at least 1.
+ * @returns `float`: the change as a percentage of the earlier value.
+ * @formula
+ * \mathrm{roc}_t = 100 \cdot
+ * \frac{\mathit{source}_t - \mathit{source}_{t-\mathit{length}}}
+ * {\mathit{source}_{t-\mathit{length}}}
+ * @warmup `na` on the first `length` bars, when either value is `na`, and
+ * when the earlier value is `0`.
+ * @example
+ * The rate of change over 2 bars: from 10 to 25 is 150 at index 2. The close
+ * two bars before index 6 is 0, so that value is `na`.
+ * ```tea
+ * emit "close" close
+ * emit "roc" ta.roc(close, 2)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,20
+ * 2,25
+ * 3,30
+ * 4,0
+ * 5,15
+ * 6,40
+ * 7,30
+ * ```
+ * @see ta.change
+ * @see ta.mom
+ * @category Momentum
+ */
+export roc(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.roc: length must be at least 1")
+	100.0 * (source - source[length]) / source[length]
 
-export rsi(source, length) =>
+/**
+ * Relative Strength Index (RSI) of `source`, from `0` to `100`.
+ *
+ * The gains and the losses from bar to bar are each smoothed with
+ * {@link ta.rma} over `length` bars, and the index compares the two. It is
+ * `100` when the smoothed loss is `0`, including on a flat series, and `0`
+ * when only the smoothed gain is `0`.
+ *
+ * @param source Series to measure, usually {@link close}.
+ * @param length Smoothing length in bars, at least 1. It must be a value
+ * known when the script starts, such as a constant or an input.
+ * @returns `float`: the index.
+ * @formula
+ * \begin{aligned}
+ * \Delta_t &= \mathit{source}_t - \mathit{source}_{t-1} \\
+ * U_t &= \mathrm{rma}(\max(\Delta, 0), \mathit{length})_t \\
+ * D_t &= \mathrm{rma}(\max(-\Delta, 0), \mathit{length})_t \\
+ * \mathrm{rsi}_t &= \begin{cases}
+ * 100 & D_t = 0 \\
+ * 0 & U_t = 0,\ D_t > 0 \\
+ * 100 - \dfrac{100}{1 + U_t / D_t} & \text{otherwise}
+ * \end{cases}
+ * \end{aligned}
+ * @warmup `na` until `length` changes of `source` are known: the first
+ * `length` bars when no value is `na`. An `na` value leaves out the changes
+ * into and out of it, so once started the index keeps its value on that bar
+ * and the next.
+ * @example
+ * A 3-bar RSI starts at index 3, where the average gain is `(2 + 0 + 2) / 3`
+ * and the average loss `1 / 3`, giving 80. The close is missing at index 6,
+ * so the index keeps its value there and at index 7.
+ * ```tea
+ * emit "close" close
+ * emit "rsi" ta.rsi(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,11
+ * 3,13
+ * 4,13
+ * 5,12
+ * 6,
+ * 7,14
+ * 8,16
+ * ```
+ * @see ta.rma
+ * @see ta.cmo
+ * @see ta.mfi
+ * @category Momentum
+ */
+export rsi(float source, simple int length) =>
+	if not (length >= 1)
+		runtime.error("ta.rsi: length must be at least 1")
 	up = rma(math.max(change(source), 0), length)
 	down = rma(math.max(-change(source), 0), length)
 	down == 0 ? 100.0 : up == 0 ? 0.0 : 100.0 - 100.0 / (1 + up / down)
 
-export cmo(source, length) =>
+/**
+ * Chande Momentum Oscillator (CMO) of `series`, from `-100` to `100`.
+ *
+ * Over the last `length` bar-to-bar changes, it is the sum of the gains minus
+ * the sum of the losses, as a percentage of their total. A change that
+ * involves an `na` value is left out.
+ *
+ * @param series Series to measure, usually {@link close}.
+ * @param length Number of bar-to-bar changes in the window, at least 1.
+ * @returns `float`: the oscillator.
+ * @formula
+ * \begin{aligned}
+ * \Delta_t &= \mathit{series}_t - \mathit{series}_{t-1} \\
+ * K_t &= \{\, i : 0 \le i < \mathit{length},\
+ * \Delta_{t-i} \ne \text{na} \,\} \\
+ * G_t &= \sum_{i \in K_t} \max(\Delta_{t-i}, 0), \qquad
+ * L_t = \sum_{i \in K_t} \max(-\Delta_{t-i}, 0) \\
+ * \mathrm{cmo}_t &= 100 \cdot \frac{G_t - L_t}{G_t + L_t}
+ * \end{aligned}
+ * @warmup `na` on the first `length` bars, when no change in the window is
+ * known, and when every known change is `0`.
+ * @example
+ * At index 2 a gain of 2 and a loss of 1 give `100 * (2 - 1) / (2 + 1)`. The
+ * missing close at index 6 leaves out the changes into and out of it, so
+ * index 7 has none left and is `na`.
+ * ```tea
+ * emit "close" close
+ * emit "cmo" ta.cmo(close, 2)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,11
+ * 3,11
+ * 4,14
+ * 5,13
+ * 6,
+ * 7,15
+ * 8,17
+ * ```
+ * @see ta.rsi
+ * @see ta.tsi
+ * @category Momentum
+ */
+export cmo(float series, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.cmo: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	sumUp = 0.0
 	sumDown = 0.0
 	for i = 0 to length - 1
-		delta = source[i] - source[i + 1]
-		sumUp += math.max(delta, 0)
-		sumDown += math.max(-delta, 0)
-	100 * (sumUp - sumDown) / (sumUp + sumDown)
+		delta = series[i] - series[i + 1]
+		if not na(delta)
+			sumUp += math.max(delta, 0)
+			sumDown += math.max(-delta, 0)
+	bars <= length ? na : 100 * (sumUp - sumDown) / (sumUp + sumDown)
 
-export tsi(source, shortLength, longLength) =>
+/**
+ * True Strength Index (TSI) of `source`, from `-1` to `1`.
+ *
+ * The bar-to-bar change of `source` is smoothed twice with {@link ta.ema},
+ * first over `long_length` bars and then over `short_length` bars, and divided
+ * by the absolute change smoothed the same way. Both smoothings skip a bar
+ * whose change is `na`.
+ *
+ * @param source Series to measure, usually {@link close}.
+ * @param short_length Length of the second smoothing in bars, at least 1. It
+ * must be a value known when the script starts, such as a constant or an
+ * input.
+ * @param long_length Length of the first smoothing in bars, at least 1. It
+ * must be a value known when the script starts, such as a constant or an
+ * input.
+ * @returns `float`: the index.
+ * @formula
+ * \begin{aligned}
+ * \Delta_t &= \mathit{source}_t - \mathit{source}_{t-1} \\
+ * (a_t, b_t) &= \begin{cases}
+ * \bigl(\mathrm{ema}(\Delta, \mathit{long\_length})_t,\
+ * \mathrm{ema}(|\Delta|, \mathit{long\_length})_t\bigr)
+ * & \Delta_t \ne \text{na} \\
+ * (\text{na}, \text{na}) & \text{otherwise}
+ * \end{cases} \\
+ * \mathrm{tsi}_t &= \frac{\mathrm{ema}(a, \mathit{short\_length})_t}
+ * {\mathrm{ema}(b, \mathit{short\_length})_t}
+ * \end{aligned}
+ * @warmup `na` until a bar-to-bar change of `source` is known and not `0`;
+ * that change gives exactly `1` or `-1`. With both lengths `1`, it is also
+ * `na` on each bar where `source` did not change. An `na` value leaves out
+ * the changes into and out of it, so the index keeps its value on that bar
+ * and the next.
+ * @example
+ * The first change gives 1 at index 1, and at index 2 the smoothed change, 1,
+ * over the smoothed absolute change, `5 / 3`, gives 0.6. The close is missing
+ * at index 5, so the index keeps its value there and at index 6.
+ * ```tea
+ * emit "close" close
+ * emit "tsi" ta.tsi(close, 2, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,11
+ * 3,14
+ * 4,13
+ * 5,
+ * 6,16
+ * 7,15
+ * ```
+ * @see ta.ema
+ * @see ta.cmo
+ * @category Momentum
+ */
+export tsi(float source, simple int short_length, simple int long_length) =>
+	if not (short_length >= 1)
+		runtime.error("ta.tsi: short_length must be at least 1")
+	if not (long_length >= 1)
+		runtime.error("ta.tsi: long_length must be at least 1")
 	diff = change(source)
-	100 * (ema(ema(diff, longLength), shortLength) / ema(ema(math.abs(diff), longLength), shortLength))
+	// A bar whose change is unknown is skipped by the outer averages too, as
+	// the inner ones skip it, so it moves nothing.
+	known = not na(diff)
+	ema(known ? ema(diff, long_length) : na, short_length) / ema(known ? ema(math.abs(diff), long_length) : na, short_length)
 
-export stoch(source, h, l, length) =>
+/**
+ * Stochastic oscillator, the fast %K: where `source` sits between the lowest
+ * `l` and the highest `h` of the last `length` bars, from `0` to `100`.
+ *
+ * It uses {@link ta.lowest} and {@link ta.highest}, and leaves `0` to `100`
+ * only when `source` lies outside that range. The result is not smoothed:
+ * pass it to {@link ta.sma} for the slow %K.
+ *
+ * @param source Series to place in the range, usually {@link close}.
+ * @param h Series whose highest value is the top of the range, usually
+ * {@link high}.
+ * @param l Series whose lowest value is the bottom of the range, usually
+ * {@link low}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the position as a percentage of the range.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{stoch}_t &= 100 \cdot \frac{\mathit{source}_t - L_t}{H_t - L_t} \\
+ * \text{where}\quad H_t &= \mathrm{highest}(\mathit{h}, \mathit{length})_t \\
+ * L_t &= \mathrm{lowest}(\mathit{l}, \mathit{length})_t
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, when `source` is `na`, when a
+ * window has no known value, and when the range is `0`. Other `na` values are
+ * left out of the windows.
+ * @example
+ * At index 2 the close of 10 is 3 above the lowest low, 7, in a range of 5,
+ * giving 60. The missing low at index 3 is left out of the windows, and the
+ * missing close at index 4 makes that bar `na`.
+ * ```tea
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "stoch" ta.stoch(close, high, low, 3)
+ * ```
+ * ```csv
+ * time,high,low,close
+ * 0,10,8,9
+ * 1,12,9,11
+ * 2,11,7,10
+ * 3,13,,12
+ * 4,12,8,
+ * 5,15,10,14
+ * 6,14,9,10
+ * 7,16,11,15
+ * ```
+ * @pine Pine names the second and third parameters `high` and `low`; Tea names
+ * them `h` and `l`, so named arguments read `h = high, l = low`.
+ * @see ta.wpr
+ * @see ta.highest
+ * @see ta.lowest
+ * @category Momentum
+ */
+export stoch(float source, float h, float l, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.stoch: length must be at least 1")
 	lowestLow = lowest(l, length)
-	100 * (source - lowestLow) / (highest(h, length) - lowestLow)
+	100.0 * (source - lowestLow) / (highest(h, length) - lowestLow)
 
-export cci(source, length) =>
+/**
+ * Commodity Channel Index (CCI) of `source`.
+ *
+ * It is `source` minus its {@link ta.sma}, divided by `0.015` times the mean
+ * absolute deviation ({@link ta.dev}) of the same window. Values that are
+ * `na` are left out of both.
+ *
+ * @param source Series to measure, such as {@link hlc3}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the index.
+ * @formula
+ * \mathrm{cci}_t = \frac{
+ * \mathit{source}_t - \mathrm{sma}(\mathit{source}, \mathit{length})_t}
+ * {0.015 \cdot \mathrm{dev}(\mathit{source}, \mathit{length})_t}
+ * @warmup `na` on the first `length - 1` bars, when `source` is `na`, and when
+ * the known values in the window are all equal, as they always are for a
+ * `length` of 1.
+ * @example
+ * At index 2 the close is 1 above the 3-bar mean of 11 and the mean deviation
+ * is `2 / 3`, giving about 100. Index 5 has no close, and from index 7 the
+ * known closes in the window are equal, so those bars are `na`.
+ * ```tea
+ * emit "close" close
+ * emit "cci" ta.cci(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,11
+ * 2,12
+ * 3,12
+ * 4,9
+ * 5,
+ * 6,12
+ * 7,12
+ * 8,12
+ * ```
+ * @see ta.sma
+ * @see ta.dev
+ * @category Momentum
+ */
+export cci(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.cci: length must be at least 1")
 	mean = sma(source, length)
 	md = 0.0
+	count = 0
 	for i = 0 to length - 1
-		md += math.abs(source[i] - mean)
-	md /= length
+		value = source[i]
+		if not na(value)
+			md += math.abs(value - mean)
+			count += 1
+	md /= count
 	(source - mean) / (0.015 * md)
 
-export wpr(length) =>
+/**
+ * Williams %R: where {@link close} sits within the range of the last `length`
+ * bars, from `-100` to `0`.
+ *
+ * It is the position that {@link ta.stoch} measures, shifted down by `100`:
+ * `0` when the close is at the highest {@link high} of the window and `-100`
+ * when it is at the lowest {@link low}. It leaves `-100` to `0` only when the
+ * close lies outside that range.
+ *
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the position as a percentage of the range.
+ * @formula
+ * \begin{aligned}
+ * \%R_t &= 100 \cdot \frac{\mathit{close}_t - H_t}{H_t - L_t} \\
+ * \text{where}\quad H_t &= \mathrm{highest}(\mathit{high}, \mathit{length})_t \\
+ * L_t &= \mathrm{lowest}(\mathit{low}, \mathit{length})_t
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, when {@link close} is `na`,
+ * when a window has no known value, and when the range is `0`. Other `na`
+ * values are left out of the windows.
+ * @example
+ * A 3-bar %R. At index 2 the close of 10 is 2 below the highest high, 12, in
+ * a range of 5, giving -40. The high is missing at index 3, so that window's
+ * highest high is 12, and the close of 12 gives 0.
+ * ```tea
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "wpr" ta.wpr(3)
+ * ```
+ * ```csv
+ * time,high,low,close
+ * 0,10,8,9
+ * 1,12,9,11
+ * 2,11,7,10
+ * 3,,9,12
+ * 4,12,8,9
+ * 5,15,10,14
+ * 6,14,9,10
+ * ```
+ * @see ta.stoch
+ * @see ta.highest
+ * @see ta.lowest
+ * @category Momentum
+ */
+export wpr(int length) =>
+	if not (length >= 1)
+		runtime.error("ta.wpr: length must be at least 1")
 	upper = highest(high, length)
 	lower = lowest(low, length)
 	100 * (close - upper) / (upper - lower)
 
-export mfi(source, length) =>
+/**
+ * Money Flow Index (MFI) of `series`, from `0` to `100`.
+ *
+ * Each bar's money flow is `series` times {@link volume}. Over the last
+ * `length` bars, the flows of bars where `series` rose and of bars where it
+ * fell are summed separately, and the index compares the two. A bar whose
+ * change or flow involves an `na` value is left out, and a bar where `series`
+ * did not change counts toward neither sum.
+ *
+ * @param series Price series, usually {@link hlc3}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the index.
+ * @formula
+ * \begin{aligned}
+ * \Delta_t &= \mathit{series}_t - \mathit{series}_{t-1}, \qquad
+ * F_t = \mathit{series}_t \cdot \mathit{volume}_t \\
+ * K_t &= \{\, i : 0 \le i < \mathit{length},\
+ * \Delta_{t-i} \ne \text{na},\ F_{t-i} \ne \text{na} \,\} \\
+ * P_t &= \sum_{i \in K_t,\ \Delta_{t-i} > 0} F_{t-i}, \qquad
+ * N_t = \sum_{i \in K_t,\ \Delta_{t-i} < 0} F_{t-i} \\
+ * \mathrm{mfi}_t &= 100 - \frac{100}{1 + P_t / N_t}
+ * \end{aligned}
+ * @warmup `na` on the first `length` bars, and when the bars in the window
+ * that fell have a total flow of `0`, as when none fell or their volume is
+ * `0`. It is `0` when the bars that rose have a total flow of `0` but those
+ * that fell do not.
+ * @example
+ * At index 4 the 3-bar window has one rising bar with a flow of `12 * 100` and
+ * one falling bar with `11 * 200`, so the index is
+ * `100 - 100 / (1 + 1200 / 2200)`. No bar fell in the window at index 6, so
+ * it is `na` there.
+ * ```tea
+ * emit "close" close
+ * emit "volume" volume
+ * emit "mfi" ta.mfi(close, 3)
+ * ```
+ * ```csv
+ * time,close,volume
+ * 0,10,100
+ * 1,11,100
+ * 2,12,100
+ * 3,11,200
+ * 4,11,100
+ * 5,12,100
+ * 6,13,100
+ * 7,12,100
+ * ```
+ * @see ta.rsi
+ * @see ta.cmo
+ * @category Momentum
+ */
+export mfi(float series, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.mfi: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	upper = 0.0
 	lower = 0.0
 	for i = 0 to length - 1
-		delta = source[i] - source[i + 1]
-		flow = volume[i] * source[i]
-		upper += delta > 0 ? flow : 0.0
-		lower += delta < 0 ? flow : 0.0
-	100.0 - 100.0 / (1.0 + upper / lower)
+		delta = series[i] - series[i + 1]
+		flow = volume[i] * series[i]
+		if not na(delta) and not na(flow)
+			upper += delta > 0 ? flow : 0.0
+			lower += delta < 0 ? flow : 0.0
+	bars <= length ? na : 100.0 - 100.0 / (1.0 + upper / lower)
 
-export macd(source, fastLength, slowLength, signalLength) =>
-	fast = ema(source, fastLength)
-	slow = ema(source, slowLength)
+/**
+ * Moving Average Convergence Divergence (MACD) of `source`: the MACD line, its
+ * signal line and the histogram.
+ *
+ * The MACD line is the fast {@link ta.ema} of `source` minus the slow one,
+ * the signal line is the {@link ta.ema} of the MACD line over the bars where
+ * `source` is known, and the histogram is the MACD line minus the signal
+ * line.
+ *
+ * @param source Series to measure, usually {@link close}.
+ * @param fastlen Length of the fast average in bars, at least 1. It must be
+ * a value known when the script starts, such as a constant or an input.
+ * @param slowlen Length of the slow average in bars, at least 1. It must be
+ * a value known when the script starts, such as a constant or an input.
+ * @param siglen Length of the signal line's average in bars, at least 1. It
+ * must be a value known when the script starts, such as a constant or an
+ * input.
+ * @returns `[float, float, float]`: the MACD line, the signal line and the
+ * histogram.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{macd}_t &= \mathrm{ema}(\mathit{source}, \mathit{fastlen})_t -
+ * \mathrm{ema}(\mathit{source}, \mathit{slowlen})_t \\
+ * \mathrm{signal}_t &= \mathrm{ema}(y, \mathit{siglen})_t, \qquad
+ * y_t = \begin{cases} \mathrm{macd}_t & \mathit{source}_t \ne \text{na} \\
+ * \text{na} & \text{otherwise} \end{cases} \\
+ * \mathrm{histogram}_t &= \mathrm{macd}_t - \mathrm{signal}_t
+ * \end{aligned}
+ * @warmup All three are `na` before the first known value of `source` and `0`
+ * on it, because each average starts from its first value. On a bar where
+ * `source` is `na`, all three keep their values.
+ * @example
+ * All three are 0 on the first bar, and at index 1 the fast average is 12 and
+ * the slow one 11.5, so the MACD line is 0.5. The close is missing at index 4,
+ * so all three keep their values there.
+ * ```tea
+ * [macdLine, signalLine, histogram] = ta.macd(close, 2, 3, 2)
+ * emit "close" close
+ * emit "macd" macdLine
+ * emit "signal" signalLine
+ * emit "histogram" histogram
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,13
+ * 2,13
+ * 3,16
+ * 4,
+ * 5,16
+ * 6,13
+ * ```
+ * @see ta.ema
+ * @category Momentum
+ */
+export macd(float source, simple int fastlen, simple int slowlen, simple int siglen) =>
+	if not (fastlen >= 1)
+		runtime.error("ta.macd: fastlen must be at least 1")
+	if not (slowlen >= 1)
+		runtime.error("ta.macd: slowlen must be at least 1")
+	if not (siglen >= 1)
+		runtime.error("ta.macd: siglen must be at least 1")
+	fast = ema(source, fastlen)
+	slow = ema(source, slowlen)
 	macdLine = fast - slow
-	signalLine = ema(macdLine, signalLength)
+	// The averages keep their values on a bar whose source is missing; the
+	// signal skips that bar too instead of counting the held line again.
+	signalLine = ema(na(source) ? na : macdLine, siglen)
 	[macdLine, signalLine, macdLine - signalLine]
 
-export dmi(diLength, adxSmoothing) =>
+/**
+ * Directional Movement Index (DMI): the +DI and -DI lines and the Average
+ * Directional Index (ADX), each from `0` to `100`.
+ *
+ * On each bar, the rise of {@link high} is the upward move and the fall of
+ * {@link low} the downward move; only the larger of the two is kept, and only
+ * when it is positive. Each move and the true range ({@link ta.tr}) are
+ * smoothed with {@link ta.rma} over `diLength` bars, and each smoothed move as
+ * a percentage of the smoothed true range gives +DI and -DI. A bar counts
+ * toward these three averages only when its high and low and the previous
+ * bar's high, low and close are all known, so the first bar never counts.
+ * ADX is `100` times the {@link ta.rma}, over `adxSmoothing` bars, of the
+ * absolute difference of +DI and -DI divided by their sum.
+ *
+ * +DI and -DI leave `0` to `100` only when a close lies above its bar's high
+ * or below its low.
+ *
+ * @param diLength Smoothing length for +DI and -DI in bars, at least 1. It
+ * must be a value known when the script starts, such as a constant or an
+ * input.
+ * @param adxSmoothing Smoothing length for ADX in bars, at least 1. It must
+ * be a value known when the script starts, such as a constant or an input.
+ * @returns `[float, float, float]`: +DI, -DI and ADX.
+ * @formula
+ * \begin{aligned}
+ * u_t &= \mathit{high}_t - \mathit{high}_{t-1}, \qquad
+ * d_t = \mathit{low}_{t-1} - \mathit{low}_t, \qquad
+ * r_t = \mathrm{tr}(\text{false})_t \\
+ * p_t &= \begin{cases} u_t & u_t > d_t \text{ and } u_t > 0 \\
+ * 0 & \text{otherwise} \end{cases} \\
+ * m_t &= \begin{cases} d_t & d_t > u_t \text{ and } d_t > 0 \\
+ * 0 & \text{otherwise} \end{cases} \\
+ * (\hat{p}_t, \hat{m}_t, \hat{r}_t) &= \begin{cases}
+ * (p_t, m_t, r_t) & u_t, d_t, r_t \ne \text{na} \\
+ * (\text{na}, \text{na}, \text{na}) & \text{otherwise}
+ * \end{cases} \\
+ * q^{+}_t &= \frac{100 \cdot \mathrm{rma}(\hat{p}, \mathit{diLength})_t}
+ * {\mathrm{rma}(\hat{r}, \mathit{diLength})_t}, \qquad
+ * q^{-}_t = \frac{100 \cdot \mathrm{rma}(\hat{m}, \mathit{diLength})_t}
+ * {\mathrm{rma}(\hat{r}, \mathit{diLength})_t} \\
+ * \mathrm{DI}^{\pm}_t &= \begin{cases} q^{\pm}_t & q^{\pm}_t \ne \text{na} \\
+ * \mathrm{DI}^{\pm}_{t-1} & \text{otherwise} \end{cases} \\
+ * x_t &= \frac{|\mathrm{DI}^{+}_t - \mathrm{DI}^{-}_t|}
+ * {\mathrm{DI}^{+}_t + \mathrm{DI}^{-}_t},
+ * \text{ or } 0 \text{ when both are } 0 \\
+ * \mathrm{ADX}_t &= 100 \cdot \mathrm{rma}(x, \mathit{adxSmoothing})_t
+ * \end{aligned}
+ * @warmup +DI and -DI are `na` until `diLength` bars have counted and a
+ * counted bar has a true range other than `0`, so always on the first
+ * `diLength` bars. After that, on a bar that does not count or where the
+ * smoothed true range is `0`, they keep their values and ADX still averages
+ * them. ADX is `na` until `adxSmoothing` values of +DI and -DI are known.
+ * @example
+ * +DI and -DI start at index 3, the third bar that counts: the smoothed moves,
+ * `4 / 3` up and `2 / 3` down, as percentages of the smoothed true range,
+ * `11 / 3`, are about 36.36 and 18.18. The missing close at index 5 keeps
+ * index 6 from counting, so +DI and -DI keep their values there while ADX
+ * still moves.
+ * ```tea
+ * [plusDI, minusDI, adx] = ta.dmi(3, 2)
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "+DI" plusDI
+ * emit "-DI" minusDI
+ * emit "ADX" adx
+ * ```
+ * ```csv
+ * time,high,low,close
+ * 0,10,8,9
+ * 1,12,9,11
+ * 2,11,7,10
+ * 3,13,9,12
+ * 4,12,8,9
+ * 5,15,10,
+ * 6,14,9,10
+ * 7,16,11,15
+ * ```
+ * @see ta.tr
+ * @see ta.rma
+ * @category Momentum
+ */
+export dmi(simple int diLength, simple int adxSmoothing) =>
+	if not (diLength >= 1)
+		runtime.error("ta.dmi: diLength must be at least 1")
+	if not (adxSmoothing >= 1)
+		runtime.error("ta.dmi: adxSmoothing must be at least 1")
 	up = change(high)
 	down = -change(low)
-	trur = rma(tr(true), diLength)
-	rawPlus = 100 * rma(up > down and up > 0 ? up : 0.0, diLength) / trur
-	rawMinus = 100 * rma(down > up and down > 0 ? down : 0.0, diLength) / trur
+	trueRange = tr(false)
+	// A bar counts toward all three averages or none: only when both moves
+	// and the true range are known. When each close lies within its bar's low
+	// and high, the true range is at least either move, so +DI and -DI stay
+	// within 0 and 100.
+	known = not (na(up) or na(down) or na(trueRange))
+	trur = rma(known ? trueRange : na, diLength)
+	rawPlus = 100 * rma(known ? (up > down and up > 0 ? up : 0.0) : na, diLength) / trur
+	rawMinus = 100 * rma(known ? (down > up and down > 0 ? down : 0.0) : na, diLength) / trur
 	var float plus = na
 	var float minus = na
 	plus := na(rawPlus) ? plus : rawPlus
@@ -176,60 +1445,665 @@ export dmi(diLength, adxSmoothing) =>
 
 // ---- volatility and channels ------------------------------------------------
 
-export tr(handleNa = true) =>
+/**
+ * True range of the current bar: its high-to-low range, extended to reach the
+ * previous close.
+ *
+ * It measures how far price moved during the bar, counting a gap from the
+ * previous {@link close}, which comes from the bar before even when the call
+ * did not run on that bar. When that close lies between this bar's
+ * {@link low} and {@link high}, the true range is `high - low`. It is in
+ * price units. {@link ta.atr} averages it. Pine Script's variable `ta.tr` is
+ * the same as `ta.tr(false)`.
+ *
+ * @param handle_na Result when the previous close is `na`, as on the first
+ * bar: `true` gives `high - low`; `false` gives `na`. It must be known when
+ * the script starts, such as a constant or an input.
+ * @returns `float`: the true range.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{tr}_t &= \begin{cases}
+ * \max(\mathit{high}_t - \mathit{low}_t,\ |\mathit{high}_t - c|,\
+ * |\mathit{low}_t - c|) & c \ne \text{na} \\
+ * \mathit{high}_t - \mathit{low}_t
+ * & c = \text{na} \text{ and } \mathit{handle\_na} \\
+ * \text{na} & \text{otherwise}
+ * \end{cases} \\
+ * \text{where}\quad c &= \mathit{close}_{t-1}
+ * \end{aligned}
+ * @warmup No warm-up when `handle_na` is `true`. When it is `false`, `na` on
+ * the first bar and on the bar after each missing close. A missing high or low
+ * gives `na` either way.
+ * @example
+ * At index 2 the bar is above the previous close of 11, so the true range is
+ * `15 - 11 = 4`, more than `high - low`. Index 0, and index 4 after the
+ * missing close, have no previous close: `ta.tr(true)` gives `high - low` and
+ * `ta.tr(false)` gives `na`.
+ * ```tea
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "tr(true)" ta.tr(true)
+ * emit "tr(false)" ta.tr(false)
+ * ```
+ * ```csv
+ * time,high,low,close
+ * 0,11,9,10
+ * 1,12,10,11
+ * 2,15,13,14
+ * 3,14,12,
+ * 4,13,11,12
+ * 5,10,8,9
+ * ```
+ * @see ta.atr
+ * @see ta.kc
+ * @category Volatility and bands
+ */
+export tr(simple bool handle_na) =>
 	prevClose = close[1]
-	na(prevClose) ? (handleNa ? high - low : na) : math.max(high - low, math.abs(high - prevClose), math.abs(low - prevClose))
+	na(prevClose) ? (handle_na ? high - low : na) : math.max(high - low, math.abs(high - prevClose), math.abs(low - prevClose))
 
-export atr(length) =>
+/**
+ * Average true range (ATR): the smoothed average of recent true ranges, a
+ * measure of volatility in price units.
+ *
+ * It is {@link ta.rma}, Wilder's moving average, of `ta.tr(true)` over
+ * `length` bars: the simple average of the first `length` true ranges, after
+ * which each bar moves the average `1 / length` of the way toward the new true
+ * range ({@link ta.tr}). The first bar's true range is `high - low`.
+ *
+ * @param length Smoothing length in bars, at least 1. It must be known when
+ * the script starts, such as a constant or an input.
+ * @returns `float`: the average true range.
+ * @formula
+ * \mathrm{atr}_t = \mathrm{rma}(\mathrm{tr}(\text{true}), \mathit{length})_t
+ * @warmup `na` until `length` true ranges that are not `na` have arrived: the
+ * first `length - 1` bars when no high or low is missing. After that, a bar
+ * whose true range is `na`, because its high or low is `na`, keeps the
+ * previous value.
+ * @example
+ * Index 3 averages the first four true ranges, `(2 + 3 + 4 + 3) / 4 = 3`. The
+ * gap at index 4 gives a true range of 7, and the ATR moves a quarter of the
+ * way to it, `3 + (7 - 3) / 4 = 4`; the missing high at index 5 leaves it at 4.
+ * ```tea
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "tr" ta.tr(true)
+ * emit "atr" ta.atr(4)
+ * ```
+ * ```csv
+ * time,high,low,close
+ * 0,11,9,10
+ * 1,12,9,11
+ * 2,13,9,12
+ * 3,14,11,13
+ * 4,20,17,19
+ * 5,,18,19
+ * 6,20,18,19
+ * 7,25,17,24
+ * ```
+ * @see ta.tr
+ * @see ta.rma
+ * @see ta.supertrend
+ * @category Volatility and bands
+ */
+export atr(simple int length) =>
+	if not (length >= 1)
+		runtime.error("ta.atr: length must be at least 1")
 	rma(tr(true), length)
 
-export dev(source, length) =>
+/**
+ * Mean absolute deviation: the average distance of the last `length` values of
+ * `source` from their mean.
+ *
+ * The mean is the {@link ta.sma} of the same window. Values that are `na` are
+ * left out of both the mean and the average distance.
+ *
+ * @param source Series to measure, such as {@link close}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the mean absolute deviation, in the units of `source`.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{dev}_t &= \frac{1}{|K_t|} \sum_{i \in K_t}
+ * \left| \mathit{source}_{t-i} - \mu_t \right|,
+ * \qquad \mu_t = \mathrm{sma}(\mathit{source}, \mathit{length})_t \\
+ * K_t &= \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, and when every value in the
+ * window is `na`.
+ * @example
+ * At index 2 the closes 9, 12 and 15 lie 3, 0 and 3 from their mean of 12, so
+ * the deviation is 2. The windows that hold the missing close at index 4 use
+ * their two known values.
+ * ```tea
+ * emit "close" close
+ * emit "sma" ta.sma(close, 3)
+ * emit "dev" ta.dev(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,9
+ * 1,12
+ * 2,15
+ * 3,9
+ * 4,
+ * 5,9
+ * 6,12
+ * 7,15
+ * ```
+ * @see ta.stdev
+ * @see ta.variance
+ * @see ta.cci
+ * @category Statistics
+ */
+export dev(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.dev: length must be at least 1")
 	mean = sma(source, length)
 	sum = 0.0
+	count = 0
 	for i = 0 to length - 1
-		sum += math.abs(source[i] - mean)
-	sum / length
+		value = source[i]
+		if not na(value)
+			sum += math.abs(value - mean)
+			count += 1
+	sum / count
 
-export variance(source, length, biased = true) =>
-	// Center the window before averaging so a constant decimal stays exactly
-	// zero and small spreads do not lose precision against a large price level.
-	anchor = source
+/**
+ * Variance: how widely the last `length` values of `source` spread around their
+ * mean, in squared units.
+ *
+ * Values that are `na` are left out, so the mean is the average of the known
+ * values. Known values that are all equal give exactly `0`, even when they are
+ * decimals.
+ *
+ * @param source Series to measure, such as {@link close}.
+ * @param length Number of bars in the window, at least 1.
+ * @param biased `true` (the default) divides by the number of known values,
+ * giving the population variance; `false` divides by one less, giving the
+ * sample variance.
+ * @returns `float`: the variance, in the units of `source` squared.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{variance}_t &= \frac{1}{d_t} \sum_{i \in K_t}
+ * \left( \mathit{source}_{t-i} - \mu_t \right)^2,
+ * \qquad \mu_t = \frac{1}{|K_t|} \sum_{i \in K_t} \mathit{source}_{t-i} \\
+ * d_t &= \begin{cases}
+ * |K_t| & \text{if } \mathit{biased} \\
+ * |K_t| - 1 & \text{otherwise}
+ * \end{cases} \\
+ * K_t &= \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, and when every value in the
+ * window is `na`. With `biased` set to `false`, also `na` when only one value
+ * in the window is known.
+ * @example
+ * At index 2 the closes 10, 13 and 16 lie 3, 0 and 3 from their mean, so the
+ * squared distances sum to 18: divided by 3 it is 6, and by 2 it is 9. The
+ * windows that hold the missing close at index 4 have two known values, so
+ * they divide by 2 and 1.
+ * ```tea
+ * emit "close" close
+ * emit "population" ta.variance(close, 3)
+ * emit "sample" ta.variance(close, 3, biased = false)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,13
+ * 2,16
+ * 3,13
+ * 4,
+ * 5,15
+ * 6,12
+ * 7,12
+ * ```
+ * @see ta.stdev
+ * @see ta.dev
+ * @category Statistics
+ */
+export variance(float source, int length, bool biased = true) =>
+	if not (length >= 1)
+		runtime.error("ta.variance: length must be at least 1")
+	var int bars = 0
+	bars += 1
+	// Center on a value of the window before averaging, so a constant decimal
+	// stays exactly zero and small spreads keep their precision against a large
+	// price level.
+	float anchor = na
 	shiftedSum = 0.0
+	count = 0
 	for i = 0 to length - 1
-		shiftedSum += source[i] - anchor
-	mean = shiftedSum / length
+		value = source[i]
+		if not na(value)
+			if na(anchor)
+				anchor := value
+			shiftedSum += value - anchor
+			count += 1
+	mean = shiftedSum / count
 	sum = 0.0
 	for i = 0 to length - 1
-		diff = (source[i] - anchor) - mean
-		sum += diff * diff
-	sum / (biased ? length : length - 1)
+		value = source[i]
+		if not na(value)
+			diff = (value - anchor) - mean
+			sum += diff * diff
+	bars < length or count == 0 ? na : sum / (biased ? count : count - 1)
 
-export stdev(source, length, biased = true) =>
+/**
+ * Standard deviation: how widely the last `length` values of `source` spread
+ * around their mean.
+ *
+ * It is the square root of {@link ta.variance} with the same arguments, so it
+ * is in the units of `source`. Values that are `na` are left out, and known
+ * values that are all equal give exactly `0`, even when they are decimals.
+ *
+ * @param source Series to measure, such as {@link close}.
+ * @param length Number of bars in the window, at least 1.
+ * @param biased `true` (the default) uses the population variance, which
+ * divides by the number of known values; `false` uses the sample variance,
+ * which divides by one less.
+ * @returns `float`: the standard deviation, in the units of `source`.
+ * @formula
+ * \mathrm{stdev}_t =
+ * \sqrt{\mathrm{variance}(\mathit{source}, \mathit{length}, \mathit{biased})_t}
+ * @warmup `na` on the first `length - 1` bars, and when every value in the
+ * window is `na`. With `biased` set to `false`, also `na` when only one value
+ * in the window is known.
+ * @example
+ * At indexes 3 to 5 each 4-bar window holds two 10s and two 12s, each 1 from
+ * their mean of 11, so the standard deviation is 1. The windows that hold the
+ * 18 at index 6 give 3.
+ * ```tea
+ * emit "close" close
+ * emit "stdev" ta.stdev(close, 4)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,10
+ * 3,12
+ * 4,10
+ * 5,12
+ * 6,18
+ * 7,12
+ * ```
+ * @see ta.variance
+ * @see ta.bb
+ * @see ta.dev
+ * @category Statistics
+ */
+export stdev(float source, int length, bool biased = true) =>
+	if not (length >= 1)
+		runtime.error("ta.stdev: length must be at least 1")
 	math.sqrt(variance(source, length, biased))
 
-export range(source, length) =>
+/**
+ * Range of the last `length` values of `source`: the highest minus the lowest.
+ *
+ * It is {@link ta.highest} minus {@link ta.lowest} with the same arguments.
+ * Values that are `na` are left out of both.
+ *
+ * @param source Series to measure, such as {@link close}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the highest value in the window minus the lowest.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{range}_t &= \max_{i \in K_t} \mathit{source}_{t-i}
+ * - \min_{i \in K_t} \mathit{source}_{t-i} \\
+ * K_t &= \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, and when every value in the
+ * window is `na`.
+ * @example
+ * At index 3 the closes 12, 11 and 15 give 15 minus 11, which is 4. The
+ * windows that hold the missing close at index 4 use their two known values.
+ * ```tea
+ * emit "close" close
+ * emit "range" ta.range(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,11
+ * 3,15
+ * 4,
+ * 5,13
+ * 6,9
+ * 7,10
+ * ```
+ * @pine Pine's manual gives an `int` result for an `int` source; Tea's
+ * result is always `float`.
+ * @see ta.highest
+ * @see ta.lowest
+ * @category Statistics
+ */
+export range(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.range: length must be at least 1")
 	highest(source, length) - lowest(source, length)
 
-export bb(source, length, mult) =>
-	basis = sma(source, length)
-	spread = mult * stdev(source, length, true)
+/**
+ * Bollinger Bands: the simple moving average of `series`, with bands `mult`
+ * standard deviations above and below it.
+ *
+ * The middle band is {@link ta.sma} and the distance is `mult` times the
+ * population standard deviation, {@link ta.stdev} with `biased` `true`, both
+ * over the last `length` values. {@link ta.bbw} gives the distance between
+ * the bands relative to the middle band.
+ *
+ * @param series Series to measure, usually {@link close}.
+ * @param length Number of bars in the window, at least 1.
+ * @param mult Band distance in standard deviations, such as `2`. It must be
+ * known when the script starts, such as a constant or an input.
+ * @returns `[float, float, float]`: the middle band, the upper band and the
+ * lower band.
+ * @formula
+ * \begin{aligned}
+ * \mathit{middle}_t &= \mathrm{sma}(\mathit{series}, \mathit{length})_t \\
+ * \mathit{upper}_t &= \mathit{middle}_t
+ *   + \mathit{mult} \cdot \mathrm{stdev}(\mathit{series}, \mathit{length})_t \\
+ * \mathit{lower}_t &= \mathit{middle}_t
+ *   - \mathit{mult} \cdot \mathrm{stdev}(\mathit{series}, \mathit{length})_t
+ * \end{aligned}
+ * @warmup All three are `na` on the first `length - 1` bars, and when every
+ * value in the window is `na`. Other `na` values are left out of the window.
+ * @example
+ * At index 3 the window holds 10, 12, 10 and 12: the middle band is 11 and
+ * the standard deviation 1, so the bands are 13 and 9. The close is missing
+ * at index 4, so the windows that hold it use their other three values.
+ * ```tea
+ * [middle, upper, lower] = ta.bb(close, 4, 2)
+ * emit "close" close
+ * emit "middle" middle
+ * emit "upper" upper
+ * emit "lower" lower
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,10
+ * 3,12
+ * 4,
+ * 5,12
+ * 6,14
+ * 7,12
+ * 8,14
+ * ```
+ * @see ta.bbw
+ * @see ta.kc
+ * @see ta.stdev
+ * @category Volatility and bands
+ */
+export bb(float series, int length, simple float mult) =>
+	if not (length >= 1)
+		runtime.error("ta.bb: length must be at least 1")
+	basis = sma(series, length)
+	spread = mult * stdev(series, length, true)
 	[basis, basis + spread, basis - spread]
 
-export bbw(source, length, mult) =>
-	basis = sma(source, length)
-	2 * mult * stdev(source, length, true) / basis * 100
+/**
+ * Bollinger Band width: the distance between the upper and lower
+ * {@link ta.bb} bands as a percentage of the middle band.
+ *
+ * It is small when the values in the window are close together. Unlike
+ * {@link ta.kcw}, it is multiplied by `100`.
+ *
+ * @param series Series to measure, usually {@link close}.
+ * @param length Number of bars in the window, at least 1.
+ * @param mult Band distance in standard deviations, such as `2`. It must be
+ * known when the script starts, such as a constant or an input.
+ * @returns `float`: the width in percent of the middle band.
+ * @formula
+ * \mathrm{bbw}_t = 100 \cdot \frac{2 \cdot \mathit{mult}
+ *   \cdot \mathrm{stdev}(\mathit{series}, \mathit{length})_t}
+ *   {\mathrm{sma}(\mathit{series}, \mathit{length})_t}
+ * @warmup `na` on the first `length - 1` bars, when every value in the window
+ * is `na`, and when the middle band is `0`. Other `na` values are left out of
+ * the window.
+ * @example
+ * While the closes swing between 19 and 21, the middle band is 20 and the
+ * standard deviation 1, so the width is `100 * 2 * 2 * 1 / 20 = 20`. The jump
+ * to 25 at index 6 widens it.
+ * ```tea
+ * emit "close" close
+ * emit "bbw" ta.bbw(close, 4, 2)
+ * ```
+ * ```csv
+ * time,close
+ * 0,19
+ * 1,21
+ * 2,19
+ * 3,21
+ * 4,19
+ * 5,21
+ * 6,25
+ * 7,25
+ * ```
+ * @see ta.bb
+ * @see ta.kcw
+ * @category Volatility and bands
+ */
+export bbw(float series, int length, simple float mult) =>
+	if not (length >= 1)
+		runtime.error("ta.bbw: length must be at least 1")
+	basis = sma(series, length)
+	2 * mult * stdev(series, length, true) / basis * 100
 
-export kc(source, length, mult, useTrueRange = true) =>
-	basis = ema(source, length)
-	span = useTrueRange ? tr(true) : high - low
+/**
+ * Keltner Channels: the exponential moving average of `series`, with bands
+ * `mult` average ranges above and below it.
+ *
+ * The middle line is {@link ta.ema} of `series`. The distance is `mult` times
+ * the {@link ta.ema}, over the same `length`, of each bar's range: its true
+ * range ({@link ta.tr}), or `high - low` when `useTrueRange` is `false`. This
+ * average range is an exponential average, not {@link ta.atr}.
+ *
+ * @param series Series to average, usually {@link close}.
+ * @param length Smoothing length in bars for both averages, at least 1. It
+ * must be known when the script starts, such as a constant or an input.
+ * @param mult Band distance in average ranges, such as `2`. It must be known
+ * when the script starts, such as a constant or an input.
+ * @param useTrueRange `true`, the default, measures each bar's range with
+ * `ta.tr(false)`; `false` uses `high - low`. It must be known when the script
+ * starts, such as a constant or an input.
+ * @returns `[float, float, float]`: the middle line, the upper band and the
+ * lower band.
+ * @formula
+ * \begin{aligned}
+ * \mathit{middle}_t &= \mathrm{ema}(\mathit{series}, \mathit{length})_t \\
+ * \mathit{upper}_t &= \mathit{middle}_t
+ *   + \mathit{mult} \cdot \mathrm{ema}(r, \mathit{length})_t \\
+ * \mathit{lower}_t &= \mathit{middle}_t
+ *   - \mathit{mult} \cdot \mathrm{ema}(r, \mathit{length})_t \\
+ * r_t &= \begin{cases}
+ *   \mathrm{tr}(\text{false})_t & \mathit{useTrueRange} \\
+ *   \mathit{high}_t - \mathit{low}_t & \text{otherwise}
+ * \end{cases}
+ * \end{aligned}
+ * @warmup The middle line is `na` until the first `series` value that is not
+ * `na`. The bands are also `na` until the first range that is not `na`. The
+ * range is `na` when the high or low is `na`, and with `useTrueRange` also
+ * when the previous close is `na`, as on the first bar. After that, a bar
+ * where `series` is `na` keeps the middle line, and a bar where the range is
+ * `na` keeps the average range.
+ * @example
+ * The middle line starts at the first close and moves halfway to each new
+ * close. The bands start at index 1, the first bar with a previous close: its
+ * true range is `13 - 10 = 3`, so they sit `2 * 3 = 6` from the middle.
+ * ```tea
+ * [middle, upper, lower] = ta.kc(close, 3, 2)
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "middle" middle
+ * emit "upper" upper
+ * emit "lower" lower
+ * ```
+ * ```csv
+ * time,high,low,close
+ * 0,11,9,10
+ * 1,13,11,12
+ * 2,12,10,11
+ * 3,14,12,13
+ * 4,14,12,13
+ * 5,16,14,15
+ * ```
+ * @see ta.kcw
+ * @see ta.bb
+ * @see ta.atr
+ * @category Volatility and bands
+ */
+export kc(float series, simple int length, simple float mult, simple bool useTrueRange = true) =>
+	if not (length >= 1)
+		runtime.error("ta.kc: length must be at least 1")
+	basis = ema(series, length)
+	span = useTrueRange ? tr(false) : high - low
 	spanEma = ema(span, length)
 	[basis, basis + spanEma * mult, basis - spanEma * mult]
 
-export kcw(source, length, mult, useTrueRange = true) =>
-	[kcMid, kcUp, kcLow] = kc(source, length, mult, useTrueRange)
+/**
+ * Keltner Channel width: the distance between the upper and lower
+ * {@link ta.kc} bands as a fraction of the middle line.
+ *
+ * Unlike {@link ta.bbw}, it is not multiplied by `100`.
+ *
+ * @param series Series to average, usually {@link close}.
+ * @param length Smoothing length in bars for both averages, at least 1. It
+ * must be known when the script starts, such as a constant or an input.
+ * @param mult Band distance in average ranges, such as `2`. It must be known
+ * when the script starts, such as a constant or an input.
+ * @param useTrueRange `true`, the default, measures each bar's range with
+ * `ta.tr(false)`; `false` uses `high - low`. It must be known when the script
+ * starts, such as a constant or an input.
+ * @returns `float`: the width as a fraction of the middle line.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{kcw}_t &= \frac{\mathit{upper}_t - \mathit{lower}_t}{\mathit{middle}_t} \\
+ * \text{where}\quad [\mathit{middle}, \mathit{upper}, \mathit{lower}]
+ * &= \mathrm{kc}(\mathit{series}, \mathit{length}, \mathit{mult},
+ * \mathit{useTrueRange})
+ * \end{aligned}
+ * @warmup `na` where {@link ta.kc} gives `na` bands, as on the first bar when
+ * `useTrueRange` is `true`, and where the middle line is `0`.
+ * @example
+ * At index 1 the bands are 17 and 5 around a middle line of 11, so the width
+ * is `12 / 11`. With `useTrueRange` `false` the first bar has a width, and the
+ * widths are smaller because `high - low` leaves out the gaps from the
+ * previous close.
+ * ```tea
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "kcw" ta.kcw(close, 3, 2)
+ * emit "kcwHighLow" ta.kcw(close, 3, 2, false)
+ * ```
+ * ```csv
+ * time,high,low,close
+ * 0,11,9,10
+ * 1,13,11,12
+ * 2,12,10,11
+ * 3,14,12,13
+ * 4,14,12,13
+ * 5,16,14,15
+ * ```
+ * @see ta.kc
+ * @see ta.bbw
+ * @category Volatility and bands
+ */
+export kcw(float series, simple int length, simple float mult, simple bool useTrueRange = true) =>
+	if not (length >= 1)
+		runtime.error("ta.kcw: length must be at least 1")
+	[kcMid, kcUp, kcLow] = kc(series, length, mult, useTrueRange)
 	(kcUp - kcLow) / kcMid
 
-export supertrend(factor, atrPeriod) =>
+/**
+ * Supertrend: a trailing line below price in an uptrend and above it in a
+ * downtrend, with the trend direction.
+ *
+ * Two bands sit `factor` times {@link ta.atr} above and below {@link hl2}. The
+ * lower band never falls unless the previous {@link close} was below it, and
+ * the upper band never rises unless the previous close was above it. In a
+ * downtrend the line is the upper band, and the trend turns up when `close`
+ * rises above it; in an uptrend the line is the lower band, and the trend
+ * turns down when `close` falls below it.
+ *
+ * @param factor Band distance in average true ranges, such as `3`.
+ * @param atrPeriod Length of the {@link ta.atr}, at least 1. It must be known
+ * when the script starts, such as a constant or an input.
+ * @returns `[float, int]`: the line, then the direction: `-1` in an uptrend
+ * and `1` in a downtrend.
+ * @formula
+ * \begin{aligned}
+ * A_t &= \mathrm{atr}(\mathit{atrPeriod})_t, \quad
+ *   \hat{U}_t = \mathit{hl2}_t + \mathit{factor} \cdot A_t, \quad
+ *   \hat{L}_t = \mathit{hl2}_t - \mathit{factor} \cdot A_t \\
+ * U_t &= \begin{cases}
+ *   \hat{U}_t & \hat{U}_t < U'_t \text{ or } \mathit{close}_{t-1} > U'_t \\
+ *   U'_t & \text{otherwise}
+ * \end{cases} \qquad U'_t = \mathrm{nz}(U_{t-1}) \\
+ * L_t &= \begin{cases}
+ *   \hat{L}_t & \hat{L}_t > L'_t \text{ or } \mathit{close}_{t-1} < L'_t \\
+ *   L'_t & \text{otherwise}
+ * \end{cases} \qquad L'_t = \mathrm{nz}(L_{t-1}) \\
+ * \mathit{direction}_t &= \begin{cases}
+ *   1 & \text{if } A_{t-1} = \text{na} \\
+ *   -1 \text{ if } \mathit{close}_t > U_t \text{, else } 1
+ *     & \text{else if } \mathit{line}_{t-1} = U'_t \\
+ *   1 \text{ if } \mathit{close}_t < L_t \text{, else } -1 & \text{otherwise}
+ * \end{cases} \\
+ * \mathit{line}_t &= \begin{cases}
+ *   L_t & \mathit{direction}_t = -1 \\
+ *   U_t & \mathit{direction}_t = 1
+ * \end{cases}
+ * \end{aligned}
+ * @warmup `direction` is `1` up to and including the bar where the ATR gets
+ * its first value: the first `atrPeriod` bars when no high or low is missing.
+ * With prices above `0`, `line` is `0` on the first bar and `na` on the later
+ * bars where the ATR is `na`; a missing close before the ATR's first value
+ * makes `line` `0` on the next bar. After that, a bar whose `close` is `na`
+ * keeps the direction. On a bar whose {@link hl2} is `na`, a band keeps its
+ * previous value, or is `na` if the previous close was beyond it.
+ * @example
+ * After the placeholder `0` at index 0, the line is the upper band,
+ * `hl2 + atr`: `10.5 + 2.5 = 13`, then 12.25, where it stays because that
+ * band does not rise. At index 5 the close of 14 is above it, so `direction`
+ * turns to `-1` and the line drops to the lower band, 8.
+ * ```tea
+ * [line, direction] = ta.supertrend(1, 2)
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "atr" ta.atr(2)
+ * emit "line" line
+ * emit "direction" direction
+ * ```
+ * ```csv
+ * time,high,low,close
+ * 0,10,8,9
+ * 1,12,9,11
+ * 2,11,7,10
+ * 3,13,9,12
+ * 4,12,8,9
+ * 5,15,10,14
+ * 6,14,9,10
+ * 7,16,11,15
+ * ```
+ * @pine Pine's manual gives `direction` as `float`; Tea returns it as an
+ * `int`.
+ * @see ta.atr
+ * @see ta.sar
+ * @category Trailing stops
+ */
+export supertrend(float factor, simple int atrPeriod) =>
+	if not (atrPeriod >= 1)
+		runtime.error("ta.supertrend: atrPeriod must be at least 1")
 	src = hl2
 	atrValue = atr(atrPeriod)
 	upperBand = src + factor * atrValue
@@ -250,167 +2124,1616 @@ export supertrend(factor, atrPeriod) =>
 	superTrend := direction == -1 ? lowerBand : upperBand
 	[superTrend, direction]
 
-export sar(start, inc, max) =>
+/**
+ * Parabolic SAR (stop and reverse): a trailing stop level that follows the
+ * trend and speeds up as the trend makes new extremes.
+ *
+ * A bar counts when the call runs on it and its {@link high}, {@link low} and
+ * {@link close} are all known. On a bar with a missing price the level holds.
+ * Below, "the previous bar" means the latest earlier bar that counts.
+ *
+ * The trend starts on the second bar that counts. If the close rose from the
+ * previous bar, it is an uptrend: the level starts at the previous bar's low
+ * and the extreme point at this bar's high. Otherwise it is a downtrend: the
+ * level starts at the previous bar's high and the extreme point at this bar's
+ * low. The acceleration factor starts at `start`. Then each bar that counts,
+ * from that one on, takes these steps:
+ *
+ * 1. The level moves toward the extreme point by the acceleration factor
+ *    times the distance between them.
+ * 2. In an uptrend, if that level is above the bar's low, the trend turns
+ *    down: the level jumps to the higher of the extreme point and the bar's
+ *    high, the extreme point becomes the bar's low, and the factor returns to
+ *    `start`. A downtrend turns up the same way when the level is below the
+ *    bar's high.
+ * 3. Otherwise, a high above the extreme point in an uptrend, or a low below
+ *    it in a downtrend, becomes the new extreme point and raises the factor by
+ *    `inc`, up to `max`.
+ * 4. If the trend is now up, the level is lowered to the lowest low of the
+ *    previous two bars if it is above it; if it is now down, the level is
+ *    raised to their highest high if it is below it. On the bar where the
+ *    trend starts, there is only one previous bar.
+ *
+ * Step 2 compares the bar with the level from step 1, before step 4. That
+ * level is not the one plotted on the previous bar: in an uptrend it is at or
+ * above it, so a low below the previous plotted level always turns the trend,
+ * a low a little above it can too, and a low equal to the step 1 level does
+ * not. The same holds for highs in a downtrend. On a bar that does not turn,
+ * the plotted level is the step 1 level, or lower after step 4 (higher in a
+ * downtrend).
+ *
+ * @param start Initial acceleration factor, such as `0.02`. It must be known
+ * when the script starts, such as a constant or an input.
+ * @param inc Increase of the acceleration factor at each new extreme point,
+ * such as `0.02`. It must be known when the script starts, such as a constant
+ * or an input.
+ * @param max Largest acceleration factor, such as `0.2`. It must be known when
+ * the script starts, such as a constant or an input.
+ * @returns `float`: the stop level.
+ * @formula
+ * \begin{aligned}
+ * S^{*}_t &= S_p + a_p \cdot (E_p - S_p) \\[4pt]
+ * &\text{in an uptrend:} \\
+ * S_t &= \begin{cases}
+ *   \max(E_p, \mathit{high}_t, \mathit{high}_p, \mathit{high}_q)
+ *     & S^{*}_t > \mathit{low}_t \text{ (turns down)} \\
+ *   \min(S^{*}_t, \mathit{low}_p, \mathit{low}_q) & \text{otherwise}
+ * \end{cases} \\
+ * (E_t, a_t) &= \begin{cases}
+ *   (\mathit{low}_t, \mathit{start}) & S^{*}_t > \mathit{low}_t \\
+ *   (\mathit{high}_t, \min(a_p + \mathit{inc}, \mathit{max}))
+ *     & \mathit{high}_t > E_p \\
+ *   (E_p, a_p) & \text{otherwise}
+ * \end{cases} \\[4pt]
+ * &\text{in a downtrend:} \\
+ * S_t &= \begin{cases}
+ *   \min(E_p, \mathit{low}_t, \mathit{low}_p, \mathit{low}_q)
+ *     & S^{*}_t < \mathit{high}_t \text{ (turns up)} \\
+ *   \max(S^{*}_t, \mathit{high}_p, \mathit{high}_q) & \text{otherwise}
+ * \end{cases} \\
+ * (E_t, a_t) &= \begin{cases}
+ *   (\mathit{high}_t, \mathit{start}) & S^{*}_t < \mathit{high}_t \\
+ *   (\mathit{low}_t, \min(a_p + \mathit{inc}, \mathit{max}))
+ *     & \mathit{low}_t < E_p \\
+ *   (E_p, a_p) & \text{otherwise}
+ * \end{cases} \\[4pt]
+ * &\text{where the trend starts, without the terms for bar } q\text{:} \\
+ * (S_p, E_p, a_p) &= \begin{cases}
+ *   (\mathit{low}_p, \mathit{high}_t, \mathit{start}) \text{, uptrend}
+ *     & \mathit{close}_t > \mathit{close}_p \\
+ *   (\mathit{high}_p, \mathit{low}_t, \mathit{start}) \text{, downtrend}
+ *     & \text{otherwise}
+ * \end{cases} \\[4pt]
+ * &\text{where } p, q \text{ are the latest and second-latest earlier bars
+ *   that count,} \\
+ * &\text{and } S_t = S_{t-1} \text{ on a bar with a missing high, low or close}
+ * \end{aligned}
+ * @warmup `na` until the second bar on which the call runs with a known high,
+ * low and close: only on the first bar for a call that runs on every bar with
+ * no missing price. After that it is never `na`: a bar with a missing high,
+ * low or close keeps the previous level. An `na` `start`, `inc` or `max`
+ * gives `na` on every bar.
+ * @example
+ * The close rises at index 1, so the trend starts up from the previous low,
+ * 8; the level then climbs, holding at 8.8 at index 4, where the low is
+ * missing. At index 6 the low of 9 is below the level, so the trend turns
+ * down and the level jumps to 14, the highest high of the uptrend.
+ * ```tea
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "sar" ta.sar(0.1, 0.1, 0.2)
+ * ```
+ * ```csv
+ * time,high,low,close
+ * 0,10,8,9
+ * 1,11,9,10.5
+ * 2,12,10,11.5
+ * 3,13,11,12.5
+ * 4,13,,12.8
+ * 5,14,12,13.5
+ * 6,13,9,9.5
+ * 7,12,8,8.5
+ * 8,11,7,7.5
+ * 9,10,6,6.5
+ * ```
+ * @pine The reference code in Pine's manual starts the trend on the bar where
+ * `bar_index` is `1` and does not skip bars with a missing price. Tea starts
+ * on the second bar on which the call runs with a known high, low and close,
+ * and skips the bars without them; when every price is known and the call
+ * runs on every bar, the levels are the same.
+ * @see ta.supertrend
+ * @category Trailing stops
+ */
+export sar(simple float start, simple float inc, simple float max) =>
 	var float result = na
 	var float maxMin = na
 	var float acceleration = na
 	var isBelow = false
-	firstTrendBar = false
-	if bar_index == 1
-		if close > close[1]
-			isBelow := true
-			maxMin := high
-			result := low[1]
-		else
-			isBelow := false
-			maxMin := low
-			result := high[1]
-		firstTrendBar := true
-		acceleration := start
-	result := result + acceleration * (maxMin - result)
-	if isBelow
-		if result > low
-			firstTrendBar := true
-			isBelow := false
-			result := math.max(high, maxMin)
-			maxMin := low
-			acceleration := start
-	else
-		if result < high
-			firstTrendBar := true
-			isBelow := true
-			result := math.min(low, maxMin)
-			maxMin := high
-			acceleration := start
-	if not firstTrendBar
-		if isBelow
-			if high > maxMin
+	// The two latest earlier bars whose high, low and close are all known,
+	// newest first. A bar with a missing price is left out: the level holds
+	// on it, and the next bars look past it.
+	var float high1 = na
+	var float low1 = na
+	var float close1 = na
+	var float high2 = na
+	var float low2 = na
+	if not (na(high) or na(low) or na(close))
+		firstTrendBar = false
+		// The second bar with known prices starts the first trend.
+		if na(acceleration) and not na(close1)
+			if close > close1
+				isBelow := true
 				maxMin := high
-				acceleration := math.min(acceleration + inc, max)
-		else
-			if low < maxMin
+				result := low1
+			else
+				isBelow := false
 				maxMin := low
-				acceleration := math.min(acceleration + inc, max)
-	if isBelow
-		result := math.min(result, low[1])
-		if bar_index > 1
-			result := math.min(result, low[2])
-	else
-		result := math.max(result, high[1])
-		if bar_index > 1
-			result := math.max(result, high[2])
-	result
+				result := high1
+			firstTrendBar := true
+			acceleration := start
+		if not na(acceleration)
+			result := result + acceleration * (maxMin - result)
+			if isBelow
+				if result > low
+					firstTrendBar := true
+					isBelow := false
+					result := math.max(high, maxMin)
+					maxMin := low
+					acceleration := start
+			else
+				if result < high
+					firstTrendBar := true
+					isBelow := true
+					result := math.min(low, maxMin)
+					maxMin := high
+					acceleration := start
+			if not firstTrendBar
+				if isBelow
+					if high > maxMin
+						maxMin := high
+						acceleration := math.min(acceleration + inc, max)
+				else
+					if low < maxMin
+						maxMin := low
+						acceleration := math.min(acceleration + inc, max)
+			if isBelow
+				result := math.min(result, low1)
+				if not na(low2)
+					result := math.min(result, low2)
+			else
+				result := math.max(result, high1)
+				if not na(high2)
+					result := math.max(result, high2)
+		high2 := high1
+		low2 := low1
+		high1 := high
+		low1 := low
+		close1 := close
+	// An na setting would give levels from na arithmetic, so it gives na.
+	na(start) or na(inc) or na(max) ? na : result
 
 // ---- crosses and conditions -------------------------------------------------
 
-export crossover(source1, source2) =>
+/**
+ * Crossover: `true` on the bar where `source1` moves from at or below
+ * `source2` to above it.
+ *
+ * Equality counts as below on the previous bar but not as above on the
+ * current one, so `source1` touching `source2` and moving back above it is a
+ * cross.
+ *
+ * @param source1 Series that crosses, such as a fast moving average.
+ * @param source2 Series or fixed level that `source1` crosses.
+ * @returns `bool`: `true` on the bar of the cross, otherwise `false`.
+ * @formula
+ * \mathrm{crossover}_t =
+ * (\mathit{source1}_t > \mathit{source2}_t)
+ * \land
+ * (\mathit{source1}_{t-1} \le \mathit{source2}_{t-1})
+ * @warmup `false` on the first bar. A comparison with `na` is `false`, so the
+ * result is also `false` on a bar where `source1` or `source2` is `na` and on
+ * the bar after it: a cross that spans an `na` bar is not reported.
+ * @example
+ * The close crosses above 50 at indices 2 and 5; at index 5 it moves back
+ * above after touching 50 at index 4. The rise from 48 to 53 is not reported,
+ * because the close between them, at index 7, is missing.
+ * ```tea
+ * emit "close" close
+ * emit "crossover" ta.crossover(close, 50)
+ * ```
+ * ```csv
+ * time,close
+ * 0,49
+ * 1,50
+ * 2,51
+ * 3,52
+ * 4,50
+ * 5,51
+ * 6,48
+ * 7,
+ * 8,53
+ * 9,54
+ * ```
+ * @see ta.crossunder
+ * @see ta.cross
+ * @category Crosses and conditions
+ */
+export crossover(float source1, float source2) =>
 	source1 > source2 and source1[1] <= source2[1]
 
-export crossunder(source1, source2) =>
+/**
+ * Crossunder: `true` on the bar where `source1` moves from at or above
+ * `source2` to below it.
+ *
+ * Equality counts as above on the previous bar but not as below on the
+ * current one, so `source1` touching `source2` and moving back below it is a
+ * cross.
+ *
+ * @param source1 Series that crosses, such as a fast moving average.
+ * @param source2 Series or fixed level that `source1` crosses.
+ * @returns `bool`: `true` on the bar of the cross, otherwise `false`.
+ * @formula
+ * \mathrm{crossunder}_t =
+ * (\mathit{source1}_t < \mathit{source2}_t)
+ * \land
+ * (\mathit{source1}_{t-1} \ge \mathit{source2}_{t-1})
+ * @warmup `false` on the first bar. A comparison with `na` is `false`, so the
+ * result is also `false` on a bar where `source1` or `source2` is `na` and on
+ * the bar after it: a cross that spans an `na` bar is not reported.
+ * @example
+ * The close crosses below 50 at indices 2 and 5; at index 5 it moves back
+ * below after touching 50 at index 4. The fall from 52 to 47 is not reported,
+ * because the close between them, at index 7, is missing.
+ * ```tea
+ * emit "close" close
+ * emit "crossunder" ta.crossunder(close, 50)
+ * ```
+ * ```csv
+ * time,close
+ * 0,51
+ * 1,50
+ * 2,49
+ * 3,48
+ * 4,50
+ * 5,49
+ * 6,52
+ * 7,
+ * 8,47
+ * 9,46
+ * ```
+ * @see ta.crossover
+ * @see ta.cross
+ * @category Crosses and conditions
+ */
+export crossunder(float source1, float source2) =>
 	source1 < source2 and source1[1] >= source2[1]
 
-export cross(source1, source2) =>
-	crossover(source1, source2) or crossunder(source1, source2)
+/**
+ * Cross: `true` on the bar where `source1` crosses `source2` in either
+ * direction.
+ *
+ * It is `true` when {@link ta.crossover} or {@link ta.crossunder} is.
+ * Equality on the previous bar counts as either side, so `source1` touching
+ * `source2` and moving back to the side it came from is also a cross.
+ *
+ * @param source1 Series that crosses, such as a fast moving average.
+ * @param source2 Series or fixed level that `source1` crosses.
+ * @returns `bool`: `true` on the bar of the cross, otherwise `false`.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{cross}_t ={}
+ * & (\mathit{source1}_t > \mathit{source2}_t
+ * \land \mathit{source1}_{t-1} \le \mathit{source2}_{t-1}) \\
+ * \lor{}
+ * & (\mathit{source1}_t < \mathit{source2}_t
+ * \land \mathit{source1}_{t-1} \ge \mathit{source2}_{t-1})
+ * \end{aligned}
+ * @warmup `false` on the first bar. A comparison with `na` is `false`, so the
+ * result is also `false` on a bar where `source1` or `source2` is `na` and on
+ * the bar after it: a cross that spans an `na` bar is not reported.
+ * @example
+ * `true` at indices 1, 2 and 7, where the close moves across 50, and at index
+ * 4, where it moves back below after touching 50 at index 3. The missing close
+ * at index 5 hides the rise from 49 to 52.
+ * ```tea
+ * emit "close" close
+ * emit "cross" ta.cross(close, 50)
+ * ```
+ * ```csv
+ * time,close
+ * 0,49
+ * 1,51
+ * 2,49
+ * 3,50
+ * 4,49
+ * 5,
+ * 6,52
+ * 7,48
+ * ```
+ * @see ta.crossover
+ * @see ta.crossunder
+ * @category Crosses and conditions
+ */
+export cross(float source1, float source2) =>
+	// Both calls run on every bar: `or` would skip crossunder after a
+	// crossover, and a skipped call records na history for the next bar.
+	up = crossover(source1, source2)
+	down = crossunder(source1, source2)
+	up or down
 
-export rising(source, length) =>
-	result = true
-	for i = 0 to length - 1
-		result := result and source[i] > source[i + 1]
-	result
+/**
+ * Rising: `true` when `source` is greater than each of its previous `length`
+ * values.
+ *
+ * Each previous value is compared with the current one, so the values in
+ * between need not rise bar by bar. Previous values that are `na` are left
+ * out.
+ *
+ * @param source Series to test, such as {@link close}.
+ * @param length Number of previous bars to compare with, at least 1.
+ * @returns `bool`: `true` when `source` is greater than every known previous
+ * value in the window, otherwise `false`.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{rising}_t &= (\mathit{source}_t \ne \text{na})
+ * \land (K_t \ne \varnothing) \\
+ * &\quad \land \Big(\mathit{source}_t > \max_{i \in K_t} \mathit{source}_{t-i}\Big) \\
+ * \text{where}\quad K_t &= \{\, i : 1 \le i \le \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `false` on the first `length` bars. After that, `false` when
+ * `source` is `na` or every previous value in the window is `na`.
+ * @example
+ * Index 3 is `true` although the close fell at index 2, while index 4 is
+ * `false` because 13 is not greater than 13. At index 6 the missing close is
+ * left out, so 14 is compared with 13 only.
+ * ```tea
+ * emit "close" close
+ * emit "rising" ta.rising(close, 2)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,11
+ * 3,13
+ * 4,13
+ * 5,
+ * 6,14
+ * 7,15
+ * ```
+ * @see ta.falling
+ * @see ta.highest
+ * @category Crosses and conditions
+ */
+export rising(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.rising: length must be at least 1")
+	var int bars = 0
+	bars += 1
+	result = bars > length and not na(source)
+	known = false
+	for i = 1 to length
+		value = source[i]
+		if not na(value)
+			known := true
+			result := result and source > value
+	result and known
 
-export falling(source, length) =>
-	result = true
-	for i = 0 to length - 1
-		result := result and source[i] < source[i + 1]
-	result
+/**
+ * Falling: `true` when `source` is less than each of its previous `length`
+ * values.
+ *
+ * Each previous value is compared with the current one, so the values in
+ * between need not fall bar by bar. Previous values that are `na` are left
+ * out.
+ *
+ * @param source Series to test, such as {@link close}.
+ * @param length Number of previous bars to compare with, at least 1.
+ * @returns `bool`: `true` when `source` is less than every known previous
+ * value in the window, otherwise `false`.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{falling}_t &= (\mathit{source}_t \ne \text{na})
+ * \land (K_t \ne \varnothing) \\
+ * &\quad \land \Big(\mathit{source}_t < \min_{i \in K_t} \mathit{source}_{t-i}\Big) \\
+ * \text{where}\quad K_t &= \{\, i : 1 \le i \le \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `false` on the first `length` bars. After that, `false` when
+ * `source` is `na` or every previous value in the window is `na`.
+ * @example
+ * Index 3 is `true` although the close rose at index 2, while index 4 is
+ * `false` because 7 is not less than 7. At index 6 the missing close is left
+ * out, so 6 is compared with 7 only.
+ * ```tea
+ * emit "close" close
+ * emit "falling" ta.falling(close, 2)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,8
+ * 2,9
+ * 3,7
+ * 4,7
+ * 5,
+ * 6,6
+ * 7,5
+ * ```
+ * @see ta.rising
+ * @see ta.lowest
+ * @category Crosses and conditions
+ */
+export falling(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.falling: length must be at least 1")
+	var int bars = 0
+	bars += 1
+	result = bars > length and not na(source)
+	known = false
+	for i = 1 to length
+		value = source[i]
+		if not na(value)
+			known := true
+			result := result and source < value
+	result and known
 
-export barssince(condition) =>
+/**
+ * Bars since a condition: the number of bars since `condition` was last
+ * `true`.
+ *
+ * @param condition Condition to track, a `bool` such as `close > open`.
+ * @returns `int`: `0` on a bar where `condition` is `true`, otherwise one more
+ * than on the previous bar.
+ * @formula
+ * \mathrm{barssince}_t =
+ * \begin{cases}
+ * 0 & \text{if } \mathit{condition}_t \\
+ * \mathrm{barssince}_{t-1} + 1 & \text{otherwise}
+ * \end{cases}
+ * @warmup `na` until the first bar where `condition` is `true`, and never `na`
+ * after it.
+ * @example
+ * It is `na` until the close first rises above 50 at index 2. The missing
+ * close at index 5 is not above 50, so the count goes on.
+ * ```tea
+ * emit "close" close
+ * emit "barssince" ta.barssince(close > 50)
+ * ```
+ * ```csv
+ * time,close
+ * 0,48
+ * 1,49
+ * 2,52
+ * 3,51
+ * 4,47
+ * 5,
+ * 6,46
+ * 7,53
+ * 8,49
+ * ```
+ * @see ta.crossover
+ * @see ta.highestbars
+ * @category Crosses and conditions
+ */
+export barssince(bool condition) =>
 	var int count = na
 	count := condition ? 0 : na(count) ? na : count + 1
 	count
 
-export highest(source, length) =>
+/**
+ * Highest value: the maximum of the last `length` values of `source`.
+ *
+ * The window includes the current bar. Values that are `na` are left out. To
+ * compare with earlier bars only, read the result's history:
+ *
+ * ```tea
+ * upper = ta.highest(high, 20)
+ * emit "breakout" close > upper[1]
+ * ```
+ *
+ * @param source Series to search, usually {@link high}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the highest value in the window.
+ * @formula
+ * \mathrm{highest}_t = \max_{i \in K_t} \mathit{source}_{t-i}
+ * \quad\text{where}\quad
+ * K_t = \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * @warmup `na` on the first `length - 1` bars, and when every value in the
+ * window is `na`.
+ * @example
+ * The highest close of the last 3 bars. The first two bars are `na`, and the
+ * missing close at index 4 is left out of the windows that hold it.
+ * ```tea
+ * emit "close" close
+ * emit "highest" ta.highest(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,11
+ * 3,9
+ * 4,
+ * 5,8
+ * 6,13
+ * 7,10
+ * ```
+ * @pine Pine also has a one-argument form, `ta.highest(length)`, that
+ * searches `high`. Tea always takes `source`.
+ * @see ta.lowest
+ * @see ta.highestbars
+ * @category Highs, lows and pivots
+ */
+export highest(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.highest: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	h = source
 	for i = 1 to length - 1
-		h := math.max(h, source[i])
-	h
+		value = source[i]
+		if na(h) or value > h
+			h := value
+	bars < length ? na : h
 
-export lowest(source, length) =>
+/**
+ * Lowest value: the minimum of the last `length` values of `source`.
+ *
+ * The window includes the current bar. Values that are `na` are left out.
+ *
+ * @param source Series to search, usually {@link low}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `float`: the lowest value in the window.
+ * @formula
+ * \mathrm{lowest}_t = \min_{i \in K_t} \mathit{source}_{t-i}
+ * \quad\text{where}\quad
+ * K_t = \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * @warmup `na` on the first `length - 1` bars, and when every value in the
+ * window is `na`.
+ * @example
+ * The lowest close of the last 3 bars. The first two bars are `na`, and the
+ * missing close at index 4 is left out of the windows that hold it.
+ * ```tea
+ * emit "close" close
+ * emit "lowest" ta.lowest(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,8
+ * 2,9
+ * 3,11
+ * 4,
+ * 5,12
+ * 6,7
+ * 7,10
+ * ```
+ * @pine Pine also has a one-argument form, `ta.lowest(length)`, that searches
+ * `low`. Tea always takes `source`.
+ * @see ta.highest
+ * @see ta.lowestbars
+ * @category Highs, lows and pivots
+ */
+export lowest(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.lowest: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	l = source
 	for i = 1 to length - 1
-		l := math.min(l, source[i])
-	l
+		value = source[i]
+		if na(l) or value < l
+			l := value
+	bars < length ? na : l
 
-export highestbars(source, length) =>
+/**
+ * Offset to the highest value: `0` when the maximum of the last `length`
+ * values of `source` is on the current bar, `-1` when it is on the previous
+ * bar, and so on.
+ *
+ * `bar_index + ta.highestbars(source, length)` is the bar index of the
+ * highest value. Ties go to the most recent bar. Values that are `na` are left
+ * out.
+ *
+ * @param source Series to search, usually {@link high}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `int`: the offset, from `1 - length` to `0`.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{highestbars}_t &= -\min \Big\{\, i \in K_t :
+ * \mathit{source}_{t-i} = \max_{j \in K_t} \mathit{source}_{t-j} \,\Big\} \\
+ * \text{where}\quad K_t &= \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, and when every value in the
+ * window is `na`.
+ * @example
+ * At index 3 the close of 12 ties with the one two bars back, and the most
+ * recent wins. At index 5 the highest close is two bars back; the missing
+ * close at index 4 is left out.
+ * ```tea
+ * emit "close" close
+ * emit "highestbars" ta.highestbars(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,12
+ * 2,11
+ * 3,12
+ * 4,
+ * 5,9
+ * 6,13
+ * 7,13
+ * ```
+ * @pine Pine also has a one-argument form, `ta.highestbars(length)`, that
+ * searches `high`. Tea always takes `source`.
+ * @see ta.highest
+ * @see ta.lowestbars
+ * @category Highs, lows and pivots
+ */
+export highestbars(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.highestbars: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	best = source
 	offsetBars = 0
 	for i = 1 to length - 1
 		value = source[i]
-		if value > best
+		if not na(value) and (na(best) or value > best)
 			best := value
 			offsetBars := i
-	-offsetBars
+	bars < length or na(best) ? na : -offsetBars
 
-export lowestbars(source, length) =>
+/**
+ * Offset to the lowest value: `0` when the minimum of the last `length` values
+ * of `source` is on the current bar, `-1` when it is on the previous bar, and
+ * so on.
+ *
+ * `bar_index + ta.lowestbars(source, length)` is the bar index of the lowest
+ * value. Ties go to the most recent bar. Values that are `na` are left out.
+ *
+ * @param source Series to search, usually {@link low}.
+ * @param length Number of bars in the window, at least 1.
+ * @returns `int`: the offset, from `1 - length` to `0`.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{lowestbars}_t &= -\min \Big\{\, i \in K_t :
+ * \mathit{source}_{t-i} = \min_{j \in K_t} \mathit{source}_{t-j} \,\Big\} \\
+ * \text{where}\quad K_t &= \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, and when every value in the
+ * window is `na`.
+ * @example
+ * At index 3 the close of 8 ties with the one two bars back, and the most
+ * recent wins. At index 5 the lowest close is two bars back; the missing close
+ * at index 4 is left out.
+ * ```tea
+ * emit "close" close
+ * emit "lowestbars" ta.lowestbars(close, 3)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,8
+ * 2,9
+ * 3,8
+ * 4,
+ * 5,11
+ * 6,7
+ * 7,7
+ * ```
+ * @pine Pine also has a one-argument form, `ta.lowestbars(length)`, that
+ * searches `low`. Tea always takes `source`.
+ * @see ta.lowest
+ * @see ta.highestbars
+ * @category Highs, lows and pivots
+ */
+export lowestbars(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.lowestbars: length must be at least 1")
+	var int bars = 0
+	bars += 1
 	worst = source
 	offsetBars = 0
 	for i = 1 to length - 1
 		value = source[i]
-		if value < worst
+		if not na(value) and (na(worst) or value < worst)
 			worst := value
 			offsetBars := i
-	-offsetBars
+	bars < length or na(worst) ? na : -offsetBars
 
-export pivothigh(source, leftbars, rightbars) =>
+/**
+ * Pivot high: the value `rightbars` bars back when it is higher than the
+ * `leftbars` values before it and the `rightbars` values after it, otherwise
+ * `na`.
+ *
+ * The pivot must be strictly higher than each of these `leftbars + rightbars`
+ * neighbors: a tie with any of them is not a pivot. Neighbors that are `na`
+ * are left out, but at least one must be known, unless `leftbars` and
+ * `rightbars` are both `0`. A pivot is reported `rightbars` bars after its own
+ * bar, so `bar_index - rightbars` is the bar index of the pivot.
+ *
+ * @param source Series to search, usually {@link high}.
+ * @param leftbars Number of bars before the pivot that must be lower, at
+ * least 0.
+ * @param rightbars Number of bars after the pivot that must be lower, at
+ * least 0.
+ * @returns `float`: the pivot's value on the bar that reports it, otherwise
+ * `na`.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{pivothigh}_t &=
+ * \begin{cases}
+ * p_t & \text{if } (J_t \ne \varnothing \lor n = 0)
+ * \text{ and } \mathit{source}_{t-i} < p_t \text{ for every } i \in J_t \\
+ * \text{na} & \text{otherwise}
+ * \end{cases} \\
+ * p_t &= \mathit{source}_{t-\mathit{rightbars}}, \qquad
+ * n = \mathit{leftbars} + \mathit{rightbars} \\
+ * J_t &= \{\, i : 0 \le i \le n,\ i \ne \mathit{rightbars},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `leftbars + rightbars` bars, so a value with fewer
+ * than `leftbars` bars before it is never a pivot. After that, `na` on a bar
+ * where the value `rightbars` bars back is `na`, or where that value has
+ * neighbors and all of them are `na`.
+ * @example
+ * Two bars on each side, so the first four bars are `na` and the 13 at index
+ * 0, with no bars before it, is never a pivot. Index 5 reports the 12 at index
+ * 3, leaving out the missing high at index 4, and index 11 reports the 15 at
+ * index 9; the equal highs at indices 6 and 7 are not pivots.
+ * ```tea
+ * emit "high" high
+ * emit "pivothigh" ta.pivothigh(high, 2, 2)
+ * ```
+ * ```csv
+ * time,high
+ * 0,13
+ * 1,11
+ * 2,10
+ * 3,12
+ * 4,
+ * 5,11
+ * 6,14
+ * 7,14
+ * 8,10
+ * 9,15
+ * 10,9
+ * 11,8
+ * ```
+ * @pine Pine also has a two-argument form without `source`,
+ * `ta.pivothigh(leftbars, rightbars)`; Tea always takes `source`. `leftbars`
+ * and `rightbars` must be `int`, where Pine also accepts a `float`.
+ * @see ta.pivotlow
+ * @see ta.highest
+ * @category Highs, lows and pivots
+ */
+export pivothigh(float source, int leftbars, int rightbars) =>
+	if not (leftbars >= 0)
+		runtime.error("ta.pivothigh: leftbars must be at least 0")
+	if not (rightbars >= 0)
+		runtime.error("ta.pivothigh: rightbars must be at least 0")
+	var int bars = 0
+	bars += 1
 	pivot = source[rightbars]
+	known = 0
 	confirmed = true
 	for i = 0 to leftbars + rightbars
-		if i != rightbars and source[i] >= pivot
-			confirmed := false
-	confirmed ? pivot : na
+		if i != rightbars and not na(source[i])
+			known += 1
+			if source[i] >= pivot
+				confirmed := false
+	// The window must have filled, and a pivot needs a known neighbor to
+	// stand out from, unless it has none by asking for zero bars.
+	filled = bars > leftbars + rightbars
+	confirmed and filled and (known > 0 or leftbars + rightbars == 0) ? pivot : na
 
-export pivotlow(source, leftbars, rightbars) =>
+/**
+ * Pivot low: the value `rightbars` bars back when it is lower than the
+ * `leftbars` values before it and the `rightbars` values after it, otherwise
+ * `na`.
+ *
+ * The pivot must be strictly lower than each of these `leftbars + rightbars`
+ * neighbors: a tie with any of them is not a pivot. Neighbors that are `na`
+ * are left out, but at least one must be known, unless `leftbars` and
+ * `rightbars` are both `0`. A pivot is reported `rightbars` bars after its own
+ * bar, so `bar_index - rightbars` is the bar index of the pivot.
+ *
+ * @param source Series to search, usually {@link low}.
+ * @param leftbars Number of bars before the pivot that must be higher, at
+ * least 0.
+ * @param rightbars Number of bars after the pivot that must be higher, at
+ * least 0.
+ * @returns `float`: the pivot's value on the bar that reports it, otherwise
+ * `na`.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{pivotlow}_t &=
+ * \begin{cases}
+ * p_t & \text{if } (J_t \ne \varnothing \lor n = 0)
+ * \text{ and } \mathit{source}_{t-i} > p_t \text{ for every } i \in J_t \\
+ * \text{na} & \text{otherwise}
+ * \end{cases} \\
+ * p_t &= \mathit{source}_{t-\mathit{rightbars}}, \qquad
+ * n = \mathit{leftbars} + \mathit{rightbars} \\
+ * J_t &= \{\, i : 0 \le i \le n,\ i \ne \mathit{rightbars},
+ * \ \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `leftbars + rightbars` bars, so a value with fewer
+ * than `leftbars` bars before it is never a pivot. After that, `na` on a bar
+ * where the value `rightbars` bars back is `na`, or where that value has
+ * neighbors and all of them are `na`.
+ * @example
+ * Two bars on each side, so the first four bars are `na` and the 7 at index 0,
+ * with no bars before it, is never a pivot. Index 5 reports the 8 at index 3,
+ * leaving out the missing low at index 4, and index 11 reports the 5 at index
+ * 9; the equal lows at indices 6 and 7 are not pivots.
+ * ```tea
+ * emit "low" low
+ * emit "pivotlow" ta.pivotlow(low, 2, 2)
+ * ```
+ * ```csv
+ * time,low
+ * 0,7
+ * 1,9
+ * 2,10
+ * 3,8
+ * 4,
+ * 5,9
+ * 6,6
+ * 7,6
+ * 8,10
+ * 9,5
+ * 10,11
+ * 11,12
+ * ```
+ * @pine Pine also has a two-argument form without `source`,
+ * `ta.pivotlow(leftbars, rightbars)`; Tea always takes `source`. `leftbars`
+ * and `rightbars` must be `int`, where Pine also accepts a `float`.
+ * @see ta.pivothigh
+ * @see ta.lowest
+ * @category Highs, lows and pivots
+ */
+export pivotlow(float source, int leftbars, int rightbars) =>
+	if not (leftbars >= 0)
+		runtime.error("ta.pivotlow: leftbars must be at least 0")
+	if not (rightbars >= 0)
+		runtime.error("ta.pivotlow: rightbars must be at least 0")
+	var int bars = 0
+	bars += 1
 	pivot = source[rightbars]
+	known = 0
 	confirmed = true
 	for i = 0 to leftbars + rightbars
-		if i != rightbars and source[i] <= pivot
-			confirmed := false
-	confirmed ? pivot : na
+		if i != rightbars and not na(source[i])
+			known += 1
+			if source[i] <= pivot
+				confirmed := false
+	// The window must have filled, and a pivot needs a known neighbor to
+	// stand out from, unless it has none by asking for zero bars.
+	filled = bars > leftbars + rightbars
+	confirmed and filled and (known > 0 or leftbars + rightbars == 0) ? pivot : na
 
 // ---- accumulation and statistics --------------------------------------------
 
-export cum(source) =>
-	var total = 0.0
-	total += source
+/**
+ * Cumulative sum: the running total of `source` over every bar so far.
+ *
+ * Values that are `na` are left out: the total keeps its value on those bars.
+ *
+ * @param source Series to add up, such as {@link volume}.
+ * @returns `float`: the sum of every known value of `source` so far.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{cum}_t &= \begin{cases}
+ * \sum_{i \in K_t} \mathit{source}_{t-i} & \text{if } K_t \ne \varnothing \\
+ * \text{na} & \text{otherwise}
+ * \end{cases} \\
+ * K_t &= \{\, i \ge 0 : \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` until the first bar where `source` is not `na`.
+ * @example
+ * The running total of volume. It is `na` until the first volume at index 1,
+ * and the missing volume at index 4 leaves it at 400.
+ * ```tea
+ * emit "volume" volume
+ * emit "cum" ta.cum(volume)
+ * ```
+ * ```csv
+ * time,volume
+ * 0,
+ * 1,100
+ * 2,200
+ * 3,100
+ * 4,
+ * 5,300
+ * 6,200
+ * 7,100
+ * ```
+ * @see ta.obv
+ * @see ta.max
+ * @category Statistics
+ */
+export cum(float source) =>
+	var float total = na
+	if not na(source)
+		total := na(total) ? source : total + source
 	total
 
-export max(source) =>
+/**
+ * All-time high: the highest value of `source` on any bar so far.
+ *
+ * Values that are `na` are left out: the result keeps its value on those bars.
+ * Compare {@link ta.highest}, which looks back a fixed number of bars.
+ *
+ * @param source Series to track, such as {@link high}.
+ * @returns `float`: the highest known value of `source` so far.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{max}_t &= \max_{i \in K_t} \mathit{source}_{t-i} \\
+ * K_t &= \{\, i \ge 0 : \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` until the first bar where `source` is not `na`.
+ * @example
+ * The highest high so far. It is `na` until the first high at index 1, and the
+ * missing high at index 4 leaves it at 12.
+ * ```tea
+ * emit "high" high
+ * emit "max" ta.max(high)
+ * ```
+ * ```csv
+ * time,high
+ * 0,
+ * 1,10
+ * 2,12
+ * 3,11
+ * 4,
+ * 5,14
+ * 6,13
+ * 7,15
+ * ```
+ * @see ta.min
+ * @see ta.highest
+ * @category Statistics
+ */
+export max(float source) =>
 	var float m = na
-	m := na(m) ? source : math.max(m, source)
+	if not na(source)
+		m := na(m) ? source : math.max(m, source)
 	m
 
-export min(source) =>
+/**
+ * All-time low: the lowest value of `source` on any bar so far.
+ *
+ * Values that are `na` are left out: the result keeps its value on those bars.
+ * Compare {@link ta.lowest}, which looks back a fixed number of bars.
+ *
+ * @param source Series to track, such as {@link low}.
+ * @returns `float`: the lowest known value of `source` so far.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{min}_t &= \min_{i \in K_t} \mathit{source}_{t-i} \\
+ * K_t &= \{\, i \ge 0 : \mathit{source}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` until the first bar where `source` is not `na`.
+ * @example
+ * The lowest low so far. It is `na` until the first low at index 1, and the
+ * missing low at index 4 leaves it at 8.
+ * ```tea
+ * emit "low" low
+ * emit "min" ta.min(low)
+ * ```
+ * ```csv
+ * time,low
+ * 0,
+ * 1,10
+ * 2,8
+ * 3,9
+ * 4,
+ * 5,7
+ * 6,8
+ * 7,6
+ * ```
+ * @see ta.max
+ * @see ta.lowest
+ * @category Statistics
+ */
+export min(float source) =>
 	var float m = na
-	m := na(m) ? source : math.min(m, source)
+	if not na(source)
+		m := na(m) ? source : math.min(m, source)
 	m
 
-export correlation(source1, source2, length) =>
-	mean1 = sma(source1, length)
-	mean2 = sma(source2, length)
+/**
+ * Correlation coefficient of the last `length` values of `source1` and
+ * `source2`, from `-1` to `1`.
+ *
+ * It is Pearson's correlation of the values paired bar by bar. Pairs on a
+ * rising straight line give `1` and pairs on a falling one give `-1`, up to
+ * rounding; `0` means no straight-line relation. A bar where either value is
+ * `na` is left out of both series.
+ *
+ * @param source1 First series, such as {@link close}.
+ * @param source2 Second series, paired with `source1` bar by bar.
+ * @param length Number of bars in the window, at least 2.
+ * @returns `float`: Pearson's correlation coefficient, from `-1` to `1`.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{correlation}_t &= \max\left(-1,\ \min\left(1,
+ * \ \frac{\sum_{i \in K_t} u_i v_i}
+ * {\sqrt{\sum_{i \in K_t} u_i^2 \cdot \sum_{i \in K_t} v_i^2}}\right)\right) \\
+ * u_i &= \mathit{source1}_{t-i}
+ * - \frac{1}{|K_t|} \sum_{j \in K_t} \mathit{source1}_{t-j} \\
+ * v_i &= \mathit{source2}_{t-i}
+ * - \frac{1}{|K_t|} \sum_{j \in K_t} \mathit{source2}_{t-j} \\
+ * K_t &= \{\, i : 0 \le i < \mathit{length},
+ * \ \mathit{source1}_{t-i} \ne \text{na},
+ * \ \mathit{source2}_{t-i} \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `length - 1` bars, when fewer than two bars in the
+ * window have both values, and when either series is constant over those bars.
+ * @example
+ * At index 2 the close and the volume both rise by equal steps, so the
+ * correlation is 1; at index 4 the close falls by equal steps while the volume
+ * rises, so it is -1. The volume is missing at index 7, so that window pairs
+ * only its other two bars.
+ * ```tea
+ * emit "close" close
+ * emit "volume" volume
+ * emit "correlation" ta.correlation(close, volume, 3)
+ * ```
+ * ```csv
+ * time,close,volume
+ * 0,10,100
+ * 1,11,200
+ * 2,12,300
+ * 3,11,400
+ * 4,10,500
+ * 5,11,400
+ * 6,12,300
+ * 7,13,
+ * ```
+ * @see ta.variance
+ * @see ta.stdev
+ * @category Statistics
+ */
+export correlation(float source1, float source2, int length) =>
+	if not (length >= 2)
+		runtime.error("ta.correlation: length must be at least 2")
+	var int bars = 0
+	bars += 1
+	// Center each series on a value of the window, as variance does, so a
+	// constant decimal series has exactly zero spread and gives na.
+	float anchor1 = na
+	float anchor2 = na
+	shifted1 = 0.0
+	shifted2 = 0.0
+	count = 0
+	for i = 0 to length - 1
+		a = source1[i]
+		b = source2[i]
+		if not na(a) and not na(b)
+			if na(anchor1)
+				anchor1 := a
+				anchor2 := b
+			shifted1 += a - anchor1
+			shifted2 += b - anchor2
+			count += 1
+	mean1 = shifted1 / count
+	mean2 = shifted2 / count
 	cov = 0.0
 	dev1 = 0.0
 	dev2 = 0.0
 	for i = 0 to length - 1
-		d1 = source1[i] - mean1
-		d2 = source2[i] - mean2
-		cov += d1 * d2
-		dev1 += d1 * d1
-		dev2 += d2 * d2
-	cov / math.sqrt(dev1 * dev2)
+		a = source1[i]
+		b = source2[i]
+		if not na(a) and not na(b)
+			d1 = (a - anchor1) - mean1
+			d2 = (b - anchor2) - mean2
+			cov += d1 * d2
+			dev1 += d1 * d1
+			dev2 += d2 * d2
+	// Rounding can carry a perfect correlation just past 1.
+	bars < length ? na : math.max(-1.0, math.min(1.0, cov / math.sqrt(dev1 * dev2)))
 
-export percentrank(source, length) =>
+/**
+ * Percent rank: the percentage of the previous `length` values of `source`
+ * that are less than or equal to its current value.
+ *
+ * The current value is compared with the `length` values before it, not with
+ * itself. An `na` value, current or previous, is not left out: it makes the
+ * result `na`.
+ *
+ * @param source Series to rank, such as {@link close}.
+ * @param length Number of previous values to compare with, at least 1.
+ * @returns `float`: a percentage from `0` to `100`, in steps of `100 / length`.
+ * @formula
+ * \begin{aligned}
+ * \mathrm{percentrank}_t &= \begin{cases}
+ * \text{na} & \text{if } \mathit{source}_{t-i} = \text{na}
+ * \text{ for some } 0 \le i \le \mathit{length} \\
+ * \dfrac{100}{\mathit{length}} \cdot |C_t| & \text{otherwise}
+ * \end{cases} \\
+ * \text{where}\quad C_t &= \{\, i : 1 \le i \le \mathit{length},
+ * \ \mathit{source}_{t-i} \le \mathit{source}_t \,\}
+ * \end{aligned}
+ * @warmup `na` on the first `length` bars. An `na` value of `source` makes the
+ * result `na` on its own bar and on the `length` bars after it.
+ * @example
+ * At index 5 the close 12 is greater than or equal to 11, 12 and 9 but not 13,
+ * so it ranks 75. The missing close at index 6 makes the results at indexes 6
+ * to 10 `na`, and at index 11 the close ranks again.
+ * ```tea
+ * emit "close" close
+ * emit "rank" ta.percentrank(close, 4)
+ * ```
+ * ```csv
+ * time,close
+ * 0,10
+ * 1,13
+ * 2,11
+ * 3,12
+ * 4,9
+ * 5,12
+ * 6,
+ * 7,14
+ * 8,8
+ * 9,12
+ * 10,13
+ * 11,11
+ * ```
+ * @see ta.stoch
+ * @category Statistics
+ */
+export percentrank(float source, int length) =>
+	if not (length >= 1)
+		runtime.error("ta.percentrank: length must be at least 1")
 	count = 0
+	missing = na(source)
 	for i = 1 to length
+		missing := missing or na(source[i])
 		if source[i] <= source
 			count += 1
-	100.0 * count / length
+	missing ? na : 100.0 * count / length
+
+// ---- volume and accumulation -------------------------------------------------
+
+/**
+ * On-balance volume (OBV): the running total of {@link volume}, added on bars
+ * where {@link close} rose and subtracted on bars where it fell.
+ *
+ * Each bar adds `math.sign(ta.change(close)) * volume`: its volume when the
+ * close rose from the previous bar, minus its volume when it fell, and `0` when
+ * it did not change. The total is in units of volume.
+ *
+ * `ta.obv` is a variable, not a call: it is computed once per bar for the whole
+ * script, so every read sees the same value, even one inside an `if`. The call
+ * `ta.cum(math.sign(ta.change(close)) * volume)` gives the same value only
+ * when it runs on every bar.
+ *
+ * @formula
+ * \begin{aligned}
+ * \mathrm{obv}_t &= \sum_{s \in K_t} x_s
+ * \quad (\text{na when } K_t \text{ is empty}) \\
+ * x_s &= \operatorname{sign}(\mathit{close}_s - \mathit{close}_{s-1})
+ * \cdot \mathit{volume}_s \\
+ * K_t &= \{\, s \le t : x_s \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first bar, which has no previous close, and until the
+ * first bar where `close`, the previous close and `volume` are all known. A
+ * later bar where any of them is `na` leaves the total unchanged, so a missing
+ * close holds it for two bars: its own and the next.
+ * @example
+ * OBV is `na` on the first bar and holds at index 3, where the close did not
+ * change. The close is missing at index 5, so OBV holds there and at index 6.
+ * ```tea
+ * emit "close" close
+ * emit "volume" volume
+ * emit "obv" ta.obv
+ * ```
+ * ```csv
+ * time,close,volume
+ * 0,10,100
+ * 1,11,200
+ * 2,10,150
+ * 3,10,300
+ * 4,12,250
+ * 5,,100
+ * 6,13,400
+ * 7,12,200
+ * ```
+ * @example
+ * The `if` reads `ta.obv` only from index 3 on, yet `late` equals `obv` there:
+ * the variable counted the earlier bars too.
+ * ```tea
+ * float late = na
+ * if bar_index >= 3
+ *     late := ta.obv
+ * emit "close" close
+ * emit "volume" volume
+ * emit "obv" ta.obv
+ * emit "late" late
+ * ```
+ * ```csv
+ * time,close,volume
+ * 0,10,100
+ * 1,11,200
+ * 2,10,150
+ * 3,12,300
+ * 4,13,250
+ * 5,11,100
+ * ```
+ * @see ta.cum
+ * @see ta.pvt
+ * @see ta.accdist
+ * @category Volume
+ */
+export obv = cum(math.sign(change(close)) * volume)
+
+/**
+ * Accumulation/distribution (A/D): the running total of each bar's
+ * {@link volume}, weighted by where {@link close} sits between {@link low} and
+ * {@link high}.
+ *
+ * Each bar adds its {@link ta.iii}: `volume` when the close is at the high,
+ * `-volume` when it is at the low and `0` at the midpoint. A bar where `high`
+ * equals `low`, whose `ta.iii` is `na`, adds `0`. The total is in units of
+ * volume. Like {@link ta.obv}, it is computed once per bar for the whole
+ * script, wherever the script reads it.
+ *
+ * @formula
+ * \begin{aligned}
+ * \mathrm{accdist}_t &= \sum_{s \in K_t} x_s
+ * \quad (\text{na when } K_t \text{ is empty}) \\
+ * x_s &= \begin{cases}
+ * 0 & \text{if } \mathit{high}_s = \mathit{low}_s \\
+ * \dfrac{2\,\mathit{close}_s - \mathit{low}_s - \mathit{high}_s}
+ * {\mathit{high}_s - \mathit{low}_s} \cdot \mathit{volume}_s
+ * & \text{otherwise}
+ * \end{cases} \\
+ * K_t &= \{\, s \le t : x_s \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` until a bar adds a value. A bar where `high` equals `low` adds
+ * `0`; any other bar adds nothing while `close`, `high`, `low` or `volume` is
+ * `na`, which leaves the total unchanged.
+ * @example
+ * Index 0 adds its volume, with the close at the high; index 1 subtracts its
+ * volume, with the close at the low; index 2 adds `0`, with the close at the
+ * midpoint. Index 4, where `high` equals `low`, adds `0`, and index 5, whose
+ * close is missing, adds nothing.
+ * ```tea
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "volume" volume
+ * emit "accdist" ta.accdist
+ * ```
+ * ```csv
+ * time,high,low,close,volume
+ * 0,12,8,12,100
+ * 1,12,8,8,200
+ * 2,12,8,10,300
+ * 3,12,8,11,400
+ * 4,10,10,10,500
+ * 5,12,8,,100
+ * 6,14,10,13,200
+ * ```
+ * @see ta.iii
+ * @see ta.obv
+ * @see ta.cum
+ * @category Volume
+ */
+export accdist = cum(high == low ? 0.0 : (2 * close - low - high) / (high - low) * volume)
+
+/**
+ * Price-volume trend (PVT): the running total of each bar's {@link volume},
+ * weighted by the relative change of {@link close}.
+ *
+ * Each bar adds `ta.change(close) / close[1] * volume`: its volume times the
+ * fraction by which the close moved from the previous bar, so a 10% rise adds
+ * a tenth of the volume. The total is in units of volume. Like
+ * {@link ta.obv}, it is computed once per bar for the whole script, wherever
+ * the script reads it.
+ *
+ * @formula
+ * \begin{aligned}
+ * \mathrm{pvt}_t &= \sum_{s \in K_t} x_s
+ * \quad (\text{na when } K_t \text{ is empty}) \\
+ * x_s &= \frac{\mathit{close}_s - \mathit{close}_{s-1}}{\mathit{close}_{s-1}}
+ * \cdot \mathit{volume}_s \\
+ * K_t &= \{\, s \le t : x_s \ne \text{na} \,\}
+ * \end{aligned}
+ * @warmup `na` on the first bar, which has no previous close, and until the
+ * first bar where `close`, the previous close and `volume` are all known and
+ * the previous close is not `0`. A later bar that fails this leaves the total
+ * unchanged, so a missing close holds it for two bars: its own and the next.
+ * @example
+ * PVT is `na` on the first bar; at index 1 the close rises 10% and adds 20,
+ * a tenth of the volume. The close is missing at index 5, so PVT holds there
+ * and at index 6.
+ * ```tea
+ * emit "close" close
+ * emit "volume" volume
+ * emit "pvt" ta.pvt
+ * ```
+ * ```csv
+ * time,close,volume
+ * 0,10,100
+ * 1,11,200
+ * 2,10,110
+ * 3,10,300
+ * 4,12,250
+ * 5,,100
+ * 6,15,400
+ * 7,12,200
+ * ```
+ * @see ta.obv
+ * @see ta.cum
+ * @category Volume
+ */
+export pvt = cum(change(close) / close[1] * volume)
+
+/**
+ * Intraday intensity index (III) of the current bar: where {@link close} sits
+ * between {@link low} and {@link high}, times {@link volume}.
+ *
+ * It is `volume` when the close is at the high, `-volume` when it is at the
+ * low and `0` at the midpoint. It is not a running total; {@link ta.accdist}
+ * adds it up.
+ *
+ * @formula
+ * \mathrm{iii}_t = \frac
+ * {2\,\mathit{close}_t - \mathit{high}_t - \mathit{low}_t}
+ * {\mathit{high}_t - \mathit{low}_t} \cdot \mathit{volume}_t
+ * @warmup No warm-up: it has a value from the first bar. It is `na` on a bar
+ * where `high` equals `low` or where `close`, `high`, `low` or `volume` is
+ * `na`.
+ * @example
+ * The result is `volume` at index 0, where the close is at the high, `-volume`
+ * at index 1, where it is at the low, and `0` at index 2, where it is at the
+ * midpoint. It is `na` at index 4, where `high` equals `low`.
+ * ```tea
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "volume" volume
+ * emit "iii" ta.iii
+ * ```
+ * ```csv
+ * time,high,low,close,volume
+ * 0,12,8,12,100
+ * 1,12,8,8,200
+ * 2,12,8,10,300
+ * 3,12,8,11,400
+ * 4,10,10,10,500
+ * 5,14,10,13,200
+ * ```
+ * @see ta.accdist
+ * @see ta.wvad
+ * @category Volume
+ */
+export iii = (2 * close - high - low) / (high - low) * volume
+
+/**
+ * Williams variable accumulation/distribution (WVAD) of the current bar: the
+ * move from {@link open} to {@link close} as a fraction of the bar's range,
+ * times {@link volume}.
+ *
+ * It is `volume` when the bar opens at its low and closes at its high, and
+ * `-volume` when it opens at its high and closes at its low. It is not a
+ * running total.
+ *
+ * @formula
+ * \mathrm{wvad}_t = \frac{\mathit{close}_t - \mathit{open}_t}
+ * {\mathit{high}_t - \mathit{low}_t} \cdot \mathit{volume}_t
+ * @warmup No warm-up: it has a value from the first bar. It is `na` on a bar
+ * where `high` equals `low` or where `open`, `close`, `high`, `low` or
+ * `volume` is `na`.
+ * @example
+ * Index 0 opens at its low and closes at its high, so the result is its
+ * volume; index 1 does the opposite. The result is `na` at index 4, where
+ * `high` equals `low`.
+ * ```tea
+ * emit "open" open
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "volume" volume
+ * emit "wvad" ta.wvad
+ * ```
+ * ```csv
+ * time,open,high,low,close,volume
+ * 0,8,12,8,12,100
+ * 1,12,12,8,8,200
+ * 2,9,12,8,11,300
+ * 3,11,12,8,9,400
+ * 4,10,10,10,10,500
+ * 5,11,14,10,13,200
+ * ```
+ * @see ta.wad
+ * @see ta.iii
+ * @category Volume
+ */
+export wvad = (close - open) / (high - low) * volume
+
+// Williams' gain on one bar, for wad: from the true low on an up bar, from the
+// true high on a down bar.
+williamsGain() =>
+	mom = change(close)
+	mom > 0 ? close - math.min(low, close[1]) : mom < 0 ? close - math.max(high, close[1]) : 0.0
+
+/**
+ * Williams accumulation/distribution (WAD): the running total of each bar's
+ * move from its true low on an up bar, or from its true high on a down bar.
+ *
+ * The true low is the lower of {@link low} and the previous {@link close}; the
+ * true high is the higher of {@link high} and the previous close. A bar whose
+ * close rose adds `close` minus the true low, a bar whose close fell subtracts
+ * the true high minus `close`, and a bar whose close did not change adds `0`.
+ * The total is in price units; it does not use {@link volume}. Like
+ * {@link ta.obv}, it is computed once per bar for the whole script, wherever
+ * the script reads it.
+ *
+ * @formula
+ * \begin{aligned}
+ * \mathrm{wad}_t &= \sum_{s \in K_t} x_s,
+ * \qquad K_t = \{\, s \le t : x_s \ne \text{na} \,\} \\
+ * x_s &= \begin{cases}
+ * \mathit{close}_s - \min(\mathit{low}_s, \mathit{close}_{s-1})
+ * & \text{if } \mathit{close}_s > \mathit{close}_{s-1} \\
+ * \mathit{close}_s - \max(\mathit{high}_s, \mathit{close}_{s-1})
+ * & \text{if } \mathit{close}_s < \mathit{close}_{s-1} \\
+ * 0 & \text{otherwise}
+ * \end{cases}
+ * \end{aligned}
+ * @warmup Never `na`: it is `0` on the first bar, which has no previous close.
+ * A bar adds `0` when `close` or the previous close is `na`, and when the
+ * `low` of an up bar or the `high` of a down bar is `na`.
+ * @example
+ * At index 3 the previous close, 11, is below the low, so the bar adds
+ * `14 - 11`; at index 5 the previous close, 14, is above the high, so the bar
+ * subtracts `14 - 11`. The close is missing at index 6, so indexes 6 and 7
+ * add `0`.
+ * ```tea
+ * emit "high" high
+ * emit "low" low
+ * emit "close" close
+ * emit "wad" ta.wad
+ * ```
+ * ```csv
+ * time,high,low,close
+ * 0,11,9,10
+ * 1,13,10,12
+ * 2,12,9,11
+ * 3,15,12,14
+ * 4,14,12,14
+ * 5,13,10,11
+ * 6,13,11,
+ * 7,14,11,13
+ * ```
+ * @see ta.wvad
+ * @see ta.cum
+ * @category Volume
+ */
+export wad = cum(williamsGain())
+
+// A volume index that starts at 1 and moves with close, as a fraction of
+// itself, on bars whose volume fell (negative) or rose from the previous bar.
+volumeIndex(bool negative) =>
+	var float index = 1.0
+	previousClose = close[1]
+	if not na(close) and close != 0 and not na(previousClose) and previousClose != 0
+		previousVolume = nz(volume[1])
+		if negative ? volume < previousVolume : volume > previousVolume
+			index += (close - previousClose) / previousClose * index
+	index
+
+/**
+ * Negative volume index (NVI): starts at `1` and moves with {@link close}, by
+ * its relative change, only on bars whose {@link volume} fell from the previous
+ * bar.
+ *
+ * On such a bar it changes by the same percentage as the close; on any other
+ * bar it keeps its value. It is a ratio without a unit. {@link ta.pvi} moves on
+ * the bars where volume rose, and a bar whose volume did not change moves
+ * neither. Like {@link ta.obv}, it is computed once per bar for the whole
+ * script, wherever the script reads it.
+ *
+ * @formula
+ * \begin{aligned}
+ * \mathrm{nvi}_t &= \begin{cases}
+ * \mathrm{nvi}_{t-1} + \dfrac{\mathit{close}_t - \mathit{close}_{t-1}}
+ * {\mathit{close}_{t-1}} \cdot \mathrm{nvi}_{t-1} & \text{if } c_t \\
+ * \mathrm{nvi}_{t-1} & \text{otherwise}
+ * \end{cases} \\
+ * \text{where}\quad c_t &= \big(\mathit{volume}_t < \operatorname{nz}(\mathit{volume}_{t-1})\big)
+ * \land \big(\mathit{close}_t, \mathit{close}_{t-1} \notin \{0, \text{na}\}\big) \\
+ * \mathrm{nvi} &= 1 \text{ before the first bar}
+ * \end{aligned}
+ * @warmup Never `na`: it is `1` on the first bar. A bar leaves it unchanged
+ * when `close` or the previous close is `na` or `0`, or when `volume` is `na`.
+ * A previous `volume` that is `na` counts as `0`.
+ * @example
+ * NVI moves only where volume fell: down 25% with the close at index 2 and
+ * down 50% at index 7. Volume is missing at index 5, so NVI holds there and at
+ * index 6, where the missing volume counts as `0`.
+ * ```tea
+ * emit "close" close
+ * emit "volume" volume
+ * emit "nvi" ta.nvi
+ * ```
+ * ```csv
+ * time,close,volume
+ * 0,8,100
+ * 1,12,200
+ * 2,9,100
+ * 3,9,100
+ * 4,18,150
+ * 5,12,
+ * 6,18,50
+ * 7,9,25
+ * ```
+ * @see ta.pvi
+ * @see ta.obv
+ * @category Volume
+ */
+export nvi = volumeIndex(true)
+
+/**
+ * Positive volume index (PVI): starts at `1` and moves with {@link close}, by
+ * its relative change, only on bars whose {@link volume} rose from the previous
+ * bar.
+ *
+ * On such a bar it changes by the same percentage as the close; on any other
+ * bar it keeps its value. It is a ratio without a unit. {@link ta.nvi} moves on
+ * the bars where volume fell, and a bar whose volume did not change moves
+ * neither. Like {@link ta.obv}, it is computed once per bar for the whole
+ * script, wherever the script reads it.
+ *
+ * @formula
+ * \begin{aligned}
+ * \mathrm{pvi}_t &= \begin{cases}
+ * \mathrm{pvi}_{t-1} + \dfrac{\mathit{close}_t - \mathit{close}_{t-1}}
+ * {\mathit{close}_{t-1}} \cdot \mathrm{pvi}_{t-1} & \text{if } c_t \\
+ * \mathrm{pvi}_{t-1} & \text{otherwise}
+ * \end{cases} \\
+ * \text{where}\quad c_t &= \big(\mathit{volume}_t > \operatorname{nz}(\mathit{volume}_{t-1})\big)
+ * \land \big(\mathit{close}_t, \mathit{close}_{t-1} \notin \{0, \text{na}\}\big) \\
+ * \mathrm{pvi} &= 1 \text{ before the first bar}
+ * \end{aligned}
+ * @warmup Never `na`: it is `1` on the first bar. A bar leaves it unchanged
+ * when `close` or the previous close is `na` or `0`, or when `volume` is `na`.
+ * A previous `volume` that is `na` counts as `0`.
+ * @example
+ * PVI moves only where volume rose: up 50% with the close at index 1 and up
+ * 100% at index 4. Volume is missing at index 5, so PVI holds there; at index 6
+ * the missing volume counts as `0`, so PVI rises 50% with the close.
+ * ```tea
+ * emit "close" close
+ * emit "volume" volume
+ * emit "pvi" ta.pvi
+ * ```
+ * ```csv
+ * time,close,volume
+ * 0,8,100
+ * 1,12,200
+ * 2,9,100
+ * 3,9,100
+ * 4,18,150
+ * 5,12,
+ * 6,18,50
+ * 7,9,25
+ * ```
+ * @see ta.nvi
+ * @see ta.obv
+ * @category Volume
+ */
+export pvi = volumeIndex(false)

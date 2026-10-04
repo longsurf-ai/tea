@@ -6,6 +6,7 @@ import {mustBuild} from '../noder/testing';
 import {loadModule} from '../runtime/load';
 import {executeTestProgram, finiteStream} from '../testing/batch';
 import {OutputCapture} from '../testing/output';
+import {checkGenerated} from './check';
 import {generate} from './codegen';
 
 async function execute(source: string, rows = 1): Promise<OutputCapture> {
@@ -22,6 +23,31 @@ async function execute(source: string, rows = 1): Promise<OutputCapture> {
 }
 
 describe('compositional semantic IR', () => {
+  test('a float range bound makes an int start count as a float index', async () => {
+    const source = `
+upTo = 0.0
+for i = 0 to 2.5
+    upTo += i
+halves = 0.0
+for j = 0 to 1 by 0.5
+    halves += j
+mixed = 0.0
+for k = bar_index to 1.5
+    mixed += k
+emit "upTo" upTo
+emit "halves" halves
+emit "mixed" mixed
+`;
+    const sink = await execute(source);
+    expect(sink.publications[0]).toMatchObject({
+      upTo: 3,
+      halves: 1.5,
+      mixed: 1,
+    });
+    // `tea build` type-checks the same module.
+    expect(() => checkGenerated(generate(mustBuild(source)))).not.toThrow();
+  });
+
   test('statement expressions keep their effects without replacing a block result', async () => {
     const sink = await execute(`
 struct Counter

@@ -32,6 +32,11 @@ export type Numeric = 'int' | 'float';
  * Reference values retain their managed identity; capture never clones a body.
  * Managed operations require an active step; output destinations detach values
  * for callers that retain them beyond execution.
+ *
+ * Build values with {@link int}, {@link float}, {@link bool}, {@link text} and
+ * the {@link array}, {@link map}, {@link matrix}, {@link tuple} and
+ * {@link struct} factories, and test a value's kind with `kind`, such as
+ * `value.kind === 'array'`.
  * @example `int(7).div(int(2)).value` is 3; dividing by float(2) produces 3.5.
  */
 export class Value<T, K extends string = string> {
@@ -663,14 +668,41 @@ export function float(
   );
 }
 
+/**
+ * Construct a captured Tea bool. Tea bools have no missing value, so this
+ * always holds `true` or `false`.
+ */
 export function bool(value: boolean): Value<boolean, 'bool'> {
   return new Value(value, 'bool');
 }
 
+/**
+ * Construct a captured Tea string; `null` is the missing string.
+ *
+ * @example
+ * ```ts
+ * text('buy').value; // 'buy'
+ * text(null).value; // null, Tea's na for strings
+ * ```
+ */
 export function text(value: string | null): Value<string | null, 'string'> {
   return new Value(value, 'string');
 }
 
+/**
+ * Construct a captured Tea color from a {@link Color}, a `#RRGGBB` or
+ * `#RRGGBBAA` hex string, or `null` for the missing color.
+ *
+ * A string goes through {@link Color.parse}, so malformed hex throws a
+ * `TypeError`.
+ *
+ * @example
+ * ```ts
+ * color('#ff0000').value?.toString(); // '#FF0000'
+ * color(new Color(0, 0, 255)).value?.toString(); // '#0000FF'
+ * color(null).value; // null
+ * ```
+ */
 export function color(
   value: string | Color | null,
 ): Value<Color | null, 'color'> {
@@ -804,6 +836,7 @@ export function matrix<E extends Value<unknown>>(element: E) {
       context: Context,
       ...shape:
         | []
+        | [rows: Value<number, 'int'>, columns: Value<number, 'int'>]
         | [
             rows: Value<number, 'int'>,
             columns: Value<number, 'int'>,

@@ -3,6 +3,19 @@
   "theme": "mint",
   "name": "Tea",
   "description": "Documentation for the Tea programming language.",
+  "logo": {
+    "light": "/assets/tea-logo-light.svg",
+    "dark": "/assets/tea-logo-dark.svg"
+  },
+  "favicon": "/assets/tea-mark.svg",
+  "styling": {
+    "codeblocks": {
+      "languages": {
+        "custom": ["/assets/tea.tmLanguage.json"]
+      }
+    },
+    "latex": true
+  },
   "colors": {
     "primary": "#156453",
     "light": "#70c9af",
@@ -37,10 +50,7 @@
               "language-guide/values-and-control-flow",
               "language-guide/time-series",
               "language-guide/outputs-and-events",
-              "imports",
-              "requests",
-              "strategy",
-              "memory-model"
+              "strategy"
             ]
           },
           {
@@ -58,58 +68,322 @@
         "tab": "Reference",
         "groups": [
           {
-            "group": "Reference",
-            "root": "reference/overview",
+            "group": "Overview",
+            "pages": [
+              "reference/overview",
+              "reference/a-z",
+              "reference/pine-compatibility"
+            ]
+          },
+          {
+            "group": "Language",
+            "pages": [
+              "reference/language/lexical-structure",
+              "reference/language/types",
+              "reference/language/declarations",
+              "reference/language/expressions",
+              "reference/language/control-flow",
+              "reference/language/outputs",
+              "imports",
+              "memory-model"
+            ]
+          },
+          {
+            "group": "Data and inputs",
+            "pages": [
+              "reference/builtins/price-and-volume",
+              "reference/builtins/bar-and-time",
+              "reference/builtins/symbol-and-timeframe",
+              "reference/builtins/input",
+              "reference/builtins/request",
+              "requests"
+            ]
+          },
+          {
+            "group": "Outputs",
+            "pages": ["reference/builtins/plots", "reference/builtins/alerts"]
+          },
+          {
+            "group": "Technical analysis",
+            "pages": [
+              "reference/builtins/ta",
+              {
+                "group": "Moving averages",
+                "pages": [
+                  "reference/builtins/ta/sma",
+                  "reference/builtins/ta/ema",
+                  "reference/builtins/ta/rma",
+                  "reference/builtins/ta/wma",
+                  "reference/builtins/ta/vwma",
+                  "reference/builtins/ta/hma",
+                  "reference/builtins/ta/swma",
+                  "reference/builtins/ta/alma",
+                  "reference/builtins/ta/linreg"
+                ]
+              },
+              {
+                "group": "Momentum",
+                "pages": [
+                  "reference/builtins/ta/cog",
+                  "reference/builtins/ta/change",
+                  "reference/builtins/ta/mom",
+                  "reference/builtins/ta/roc",
+                  "reference/builtins/ta/rsi",
+                  "reference/builtins/ta/cmo",
+                  "reference/builtins/ta/tsi",
+                  "reference/builtins/ta/stoch",
+                  "reference/builtins/ta/cci",
+                  "reference/builtins/ta/wpr",
+                  "reference/builtins/ta/mfi",
+                  "reference/builtins/ta/macd",
+                  "reference/builtins/ta/dmi"
+                ]
+              },
+              {
+                "group": "Volatility and bands",
+                "pages": [
+                  "reference/builtins/ta/tr",
+                  "reference/builtins/ta/atr",
+                  "reference/builtins/ta/bb",
+                  "reference/builtins/ta/bbw",
+                  "reference/builtins/ta/kc",
+                  "reference/builtins/ta/kcw"
+                ]
+              },
+              {
+                "group": "Statistics",
+                "pages": [
+                  "reference/builtins/ta/dev",
+                  "reference/builtins/ta/variance",
+                  "reference/builtins/ta/stdev",
+                  "reference/builtins/ta/range",
+                  "reference/builtins/ta/cum",
+                  "reference/builtins/ta/max",
+                  "reference/builtins/ta/min",
+                  "reference/builtins/ta/correlation",
+                  "reference/builtins/ta/percentrank"
+                ]
+              },
+              {
+                "group": "Trailing stops",
+                "pages": [
+                  "reference/builtins/ta/supertrend",
+                  "reference/builtins/ta/sar"
+                ]
+              },
+              {
+                "group": "Crosses and conditions",
+                "pages": [
+                  "reference/builtins/ta/crossover",
+                  "reference/builtins/ta/crossunder",
+                  "reference/builtins/ta/cross",
+                  "reference/builtins/ta/rising",
+                  "reference/builtins/ta/falling",
+                  "reference/builtins/ta/barssince"
+                ]
+              },
+              {
+                "group": "Highs, lows and pivots",
+                "pages": [
+                  "reference/builtins/ta/highest",
+                  "reference/builtins/ta/lowest",
+                  "reference/builtins/ta/highestbars",
+                  "reference/builtins/ta/lowestbars",
+                  "reference/builtins/ta/pivothigh",
+                  "reference/builtins/ta/pivotlow"
+                ]
+              },
+              {
+                "group": "Volume",
+                "pages": [
+                  "reference/builtins/ta/obv",
+                  "reference/builtins/ta/accdist",
+                  "reference/builtins/ta/pvt",
+                  "reference/builtins/ta/iii",
+                  "reference/builtins/ta/wvad",
+                  "reference/builtins/ta/wad",
+                  "reference/builtins/ta/nvi",
+                  "reference/builtins/ta/pvi"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Functions",
+            "pages": [
+              "reference/builtins/core",
+              "reference/builtins/math",
+              "reference/builtins/color",
+              "reference/builtins/array",
+              "reference/builtins/matrix",
+              "reference/builtins/map"
+            ]
+          },
+          {
+            "group": "Libraries",
             "pages": [
               {
-                "group": "Types",
-                "root": "reference/types",
-                "pages": ["reference/types/array"]
-              },
-              {
-                "group": "Variables",
-                "root": "reference/variables",
-                "pages": ["reference/variables/close"]
-              },
-              {
-                "group": "Constants",
-                "root": "reference/constants",
-                "pages": ["reference/constants/color/red"]
-              },
-              {
-                "group": "Functions",
-                "root": "reference/functions",
+                "group": "trade",
+                "root": "reference/libraries/trade",
                 "pages": [
-                  "reference/native-functions",
-                  "reference/functions/array/push",
-                  "reference/libraries/ta",
-                  "reference/libraries/visual",
-                  "reference/libraries/pine",
-                  "reference/libraries/geometry",
-                  "reference/libraries/broker",
-                  "reference/libraries/portfolio",
-                  "reference/libraries/trade"
+                  {
+                    "group": "Sizing and targets",
+                    "pages": [
+                      "reference/libraries/trade/percentOfEquity",
+                      "reference/libraries/trade/percentOfEquityAtFill",
+                      "reference/libraries/trade/targetQuantity",
+                      "reference/libraries/trade/targetPercentOfEquity",
+                      "reference/libraries/trade/SizingKind",
+                      "reference/libraries/trade/Sizing"
+                    ]
+                  },
+                  {
+                    "group": "Creating coordinators",
+                    "pages": [
+                      "reference/libraries/trade/nextOpen",
+                      "reference/libraries/trade/ohlc",
+                      "reference/libraries/trade/path",
+                      "reference/libraries/trade/lots"
+                    ]
+                  },
+                  {
+                    "group": "Coordinators",
+                    "pages": [
+                      "reference/libraries/trade/Direction",
+                      "reference/libraries/trade/NextOpenTrade",
+                      "reference/libraries/trade/OhlcTrade",
+                      "reference/libraries/trade/PathTrade",
+                      "reference/libraries/trade/LotTrade"
+                    ]
+                  }
                 ]
               },
               {
-                "group": "Keywords",
-                "root": "reference/keywords",
+                "group": "broker",
+                "root": "reference/libraries/broker",
                 "pages": [
-                  "reference/keywords/for-in",
-                  "reference/keywords/emit",
-                  "reference/keywords/return"
+                  {
+                    "group": "Commission and slippage",
+                    "pages": [
+                      "reference/libraries/broker/commissionRate",
+                      "reference/libraries/broker/commissionPercent",
+                      "reference/libraries/broker/commissionCashPerContract",
+                      "reference/libraries/broker/commissionCashPerOrder",
+                      "reference/libraries/broker/slippageRate",
+                      "reference/libraries/broker/slippagePercent",
+                      "reference/libraries/broker/slippageTicks",
+                      "reference/libraries/broker/CommissionKind",
+                      "reference/libraries/broker/SlippageKind",
+                      "reference/libraries/broker/Commission",
+                      "reference/libraries/broker/Slippage"
+                    ]
+                  },
+                  {
+                    "group": "Creating brokers",
+                    "pages": [
+                      "reference/libraries/broker/new",
+                      "reference/libraries/broker/basic"
+                    ]
+                  },
+                  {
+                    "group": "Orders and fills",
+                    "pages": [
+                      "reference/libraries/broker/Side",
+                      "reference/libraries/broker/CommandKind",
+                      "reference/libraries/broker/OrderType",
+                      "reference/libraries/broker/PositionTargetKind",
+                      "reference/libraries/broker/PositionTarget",
+                      "reference/libraries/broker/Account",
+                      "reference/libraries/broker/Command",
+                      "reference/libraries/broker/Order",
+                      "reference/libraries/broker/Fill"
+                    ]
+                  },
+                  {
+                    "group": "Events",
+                    "pages": [
+                      "reference/libraries/broker/Rejection",
+                      "reference/libraries/broker/OrderSubmitted",
+                      "reference/libraries/broker/FillExecuted",
+                      "reference/libraries/broker/OrderExpired",
+                      "reference/libraries/broker/OrderCancelled",
+                      "reference/libraries/broker/OrderRejected"
+                    ]
+                  },
+                  {
+                    "group": "Results",
+                    "pages": [
+                      "reference/libraries/broker/BarMatches",
+                      "reference/libraries/broker/FinishResult"
+                    ]
+                  },
+                  {
+                    "group": "Interfaces",
+                    "pages": [
+                      "reference/libraries/broker/BrokerCommands",
+                      "reference/libraries/broker/NextOpenBroker",
+                      "reference/libraries/broker/OhlcBroker",
+                      "reference/libraries/broker/PathBroker",
+                      "reference/libraries/broker/ImmediateBroker"
+                    ]
+                  },
+                  {
+                    "group": "Emulator",
+                    "pages": ["reference/libraries/broker/BrokerEmulator"]
+                  }
                 ]
               },
               {
-                "group": "Operators",
-                "root": "reference/operators",
-                "pages": ["reference/operators/history"]
+                "group": "portfolio",
+                "root": "reference/libraries/portfolio",
+                "pages": [
+                  {
+                    "group": "Creating portfolios",
+                    "pages": [
+                      "reference/libraries/portfolio/new",
+                      "reference/libraries/portfolio/lots",
+                      "reference/libraries/portfolio/basic"
+                    ]
+                  },
+                  {
+                    "group": "Interfaces",
+                    "pages": [
+                      "reference/libraries/portfolio/PortfolioView",
+                      "reference/libraries/portfolio/NetLedger",
+                      "reference/libraries/portfolio/LotLedger"
+                    ]
+                  },
+                  {
+                    "group": "Records",
+                    "pages": [
+                      "reference/libraries/portfolio/OpenTrade",
+                      "reference/libraries/portfolio/PortfolioSnapshot"
+                    ]
+                  },
+                  {
+                    "group": "Portfolios",
+                    "pages": [
+                      "reference/libraries/portfolio/NetPortfolio",
+                      "reference/libraries/portfolio/LotPortfolio"
+                    ]
+                  }
+                ]
               },
-              {
-                "group": "Annotations",
-                "root": "reference/annotations",
-                "pages": ["reference/annotations/version"]
-              }
+              "reference/libraries/geometry"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": ["reference/tools/cli"]
+          },
+          {
+            "group": "JavaScript API",
+            "pages": [
+              "reference/javascript/tea",
+              "reference/javascript/compiler",
+              "reference/javascript/runtime",
+              "reference/javascript/lsp",
+              "reference/javascript/reference"
             ]
           }
         ]

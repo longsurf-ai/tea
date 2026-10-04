@@ -11,12 +11,7 @@
     "src/index.ts",
     "src/runtime/index.ts",
     "src/compiler.ts",
-    "src/base/print.ts",
-    "src/codegen/codegen.ts",
-    "src/runtime/load.ts",
-    "src/extension/pine.ts",
-    "src/codegen/wgsl/index.ts",
-    "src/runtime/gpu/index.ts",
-    "src/lsp/index.ts"
+    "src/lsp/index.ts",
+    "src/reference/index.ts"
   ]
 }

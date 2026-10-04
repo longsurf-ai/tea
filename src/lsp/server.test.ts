@@ -230,7 +230,7 @@ test('completion after "ta." answers against text not yet analyzed', async () =>
     at(2, 10),
   );
   expect(items.find(item => item.label === 'sma')).toMatchObject({
-    detail: 'sma(source, length)',
+    detail: 'sma(float source, int length)',
   });
   expect(items.map(item => item.label)).not.toContain('fast');
 });
@@ -242,22 +242,27 @@ test('signatureHelp marks the active parameter', async () => {
     at(2, 21),
   );
   expect(help).toMatchObject({
-    signatures: [{label: 'sma(source, length)'}],
+    signatures: [{label: 'sma(float source, int length)'}],
     activeSignature: 0,
     activeParameter: 1,
   });
 });
 
-test('didChangeWatchedFiles republishes every open document', async () => {
+test('a burst of didChangeWatchedFiles republishes every open document once', async () => {
   const settled = nextPublished();
   await change(6, FIXED);
   expect(await settled).toEqual({uri: URI, version: 6, diagnostics: []});
 
+  const before = published.length;
   const next = nextPublished();
-  await client.sendNotification('workspace/didChangeWatchedFiles', {
-    changes: [{uri: 'file:///charts/lib.tea', type: 2}],
-  });
+  for (let i = 0; i < 3; i++) {
+    await client.sendNotification('workspace/didChangeWatchedFiles', {
+      changes: [{uri: 'file:///charts/lib.tea', type: 2}],
+    });
+  }
   expect(await next).toEqual({uri: URI, version: 6, diagnostics: []});
+  await sleep(300);
+  expect(published.length).toBe(before + 1);
 });
 
 test('a compiler defect is logged, keeps the diagnostics and the session', async () => {

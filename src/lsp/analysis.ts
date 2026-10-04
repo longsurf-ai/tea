@@ -3,22 +3,16 @@
 import {DiagnosticSeverity} from 'vscode-languageserver';
 import type {Diagnostic, Range} from 'vscode-languageserver';
 import {formatPos, newFileBase, type Pos} from '../base/pos';
-import {Errors, type ErrorMsg} from '../base/print';
+import {Errors} from '../base/print';
 import type {CheckedPackage, Info} from '../checker/check';
-import {CallKind, SelectionKind, type FunctionInstance} from '../checker/info';
+import {SelectionKind} from '../checker/info';
 // `Object` is the checker's semantic object. A type-only import leaves the
 // global `Object` value in place.
-import {ObjectKind, type Object} from '../checker/object';
+import type {Object} from '../checker/object';
+import {callsReaching, semanticContexts} from '../checker/semantic-contexts';
 import {compileForTooling} from '../compiler';
-import {TypeKind} from '../ir/type';
 import {importedFile, type PackageSource} from '../loader/loader';
-import {
-  NodeKind,
-  type CallExpr,
-  type File,
-  type Name,
-  type Node,
-} from '../syntax/nodes';
+import {NodeKind, type File, type Name, type Node} from '../syntax/nodes';
 import {endPos, tokenize} from '../syntax/syntax';
 import {KEYWORDS, Tok, type Token} from '../syntax/tokens';
 
@@ -76,6 +70,17 @@ export interface Analysis {
    * carries the exported function, while `ta` carries the package name.
    */
   readonly names: readonly IndexedName[];
+  /**
+   * Where each object is defined: its defining `Name`s, from `Info.defs` of
+   * whichever context owns them, this document's or a library's. A parameter
+   * of a function called with two signatures is two objects with one name.
+   */
+  readonly definitions: ReadonlyMap<Object, readonly Name[]>;
+  /**
+   * The lines of every text the compilation parsed, by filename: this
+   * document and each library it reached. Doc comments are read from them.
+   */
+  readonly lines: ReadonlyMap<string, readonly string[]>;
 }
 
 /**
@@ -101,7 +106,10 @@ export interface Analysis {
  */
 export function analyze(input: PackageSource): Analysis {
   const errors = new Errors();
-  const {files, checked, dependencies} = compileForTooling([input], errors);
+  const {files, checked, dependencies, sources} = compileForTooling(
+    [input],
+    errors,
+  );
   const file = files[0];
 
   const tokens = tokenize(newFileBase(input.filename), input.source, () => {});
@@ -117,7 +125,23 @@ export function analyze(input: PackageSource): Analysis {
   const importPaths = file.stmtList.flatMap(stmt =>
     stmt.kind === NodeKind.ImportStmt ? [stmt.path] : [],
   );
-  const diagnostics = errors.flushErrors().flatMap(error => {
+  const flushed = errors.flushErrors();
+  // When the called function reports an error itself, errors from the
+  // functions it calls in turn are left off that call, as on the command line.
+  const reached = new Map(
+    flushed.map(error => [
+      error,
+      error.pos.base.filename === input.filename
+        ? []
+        : callsReaching(error, checked, new Set([input.filename])),
+    ]),
+  );
+  const reportsOwnError = new Set(
+    [...reached.values()].flatMap(calls =>
+      calls.filter(found => found.direct).map(found => found.call),
+    ),
+  );
+  const diagnostics = flushed.flatMap(error => {
     if (error.pos.base.filename === input.filename) {
       const path = importPaths.find(
         ({pos}) => pos.line === error.pos.line && pos.col === error.pos.col,
@@ -128,7 +152,12 @@ export function analyze(input: PackageSource): Analysis {
           : nodeRange(path);
       return [diagnostic(range, error.msg)];
     }
-    const calls = callsReaching(error, checked, input.filename);
+    const reaching = reached.get(error)!;
+    const calls = reaching
+      .filter(({call, direct}) => direct || !reportsOwnError.has(call))
+      .map(({call}) => call);
+    // Every call that reaches it already shows its callee's own error.
+    if (reaching.length > 0 && calls.length === 0) return [];
     const where = formatPos(error.pos);
     if (calls.length === 0) {
       // No call of this document reaches it, as with an error at the top of
@@ -165,56 +194,14 @@ export function analyze(input: PackageSource): Analysis {
     dependencies,
     diagnostics,
     names: indexNames(file, checked),
+    definitions: indexDefinitions(checked),
+    lines: new Map(
+      [...sources].map(([filename, text]) => [filename, text.split('\n')]),
+    ),
   };
 }
 
 // ---- diagnostics --------------------------------------------------------------
-
-// A function body is checked once per called signature, so an argument the
-// body cannot use is reported inside the body. When that body is in another
-// file, the document would show nothing. The culprit is the instance that
-// recorded an Invalid type at the error's position; the calls to show it on
-// are those written in this document that enter another file and reach it.
-function callsReaching(
-  error: ErrorMsg,
-  checked: CheckedPackage,
-  filename: string,
-): CallExpr[] {
-  const samePos = (pos: Pos): boolean =>
-    pos.base.filename === error.pos.base.filename &&
-    pos.line === error.pos.line &&
-    pos.col === error.pos.col;
-  const culprits = new Set<FunctionInstance>();
-  for (const instances of checked.instances.values()) {
-    for (const instance of instances) {
-      for (const [expr, tv] of instance.info.types) {
-        if (tv.type.kind === TypeKind.Invalid && samePos(expr.pos)) {
-          culprits.add(instance);
-        }
-      }
-    }
-  }
-  const reaches = (instance: FunctionInstance): boolean =>
-    culprits.has(instance) ||
-    [...instance.info.calls.values()].some(
-      call => call.kind === CallKind.Function && reaches(call.instance),
-    );
-  const calls: CallExpr[] = [];
-  for (const info of semanticContexts(checked)) {
-    for (const [call, resolution] of info.calls) {
-      if (
-        call.pos.base.filename === filename &&
-        resolution.kind === CallKind.Function &&
-        resolution.instance.template.decl.pos.base.filename !== filename &&
-        reaches(resolution.instance) &&
-        !calls.includes(call)
-      ) {
-        calls.push(call);
-      }
-    }
-  }
-  return calls;
-}
 
 // A node's own range, in LSP's 0-based units.
 function nodeRange(node: Parameters<typeof endPos>[0]): Range {
@@ -316,6 +303,18 @@ function indexNames(file: File, checked: CheckedPackage): IndexedName[] {
     );
 }
 
+function indexDefinitions(checked: CheckedPackage): Map<Object, Name[]> {
+  const definitions = new Map<Object, Name[]>();
+  for (const info of semanticContexts(checked)) {
+    for (const [name, object] of info.defs) {
+      const names = definitions.get(object) ?? [];
+      if (!names.includes(name)) names.push(name);
+      definitions.set(object, names);
+    }
+  }
+  return definitions;
+}
+
 /**
  * The syntax nodes directly under `node`. Every node is plain data
  * discriminated on `kind`, so its children are found by reflection, as the
@@ -349,47 +348,4 @@ function collectNames(node: Node, out: Map<Name, NameFact[]>): void {
     return;
   }
   childNodes(node).forEach(child => collectNames(child, out));
-}
-
-/**
- * Every `Info` of the compilation, libraries included. A function body is
- * checked once per called signature, a generic struct once per
- * specialization, and a request capture in an `Info` of its own that only
- * the owning call reaches. A query that must see every fact about a node,
- * whatever context recorded it, iterates this.
- *
- * @example
- * ```ts
- * // Where `object` is defined, in this document or in a library.
- * for (const info of semanticContexts(analysis.checked)) {
- *   for (const [name, defined] of info.defs) {
- *     if (defined === object) found.add(name);
- *   }
- * }
- * ```
- */
-export function semanticContexts(checked: CheckedPackage): Set<Info> {
-  const infos = new Set<Info>([checked.info]);
-  for (const [pkg, context] of checked.packageContexts) {
-    infos.add(context.info);
-    for (const object of pkg.scope.declared()) {
-      if (object.kind === ObjectKind.GenericStruct) {
-        infos.add(object.validationInfo);
-        object.instances.forEach(instance => infos.add(instance.info));
-      }
-    }
-  }
-  for (const instances of checked.instances.values()) {
-    instances.forEach(instance => infos.add(instance.info));
-  }
-  // A Set also iterates the entries added while iterating, which follows
-  // captures nested in captures.
-  for (const info of infos) {
-    for (const call of info.calls.values()) {
-      if (call.kind === CallKind.Request) {
-        infos.add(call.capture);
-      }
-    }
-  }
-  return infos;
 }

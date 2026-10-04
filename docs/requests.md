@@ -30,7 +30,8 @@ then index it; `ta.sma(close, 20)[1]` is not valid Tea.
 The request call itself cannot be inside a function, local block, method, or
 another request capture. The function above contains only the calculation;
 the top-level `daily` declaration owns the request. Symbol and timeframe must
-be static. Each capture returns one scalar. To obtain several values, declare
+be static: `simple` values such as constants, inputs and `syminfo.tickerid`.
+Each capture returns one scalar. To obtain several values, declare
 one named request per scalar; each declaration needs its own host binding,
 even when their symbol and timeframe match. Tuple and struct captures are not
 supported by the language checker.
@@ -169,11 +170,3 @@ mode, result layout, and synchronization policy. This is static language data,
 not an instruction for Tea to acquire external data.
 The application chooses how much history the child DataStream holds; Node
 correctness depends only on the stream it actually receives.
-
-## Staged beyond this slice
-
-- dynamic requests;
-- requests nested inside another request capture;
-- live watermark policies;
-- an application-specific source registry, if an application chooses to build
-  one.

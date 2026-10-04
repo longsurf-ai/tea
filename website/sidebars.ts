@@ -1,97 +1,53 @@
-// Purpose: Keep Tea learning documentation separate from mechanical reference lookup.
+// Purpose: Derive the offline site's sidebars from docs.json, the one owner of Tea's navigation.
 
+import {readFileSync} from 'node:fs';
+import path from 'node:path';
 import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 
-const sidebars: SidebarsConfig = {
-  documentationSidebar: [
-    'introduction',
-    {
-      type: 'category',
-      label: 'Getting Started',
-      items: [
-        'getting-started/Write your first indicator',
-        'getting-started/backtest-your-strategy',
-        'getting-started/live-scanner',
-        'getting-started/live-trading',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Language Guide',
-      items: [
-        'language-guide/program-structure',
-        'language-guide/execution-model',
-        'language-guide/values-and-control-flow',
-        'language-guide/time-series',
-        'language-guide/outputs-and-events',
-        'imports',
-        'requests',
-        {
-          type: 'doc',
-          id: 'strategy',
-          label: 'Strategy Model',
-        },
-        {
-          type: 'doc',
-          id: 'memory-model',
-          label: 'Memory Model',
-        },
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Advanced',
-      items: [
-        'advanced/tea-compiler',
-        {
-          type: 'doc',
-          id: 'ir',
-          label: 'Tea IR',
-        },
-        'advanced/gpu-lowering',
-        'geometry',
-      ],
-    },
-  ],
-  referenceSidebar: [
-    'reference/overview',
-    referenceCategory('Types', 'types', ['reference/types/array']),
-    referenceCategory('Variables', 'variables', ['reference/variables/close']),
-    referenceCategory('Constants', 'constants', [
-      'reference/constants/color/red',
-    ]),
-    referenceCategory('Functions', 'functions', [
-      'reference/native-functions',
-      'reference/functions/array/push',
-      'reference/libraries/ta',
-      'reference/libraries/visual',
-      'reference/libraries/pine',
-      'reference/libraries/geometry',
-      'reference/libraries/broker',
-      'reference/libraries/portfolio',
-      'reference/libraries/trade',
-    ]),
-    referenceCategory('Keywords', 'keywords', [
-      'reference/keywords/for-in',
-      'reference/keywords/emit',
-      'reference/keywords/return',
-    ]),
-    referenceCategory('Operators', 'operators', [
-      'reference/operators/history',
-    ]),
-    referenceCategory('Annotations', 'annotations', [
-      'reference/annotations/version',
-    ]),
-  ],
-};
+interface NavigationGroup {
+  readonly group: string;
+  readonly root?: string;
+  readonly pages: readonly (string | NavigationGroup)[];
+}
 
-function referenceCategory(label: string, landing: string, items: string[]) {
-  return {
-    type: 'category' as const,
-    label,
-    link: {type: 'doc' as const, id: `reference/${landing}`},
-    items,
+interface Navigation {
+  readonly navigation: {
+    readonly tabs: readonly {
+      readonly tab: string;
+      readonly groups: readonly NavigationGroup[];
+    }[];
   };
 }
+
+const {navigation} = JSON.parse(
+  readFileSync(path.join(__dirname, '../docs/docs.json'), 'utf8'),
+) as Navigation;
+
+interface Category {
+  type: 'category';
+  label: string;
+  link?: {type: 'doc'; id: string};
+  items: (string | Category)[];
+}
+
+function category(group: NavigationGroup): Category {
+  return {
+    type: 'category',
+    label: group.group,
+    ...(group.root === undefined ? {} : {link: {type: 'doc', id: group.root}}),
+    items: group.pages.map(page =>
+      typeof page === 'string' ? page : category(page),
+    ),
+  };
+}
+
+// Each docs.json tab is one navbar sidebar: "Documentation" becomes
+// documentationSidebar, which docusaurus.config.ts names.
+const sidebars: SidebarsConfig = Object.fromEntries(
+  navigation.tabs.map(tab => [
+    `${tab.tab.toLowerCase()}Sidebar`,
+    tab.groups.map(category),
+  ]),
+);
 
 export default sidebars;

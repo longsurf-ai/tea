@@ -10,4 +10,5 @@ dist/
 .env.*
 !.env.example
 .obsidian/
+# Plans are local notes and never committed; CI rejects them.
 plans/

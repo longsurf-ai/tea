@@ -403,9 +403,8 @@ describe('semantic ownership', () => {
         type: 'map<string, int>',
       },
       {
-        source:
-          'x = request.security("X", "D", [close, [true, array.new<int>()]])',
-        type: '[float, [bool, array<int>]]',
+        source: 'x = request.security("X", "D", [close, array.new<int>()])',
+        type: '[float, array<int>]',
       },
       {
         source: 'x = request.security("X", "D", [close, true])',
@@ -921,6 +920,34 @@ describe('calls', () => {
 });
 
 describe('diagnostics', () => {
+  test('a package member used as a value is named in the error', () => {
+    const errorsOf = (src: string) =>
+      checkText(src).errors.map(error => error.msg);
+    expect(errorsOf('a = ta.tr')).toEqual(["'ta.tr' is a function; call it"]);
+    expect(errorsOf('a = ta.vwap')).toEqual(["undeclared name 'ta.vwap'"]);
+    expect(errorsOf('import broker\na = broker.Side')).toEqual([
+      "'broker.Side' is a type, not a value",
+    ]);
+    expect(errorsOf('a = ta.obv')).toEqual([]);
+  });
+
+  test("a function parameter's default must fit its annotation", () => {
+    const errorsOf = (src: string) =>
+      checkText(src).errors.map(error => error.msg);
+    expect(errorsOf('f(float x = "a") => x\ny = f()')).toEqual([
+      "default for parameter 'x' in 'f': cannot use string as float",
+    ]);
+    expect(errorsOf('f(int x = 1.5) => x\ny = f()')).toEqual([
+      "default for parameter 'x' in 'f': cannot use float as int",
+    ]);
+    expect(errorsOf('f(bool x = na) => x\ny = f()')).toEqual([
+      "default for parameter 'x' in 'f': cannot use na as bool",
+    ]);
+    expect(
+      errorsOf('f(float x = na, float y = 1, z = "a") => x + y\nv = f()'),
+    ).toEqual([]);
+  });
+
   test('indicator() is a once-only header of an entry script', () => {
     const errorsOf = (src: string) =>
       checkText(src).errors.map(error => error.msg);
@@ -961,6 +988,59 @@ describe('diagnostics', () => {
     expect(duplicate.errors.map(error => error.msg)).toContain(
       'switch may contain only one default arm',
     );
+  });
+
+  test('a runtime.error that certainly runs is a compile error at the call', () => {
+    const errorsOf = (src: string) =>
+      checkText(src).errors.map(error => error.msg);
+    const guarded = [
+      'f(int n) =>',
+      '    if n <= 0',
+      '        runtime.error("n must be positive")',
+      '    n * 2',
+    ];
+    // Constant conditions that select the call.
+    expect(errorsOf('if true\n    runtime.error("always")')).toEqual([
+      'always',
+    ]);
+    expect(
+      errorsOf(
+        'if false\n    runtime.error("dead")\nelse if true\n    runtime.error("else")',
+      ),
+    ).toEqual(['else']);
+    expect(errorsOf([...guarded, 'x = f(0)'].join('\n'))).toEqual([
+      'n must be positive',
+    ]);
+    expect(errorsOf('x = ta.sma(close, 0)')).toEqual([
+      'ta.sma: length must be at least 1',
+    ]);
+    // Nothing known for sure: checked only when it runs.
+    for (const source of [
+      [...guarded, 'x = f(3)', 'y = f(bar_index)'].join('\n'),
+      'if close > 100\n    runtime.error("series")',
+      'for i = 0 to 2\n    if true\n        runtime.error("loop")',
+      'g(int n) =>\n    if close > 1\n        return 1\n    if n <= 0\n        runtime.error("after return")\n    2\nx = g(0)',
+      'x = ta.sma(close, bar_index)',
+      'length = input.int(0)\nx = ta.sma(close, length)',
+    ]) {
+      expect(errorsOf(source)).toEqual([]);
+    }
+  });
+
+  test('switch matches by ==, so it rejects what == rejects', () => {
+    const errorsOf = (src: string) =>
+      checkText(src).errors.map(error => error.msg);
+    const subjects = {
+      P: 'struct P\n    float x\np = P.new(1)\nx = switch p\n    p => 1\n    => 0',
+      'array<int>': 'a = array.from(1, 2)\nx = switch a\n    a => 1\n    => 0',
+      '[int, int]': 'x = switch [1, 2]\n    [1, 2] => 1\n    => 0',
+    };
+    for (const [type, source] of Object.entries(subjects)) {
+      expect(errorsOf(source)).toContain(
+        `cannot switch on ${type}: aggregate equality is not defined`,
+      );
+    }
+    expect(errorsOf('x = switch "a"\n    "a" => 1\n    => 0')).toEqual([]);
   });
 
   test('invalid for-in targets remain user-facing errors', () => {
@@ -1057,5 +1137,30 @@ describe('enumeration for tooling', () => {
     expect(
       unused?.kind === ObjectKind.Function && r.checked.instances.has(unused),
     ).toBe(false);
+  });
+});
+
+describe('tuple declarations', () => {
+  test.each(['var', 'varip', 'const'])(
+    '%s tuple declarations are rejected while checking',
+    mode => {
+      const result = checkText(`${mode} [a, b] = [close, open]\nemit "a" a\n`);
+      expect(result.errors.map(error => error.msg)).toContain(
+        `${mode} tuple declarations are not supported yet`,
+      );
+    },
+  );
+
+  test('plain tuple declarations destructure', () => {
+    expect(checkText('[a, b] = [close, open]\nemit "a" a\n').errors).toEqual(
+      [],
+    );
+  });
+
+  test('a tuple cannot be an element of another tuple', () => {
+    const result = checkText('[a, b] = [[1, 2], 3]\nemit "b" b\n');
+    expect(result.errors.map(error => error.msg)).toEqual([
+      'a tuple element cannot itself be a tuple',
+    ]);
   });
 });

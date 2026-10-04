@@ -1,16 +1,20 @@
-// Purpose: Compile the published authoring examples and lock complete generated API inventories.
+// Purpose: Compile the Tea examples in the published guide pages.
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {expect, test} from 'vitest';
-import {CATALOG} from '../../src/checker/catalog';
 import {buildText} from '../../src/noder/testing';
 import {generate} from '../../src/codegen/codegen';
-import {libraryReferences, nativeReference} from './reference-catalog';
 
 const pages = [
-  'introduction.md',
   'getting-started/Hello world.md',
   'getting-started/Write your first indicator.md',
+  'getting-started/backtest-your-strategy.md',
+  'getting-started/live-scanner.md',
+  'advanced/tea-compiler.md',
+  'geometry.md',
+  'runtime.md',
+  'language-guide/program-structure.md',
+  'language-guide/execution-model.md',
   'language-guide/values-and-control-flow.md',
   'language-guide/time-series.md',
   'language-guide/outputs-and-events.md',
@@ -32,28 +36,3 @@ for (const page of pages) {
     }
   });
 }
-
-test('generated references cover all native functions and shipped library declarations', () => {
-  const native = nativeReference();
-  for (const name of CATALOG.funcs.keys())
-    expect(native).toContain(`## ${name}\n`);
-  expect(native).toContain('→ request-dependent result');
-  const libraries = libraryReferences();
-  expect([...libraries.keys()]).toEqual([
-    'broker',
-    'geometry',
-    'pine',
-    'portfolio',
-    'ta',
-    'trade',
-    'visual',
-  ]);
-  expect(libraries.get('ta')).toContain('source, length = 1');
-  expect(libraries.get('visual')).toContain('const string id');
-  expect(libraries.get('visual')).toContain('series string message');
-  expect(libraries.get('ta')).not.toContain('sum / length');
-  expect(libraries.get('pine')).toContain('## pine.close\n');
-  expect(libraries.get('pine')).toContain(
-    'export close = input.series("close")',
-  );
-});

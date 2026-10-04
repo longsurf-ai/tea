@@ -161,6 +161,10 @@ export interface Info {
     VariableObject,
     CheckedDefaultExpression
   >;
+  // Where this context reported errors. A library body is checked once per
+  // signature, so tooling maps such an error back to the calls that reached
+  // this context.
+  readonly errors: Pos[];
 }
 
 export function newInfo(): Info {
@@ -176,6 +180,7 @@ export function newInfo(): Info {
     selections: new Map(),
     scopes: new Map(),
     packageGlobalInitializers: new Map(),
+    errors: [],
   };
 }
 

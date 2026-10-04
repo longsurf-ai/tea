@@ -311,7 +311,10 @@ items.get(int(0)); // Value<number, 'int'> containing NaN
 ```
 
 `ArrayValue`, `MatrixValue` and `MapValue` are frozen header classes over
-persistent Heap backing. Array and matrix elements, map keys and values, and
+persistent Heap backing. `tea/runtime` exports them, and `Value`, as types
+only: build values with `int`, `float`, `bool`, `text` and the `array`, `map`,
+`matrix`, `tuple` and `struct` factories, and test a value's kind with
+`value.kind`, such as `value.kind === 'array'`, rather than `instanceof`. Array and matrix elements, map keys and values, and
 tuple members are captured Values. Mutations allocate replacement backing;
 copying a collection does not deep-copy referenced structs. Bounds, ownership,
 nominal identity and logical memory limits remain runtime checks.
@@ -575,13 +578,3 @@ Generated code contains no host I/O, randomness, or wall-clock access. A finite
 run is determined by its module, parameter values, bound DataStreams, and the
 Pine clock values supplied for its attempts. GPU execution is determined by its
 artifact and concrete bindings.
-
-## Staged beyond this slice
-
-- live watermarks;
-- dynamic or nested requests;
-- Sweep and live Recipes;
-- optional application source registries;
-- broader GPU support for structs, resources, requests and non-scalar operations.
-  Existing append codecs support literal strings and packed colors; that does not
-  imply arbitrary string/color operations or user-defined struct execution.

@@ -12,12 +12,14 @@ navigation, and presentation.
 - `website/package.json` is only the CommonJS build-tool boundary Docusaurus
   needs beneath Tea's ESM package; all dependency versions remain owned by the
   parent package manifest.
-- Offline Documentation and Reference remain separate navbar entries and
-  sidebars and mirror the hosted Mintlify navigation; generated reference pages
-  never enter the learning sequence.
+- Offline Documentation and Reference remain separate navbar entries;
+  `sidebars.ts` derives both sidebars from `../docs/docs.json` rather than
+  restating them, and generated reference pages never enter the learning
+  sequence.
 - Broken links, Markdown links, and anchors fail the build.
 - Styling stays reading-first, uses local system fonts, and loads no remote
-  assets.
+  assets. The one exception to system fonts is KaTeX's math fonts, bundled
+  from the `katex` package with its stylesheet for `$$` formulas.
 - `.docusaurus/` and `build/` are generated outputs, never source files.
   `.gitignore` excludes both; `.npmignore` excludes only `.docusaurus/` so
   installed releases contain the prebuilt site.

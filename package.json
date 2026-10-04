@@ -34,33 +34,13 @@
       "types": "./dist/types/compiler.d.ts",
       "default": "./dist/compiler.js"
     },
-    "./base/print": {
-      "types": "./dist/types/base/print.d.ts",
-      "default": "./dist/base/print.js"
-    },
-    "./codegen/codegen": {
-      "types": "./dist/types/codegen/codegen.d.ts",
-      "default": "./dist/codegen/codegen.js"
-    },
-    "./runtime/load": {
-      "types": "./dist/types/runtime/load.d.ts",
-      "default": "./dist/runtime/load.js"
-    },
-    "./extension/pine": {
-      "types": "./dist/types/extension/pine.d.ts",
-      "default": "./dist/extension/pine.js"
-    },
-    "./codegen/wgsl": {
-      "types": "./dist/types/codegen/wgsl/index.d.ts",
-      "default": "./dist/codegen/wgsl/index.js"
-    },
-    "./runtime/gpu": {
-      "types": "./dist/types/runtime/gpu/index.d.ts",
-      "default": "./dist/runtime/gpu/index.js"
-    },
     "./lsp": {
       "types": "./dist/types/lsp/index.d.ts",
       "default": "./dist/lsp/index.js"
+    },
+    "./reference": {
+      "types": "./dist/types/reference/index.d.ts",
+      "default": "./dist/reference/index.js"
     }
   },
   "scripts": {
@@ -84,6 +64,7 @@
     "test": "vitest run --no-file-parallelism"
   },
   "dependencies": {
+    "@webgpu/types": "0.1.71",
     "apache-arrow": "^21.2.0",
     "commander": "14.0.2",
     "csv-parse": "7.0.2",
@@ -95,14 +76,12 @@
     "typescript": "5.8.3",
     "vscode-languageserver": "10.1.1",
     "vscode-languageserver-textdocument": "1.0.14",
-    "zod": "4.3.6",
-    "@webgpu/types": "0.1.71"
+    "zod": "4.3.6"
   },
   "optionalDependencies": {
     "webgpu": "0.4.0"
   },
   "devDependencies": {
-    "esbuild": "0.28.2",
     "@docusaurus/core": "3.10.2",
     "@docusaurus/module-type-aliases": "3.10.2",
     "@docusaurus/plugin-content-docs": "3.10.2",
@@ -114,15 +93,19 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "acorn": "8.18.0",
+    "esbuild": "0.28.2",
+    "katex": "0.16.47",
+    "kld-intersections": "0.7.0",
     "prettier": "3.8.1",
     "prism-react-renderer": "2.4.1",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "vitest": "4.1.11",
-    "vscode-oniguruma": "2.0.1",
-    "vscode-textmate": "9.3.2",
+    "rehype-katex": "7.0.1",
+    "remark-math": "6.0.0",
     "robust-orientation": "1.2.1",
     "robust-segment-intersect": "1.0.1",
-    "kld-intersections": "0.7.0"
+    "vitest": "4.1.11",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2"
   }
 }

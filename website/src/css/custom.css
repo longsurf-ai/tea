@@ -102,3 +102,9 @@ pre code {
     border-right-color: var(--ifm-toc-border-color) !important;
   }
 }
+
+/* A formula wider than the column scrolls instead of being cut off. */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}

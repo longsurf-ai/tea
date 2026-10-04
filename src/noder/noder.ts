@@ -330,12 +330,25 @@ class Noder {
       if (!out.includes(name)) {
         this.info = initializer.info;
         out.push(name);
-        initializers.push({
-          kind: IrKind.InitName,
-          pos: initializer.expr.pos,
-          name,
-          value: this.nodeExpr(initializer.expr, object.type),
-        });
+        const value = this.nodeExpr(initializer.expr, object.type);
+        // A var global initializes once; a computed export is assigned on
+        // every bar, as a script's own top-level declaration is.
+        initializers.push(
+          object.storage === Storage.PerBar
+            ? {
+                kind: IrKind.Assign,
+                pos: initializer.expr.pos,
+                target: this.read(name, initializer.expr.pos),
+                op: null,
+                value,
+              }
+            : {
+                kind: IrKind.InitName,
+                pos: initializer.expr.pos,
+                name,
+                value,
+              },
+        );
       }
     }
     this.info = savedInfo;
@@ -902,12 +915,8 @@ class Noder {
     d: syntax.DeclStmt,
     pattern: syntax.TuplePattern,
   ): IrStmt[] {
-    if (d.mode === Mode.Var || d.mode === Mode.Varip) {
-      this.errors.errorAt(
-        d.pos,
-        'var tuple declarations are not supported yet',
-      );
-      return [];
+    if (d.mode !== Mode.None) {
+      return fatal(`${d.mode} tuple declaration passed checking`);
     }
     const initTv = this.tvOf(d.init);
     const temp: IrName = {
@@ -977,6 +986,32 @@ class Noder {
   }
 
   // ---- expressions ----------------------------------------------------------
+
+  // A range with any float bound has a float index, and every backend reads
+  // bounds of the index's type: an int bound becomes a float constant, or the
+  // same float() conversion a script would write.
+  private rangeBound(e: syntax.Expr, indexType: Type): IrExpr {
+    const bound = this.nodeExpr(e, indexType);
+    if (bound.type.kind !== TypeKind.Int || indexType.kind !== TypeKind.Float) {
+      return bound;
+    }
+    if (bound.kind === IrKind.Const) return {...bound, type: FloatType};
+    return {
+      kind: IrKind.CallNative,
+      pos: bound.pos,
+      type: FloatType,
+      qualifier: bound.qualifier,
+      native: {
+        name: 'float',
+        argTypes: [IntType],
+        resultType: FloatType,
+        effect: 'pure',
+      },
+      receiver: null,
+      args: [bound],
+      argumentEvaluationOrder: [0],
+    };
+  }
 
   private nodeExpr(e: syntax.Expr, expectedType: Type | null = null): IrExpr {
     const checked = this.tvOf(e);
@@ -1082,9 +1117,9 @@ class Noder {
           type: tv.type,
           qualifier: tv.qualifier,
           index,
-          from: this.nodeExpr(e.from, index.type),
-          to: this.nodeExpr(e.to, index.type),
-          step: e.step !== null ? this.nodeExpr(e.step, index.type) : null,
+          from: this.rangeBound(e.from, index.type),
+          to: this.rangeBound(e.to, index.type),
+          step: e.step !== null ? this.rangeBound(e.step, index.type) : null,
           body: this.nodeBlock(e.body, tv.type),
         };
       }
@@ -1198,6 +1233,11 @@ class Noder {
         };
       }
       return this.read(this.nameOf(object), e.pos);
+    }
+    const exported = this.info.uses.get(e.sel);
+    if (exported?.kind === ObjectKind.Variable) {
+      // A computed library export: its package global's name.
+      return this.read(this.nameOf(exported), e.pos);
     }
     const selection = this.info.selections.get(e);
     if (selection?.kind !== SelectionKind.Field) {
@@ -1454,6 +1494,9 @@ class Noder {
   }
 
   private nodeIf(e: syntax.IfExpr, tv: TypeAndValue): IrExpr {
+    // Both branches are noded even when the condition is a constant: the
+    // program keeps every output and call site the checker saw, and a backend
+    // may skip the branch that never runs.
     let elseBlock: BlockExpr | null = null;
     if (e.else !== null) {
       elseBlock =

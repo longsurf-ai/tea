@@ -60,7 +60,12 @@ import {
   type NativeVar,
 } from './catalog';
 import {isImportError, type Importer, type SourcePackage} from './importer';
-import {bindExpressionNames, bindFileNames, bindFunctionNames} from './binding';
+import {
+  bindExpressionNames,
+  bindFileNames,
+  bindFunctionNames,
+  isInputAlias,
+} from './binding';
 import {
   CallKind,
   SelectionKind,
@@ -146,6 +151,13 @@ const ENTRY_PACKAGE_PATH = '@entry';
 
 type PackagePhase = 'checking' | 'checked' | 'failed';
 
+// A type argument whose constraint is checked once declarations finish.
+interface PendingSatisfaction {
+  readonly object: StructObject;
+  readonly constraint: InterfaceObject;
+  readonly pos: Pos;
+}
+
 type PackageMemberResult =
   | {readonly matched: false}
   | {
@@ -220,6 +232,8 @@ class Checker {
     TypeParameterObject
   >();
   private readonly pendingGenericMethodValidation = new Set<StructObject>();
+  // Non-null while declareMembers runs: constraint checks wait for it.
+  private pendingSatisfaction: PendingSatisfaction[] | null = null;
   private substitutions: ReadonlyMap<string, TypeSubstitution> | null = null;
   // Names bound by the implicit imports — the redeclare guard's set; the
   // checker never learns where these libraries come from.
@@ -234,6 +248,11 @@ class Checker {
   private methodErrorAttempts = 0;
   private validatingMethod = false;
   private returnValues: TypeAndValue[] | null = null;
+  // Whether the code being checked runs whenever its script or function body
+  // does: every enclosing `if` has a constant condition that selects it, and
+  // no loop, `switch` arm or earlier `return` stands in the way. A
+  // `runtime.error` that certainly runs is a compile error.
+  private certain = true;
   private readonly reportedMethodDiagnostics = new Map<
     MethodObject,
     Set<string>
@@ -295,7 +314,13 @@ class Checker {
         this.implicitNames.add(name);
       }
     }
-    for (const source of importer.implicit()) {
+    // Preludes are checked before implicit libraries such as `ta`, which read
+    // their names, so a prelude never sees `ta`: nor does one opened as the
+    // checked document.
+    const rootIsPrelude = importer
+      .prelude()
+      .some(source => source.path === this.rootLibrary);
+    for (const source of rootIsPrelude ? [] : importer.implicit()) {
       const before = errors.count;
       const pkg = this.libraryPackage(source);
       if (errors.count !== before) {
@@ -385,21 +410,7 @@ class Checker {
       );
     } else {
       name = libraryDeclarationName(headers[0]) ?? name;
-      if (!isSourcePackageName(name)) {
-        this.error(
-          headers[0].pos,
-          `library name '${name}' is not a valid source identifier`,
-        );
-      }
-      if (file.stmtList[0] !== headers[0]) {
-        this.error(
-          headers[0].pos,
-          'library() declaration must be the first statement in a library package',
-        );
-      }
-      for (const duplicate of headers.slice(1)) {
-        this.error(duplicate.pos, 'duplicate library() declaration');
-      }
+      this.checkLibraryHeaders(file, headers, name);
     }
 
     const scope = new Scope(null);
@@ -413,15 +424,44 @@ class Checker {
     return state.pkg;
   }
 
+  /**
+   * The rules every library() header follows, whether the library is imported
+   * or opened on its own: a valid name, first in the file, and only one.
+   */
+  private checkLibraryHeaders(
+    file: syntax.File,
+    headers: readonly syntax.Stmt[],
+    name: string,
+  ): void {
+    if (!isSourcePackageName(name)) {
+      this.error(
+        headers[0]!.pos,
+        `library name '${name}' is not a valid source identifier`,
+      );
+    }
+    if (file.stmtList[0] !== headers[0]) {
+      this.error(
+        headers[0]!.pos,
+        'library() declaration must be the first statement in a library package',
+      );
+    }
+    for (const duplicate of headers.slice(1)) {
+      this.error(duplicate.pos, 'duplicate library() declaration');
+    }
+  }
+
   checkPackage(): CheckedPackage {
     const file = this.rootState.pkg.files[0];
     this.withPackage(this.rootState, () => {
+      if (this.rootLibrary !== null) {
+        this.checkLibraryHeaders(
+          file,
+          file.stmtList.filter(isLibraryDeclaration),
+          this.rootLibrary,
+        );
+      }
       this.checkImports(file);
-      this.predeclareNominalTypes(file);
-      this.predeclareFunctions(file);
-      this.resolveInterfaceMethods(file);
-      this.resolveGenericStructs(file);
-      this.resolveStructMembers(file);
+      this.declareMembers(file);
       bindFileNames(file, this.scope, this.info);
       this.info.scopes.set(file, this.scope);
       // A library opened as the checked document, as an editor does, checks
@@ -433,7 +473,8 @@ class Checker {
           stmt.kind === NodeKind.DeclStmt &&
           stmt.exported
         ) {
-          this.checkInputAlias(stmt);
+          if (isInputAlias(stmt)) this.checkInputAlias(stmt);
+          else this.checkComputedExport(stmt, file.stmtList.indexOf(stmt));
         } else if (stmt.kind !== NodeKind.ImportStmt) {
           this.checkStmt(stmt);
         }
@@ -468,6 +509,7 @@ class Checker {
       this.validateMethodDeclarations([
         ...this.currentPackage.structDecls.values(),
       ]);
+      this.validateGenericInstanceMethods();
       this.validateUnusedGenericTemplates();
     });
     if (this.errors.count === 0) this.checkEmissions(file);
@@ -550,11 +592,7 @@ class Checker {
     headers: readonly syntax.ExprStmt[],
   ): void {
     this.checkImports(file);
-    this.predeclareNominalTypes(file);
-    this.predeclareFunctions(file);
-    this.resolveInterfaceMethods(file);
-    this.resolveGenericStructs(file);
-    this.resolveStructMembers(file);
+    this.declareMembers(file);
     const owners = [...this.currentPackage.structDecls.values()];
     bindFileNames(file, this.scope, this.info);
     this.info.scopes.set(file, this.scope);
@@ -611,7 +649,8 @@ class Checker {
         continue;
       }
       if (stmt.kind === NodeKind.DeclStmt && stmt.exported) {
-        this.checkInputAlias(stmt);
+        if (isInputAlias(stmt)) this.checkInputAlias(stmt);
+        else this.checkComputedExport(stmt, file.stmtList.indexOf(stmt));
         continue;
       }
       if (isLegalPackageGlobal(stmt)) {
@@ -642,6 +681,7 @@ class Checker {
     }
     this.orderPackageGlobals();
     this.validateMethodDeclarations(owners);
+    this.validateGenericInstanceMethods();
     this.validateUnusedGenericTemplates();
   }
 
@@ -686,6 +726,41 @@ class Checker {
     }
   }
 
+  // `export obv = ta.cum(...)`: a library value that each program reading it
+  // computes once per bar, before its own statements, and shares between all
+  // of its reads. It may read market data and keep state through the
+  // functions it calls; it cannot emit, request or change other state, and
+  // nothing may assign it.
+  private checkComputedExport(
+    stmt: syntax.DeclStmt,
+    sourceOrder: number,
+  ): void {
+    if (stmt.target.kind !== NodeKind.Name) {
+      return fatal('an exported value target must be a name');
+    }
+    const object = this.boundName(stmt.target);
+    object.packageGlobal = {
+      pkg: this.currentPackage.pkg,
+      decl: stmt,
+      sourceOrder,
+    };
+    const dependencies = new Set<SemanticDependency>();
+    this.dependencyCollectors.push(dependencies);
+    this.checkDecl(stmt, initTv => {
+      const initializer: CheckedDefaultExpression = {
+        expr: stmt.init,
+        info: this.info,
+        tv: initTv,
+        dependencies,
+      };
+      this.info.packageGlobalInitializers.set(object, initializer);
+      this.checkPackageGlobalInitializer(object, initializer);
+    });
+    this.dependencyCollectors.pop();
+    this.currentPackage.runtimeGlobals.push(object);
+    this.currentPackage.exports.set(object.name, object);
+  }
+
   private checkImports(file: syntax.File): void {
     for (const stmt of file.stmtList) {
       if (stmt.kind === NodeKind.ImportStmt) {
@@ -699,7 +774,12 @@ class Checker {
     initializer: CheckedDefaultExpression,
   ): void {
     for (const dependency of initializer.dependencies) {
-      if (dependency.kind === ObjectKind.Builtin) {
+      // A var is initialized once, before any bar; a computed export runs on
+      // every bar and may read the bar's values.
+      if (
+        dependency.kind === ObjectKind.Builtin &&
+        object.storage !== Storage.PerBar
+      ) {
         this.error(
           initializer.expr.pos,
           `package global '${object.name}' initializer cannot read runtime builtin '${dependency.name}'`,
@@ -793,6 +873,7 @@ class Checker {
       );
     }
     if (
+      global.storage !== Storage.PerBar &&
       [...instance.info.defs.values()].some(
         object =>
           object.kind === ObjectKind.Variable &&
@@ -922,6 +1003,44 @@ class Checker {
       this.stateByPackage.get(pkg) ??
       fatal(`semantic package '${pkg.path}' has no checker state`)
     );
+  }
+
+  // Declares the file's types and functions. A generic annotation met on the
+  // way, such as a parameter written `Box<Price>`, instantiates its type
+  // before every struct and interface has its methods, so whether the type
+  // arguments satisfy their constraints is checked once all of them do.
+  // Declaration order then never decides it.
+  private declareMembers(file: syntax.File): void {
+    const outer = this.pendingSatisfaction;
+    const pending: PendingSatisfaction[] = [];
+    this.pendingSatisfaction = pending;
+    try {
+      this.predeclareNominalTypes(file);
+      this.resolveGenericStructs(file);
+      this.predeclareFunctions(file);
+      this.resolveInterfaceMethods(file);
+      this.resolveStructMembers(file);
+    } finally {
+      this.pendingSatisfaction = outer;
+    }
+    for (const {object, constraint, pos} of pending) {
+      this.checkSatisfaction(object, constraint, pos);
+    }
+  }
+
+  private checkSatisfaction(
+    object: StructObject,
+    constraint: InterfaceObject,
+    pos: Pos,
+  ): void {
+    if (this.pendingSatisfaction !== null) {
+      this.pendingSatisfaction.push({object, constraint, pos});
+      return;
+    }
+    const mismatch = satisfactionError(object, constraint);
+    if (mismatch !== null) {
+      this.error(pos, mismatch);
+    }
   }
 
   private predeclareNominalTypes(file: syntax.File): void {
@@ -1466,6 +1585,7 @@ class Checker {
       }
       diagnostics.add(key);
     }
+    this.info.errors.push(pos);
     this.errors.errorAt(pos, msg);
   }
 
@@ -1927,6 +2047,11 @@ class Checker {
     pattern: syntax.TuplePattern,
     initTv: TypeAndValue,
   ): void {
+    // Persistent storage and compile-time folding are per name; neither has a
+    // tuple form yet.
+    if (d.mode !== Mode.None) {
+      this.error(d.pos, `${d.mode} tuple declarations are not supported yet`);
+    }
     let elems: readonly Type[] | null = null;
     if (initTv.type.kind === TypeKind.Tuple) {
       const tuple = initTv.type as TupleType;
@@ -2065,6 +2190,12 @@ class Checker {
       this.error(
         target.pos,
         `cannot reassign '${target.value}' declared with const`,
+      );
+    }
+    if (entry.packageGlobal !== null && entry.storage === Storage.PerBar) {
+      this.error(
+        target.pos,
+        `cannot assign '${target.value}': an exported value is computed on every bar`,
       );
     }
     if (
@@ -3241,6 +3372,32 @@ class Checker {
           this.info.uses.set(s.x, entry);
           return this.builtinTv(member, s);
         }
+        if (
+          member?.kind === ObjectKind.Variable &&
+          member.packageGlobal !== null
+        ) {
+          // A computed export, such as ta.obv: a read of that package
+          // global, which the program then computes on every bar.
+          this.info.uses.set(s.x, entry);
+          this.info.uses.set(s.sel, member);
+          if (this.funcBoundary !== null) this.recordFunctionDependency(member);
+          else this.recordExpressionDependency(member);
+          return {type: member.type, qualifier: member.qualifier, value: null};
+        }
+        // Name the member, not the package: `ta.tr` is Pine's variable form.
+        const written = `${s.x.value}.${s.sel.value}`;
+        if (member === undefined) {
+          this.error(s.pos, `undeclared name '${written}'`);
+          return INVALID_TV;
+        }
+        if (member.kind === ObjectKind.Function) {
+          this.error(s.pos, `'${written}' is a function; call it`);
+          return INVALID_TV;
+        }
+        if (member.kind !== ObjectKind.Variable) {
+          this.error(s.pos, `'${written}' is a type, not a value`);
+          return INVALID_TV;
+        }
       }
       if (entry?.kind === ObjectKind.Enum) {
         this.info.uses.set(s.x, entry);
@@ -3588,9 +3745,13 @@ class Checker {
     }
     if (direct.kind === NodeKind.SelectorExpr) {
       const selection = this.info.selections.get(direct);
+      const exported = this.info.uses.get(direct.sel);
       return (
-        selection?.kind === SelectionKind.Builtin &&
-        selection.builtin.binding !== null
+        (selection?.kind === SelectionKind.Builtin &&
+          selection.builtin.binding !== null) ||
+        // A computed library export, such as ta.obv[1].
+        (exported?.kind === ObjectKind.Variable &&
+          exported.packageGlobal !== null)
       );
     }
     return false;
@@ -3609,6 +3770,11 @@ class Checker {
     e.elems.forEach((elem, i) => {
       if (tvs[i].type.kind === TypeKind.Na) {
         this.error(elem.pos, 'na tuple element requires a concrete type');
+      }
+      // A tuple only carries values to a destructuring declaration, so it
+      // cannot be one of another tuple's values.
+      if (tvs[i].type.kind === TypeKind.Tuple) {
+        this.error(elem.pos, 'a tuple element cannot itself be a tuple');
       }
     });
     return {
@@ -3631,15 +3797,19 @@ class Checker {
     }
     const savedFlowQualifier = this.flowQualifier;
     this.flowQualifier = joinQualifiers(savedFlowQualifier, condTv.qualifier);
+    const savedCertain = this.certain;
+    this.certain = savedCertain && condTv.value === true;
     const thenTv = this.checkBlock(e.then);
     let elseType: Type | null = null;
     if (e.else !== null) {
+      this.certain = savedCertain && condTv.value === false;
       const elseTv =
         e.else.kind === NodeKind.IfExpr
           ? this.checkExpr(e.else)
           : this.checkBlock(e.else);
       elseType = elseTv.type;
     }
+    this.certain = savedCertain;
     this.flowQualifier = savedFlowQualifier;
     // Mismatched branch types are legal in statement position; the structure
     // then simply has no value, and value-position consumers report that.
@@ -3769,6 +3939,18 @@ class Checker {
 
   private switchTv(e: syntax.SwitchExpr): TypeAndValue {
     const subjectTv = e.subject !== null ? this.checkExpr(e.subject) : null;
+    // Arms match the subject by `==`, which aggregates and tuples do not have.
+    if (
+      e.subject !== null &&
+      subjectTv !== null &&
+      (isAggregateType(subjectTv.type) ||
+        subjectTv.type.kind === TypeKind.Tuple)
+    ) {
+      this.error(
+        e.subject.pos,
+        `cannot switch on ${formatType(subjectTv.type)}: aggregate equality is not defined`,
+      );
+    }
     const savedFlowQualifier = this.flowQualifier;
     if (subjectTv !== null) {
       this.flowQualifier = joinQualifiers(
@@ -3778,6 +3960,8 @@ class Checker {
     }
     let type: Type | null = null;
     let sawDefault = false;
+    const savedCertain = this.certain;
+    this.certain = false;
     for (const [index, arm] of e.arms.entries()) {
       if (arm.pattern === null) {
         if (sawDefault) {
@@ -3818,6 +4002,7 @@ class Checker {
       if (!alwaysReturns(arm.body))
         type = type === null ? armTv.type : unifyOrVoid(type, armTv.type);
     }
+    this.certain = savedCertain;
     this.flowQualifier = savedFlowQualifier;
     return {type: type ?? VoidType, qualifier: Qualifier.Series, value: null};
   }
@@ -3829,8 +4014,14 @@ class Checker {
     this.blockDepth += 1;
     let last: TypeAndValue | null = null;
     let qualifier: Qualifier = Qualifier.Const;
+    const savedCertain = this.certain;
     for (const [i, stmt] of b.stmtList.entries()) {
+      const returns = this.returnValues?.length ?? 0;
       const tv = this.checkStmt(stmt);
+      // After a statement that may return, the rest of the block may not run.
+      if ((this.returnValues?.length ?? 0) > returns) {
+        this.certain = false;
+      }
       if (tv !== null) {
         // A block's result may be consumed at bind time. Its qualifier must
         // therefore account for every evaluated statement, not only the last
@@ -3844,6 +4035,7 @@ class Checker {
     }
     this.blockDepth -= 1;
     this.scope = savedScope;
+    this.certain = savedCertain;
     const result = last ?? VOID_TV;
     return {...result, qualifier};
   }
@@ -4415,10 +4607,13 @@ class Checker {
     decl.params.forEach((p, i) => {
       const annotated = template.declaredParams[i];
       let declaredDefault: CheckedDefaultExpression | null = null;
+      // A method's parameters are all annotated; a function's default is
+      // checked against its annotation when it has one.
       if (
-        template.receiver !== null &&
         p.defaultValue !== null &&
-        !template.invalidDefaults.has(i)
+        (template.receiver === null
+          ? annotated !== null
+          : !template.invalidDefaults.has(i))
       ) {
         const declaredAnnotation =
           annotated ??
@@ -4521,10 +4716,13 @@ class Checker {
     this.instanceStack.push(instance);
     const savedReturns = this.returnValues;
     this.returnValues = [];
+    const savedCertain = this.certain;
+    this.certain = true;
     let bodyTv =
       decl.body.kind === NodeKind.Block
         ? this.checkBlock(decl.body)
         : this.checkExpr(decl.body);
+    this.certain = savedCertain;
     const returned = this.returnValues;
     this.returnValues = savedReturns;
     this.instanceStack.pop();
@@ -4590,7 +4788,6 @@ class Checker {
     this.blockDepth = saved.blockDepth;
     this.funcBoundary = saved.boundary;
     this.substitutions = saved.substitutions;
-    this.drainGenericMethodValidation();
     return instance;
   }
 
@@ -4609,6 +4806,17 @@ class Checker {
           : `unknown function '${name}'`,
       );
       return INVALID_TV;
+    }
+    // A misplaced request is the structural error. Report it before argument
+    // checks, whose errors on the same line would otherwise hide it.
+    if (
+      candidates.every(candidate => candidate.effect === Effect.Request) &&
+      !this.isRequestBinding(c)
+    ) {
+      this.error(
+        c.pos,
+        'request call must directly initialize one plain top-level variable',
+      );
     }
     if (
       this.rejectSuppliedStagedNativeArguments(
@@ -4703,6 +4911,22 @@ class Checker {
           } else {
             receiver = {mode: 'value', value: checked};
           }
+        }
+        if (
+          candidate.name === 'runtime.error' &&
+          this.certain &&
+          this.loopDepth === 0 &&
+          !this.validatingMethod
+        ) {
+          const message = outcome.args[0]
+            ? this.tvOf(outcome.args[0]).value
+            : null;
+          this.error(
+            c.pos,
+            typeof message === 'string'
+              ? message
+              : 'runtime.error always runs here',
+          );
         }
         const resolved: NativeCall = {
           kind: CallKind.Native,
@@ -4969,6 +5193,12 @@ class Checker {
   // A request call owns a child semantic context. The same call syntax may be
   // checked by multiple function instances, so the capture belongs to this
   // active Info's CallResolution rather than a root-global syntax map.
+  // Whether `c` is the call that directly initializes the top-level
+  // declaration being checked, the one place a request may appear.
+  private isRequestBinding(c: syntax.CallExpr): boolean {
+    return this.requestBinding !== null && this.requestBinding.call === c;
+  }
+
   private checkRequest(
     c: syntax.CallExpr,
     native: NativeFunc,
@@ -4977,12 +5207,6 @@ class Checker {
   ): TypeAndValue {
     const binding = this.requestBinding;
     const validBinding = binding !== null && binding.call === c;
-    if (!validBinding) {
-      this.error(
-        c.pos,
-        'request call must directly initialize one plain top-level variable',
-      );
-    }
     // `fill` is the one request option.
     const fillIndex = native.params.findIndex(param => param.name === 'fill');
     const fill = fillIndex === -1 ? null : (args[fillIndex] ?? null);
@@ -5747,10 +5971,7 @@ class Checker {
       if (object === undefined) {
         continue;
       }
-      const mismatch = satisfactionError(object, parameter.constraint);
-      if (mismatch !== null) {
-        this.error(pos, mismatch);
-      }
+      this.checkSatisfaction(object, parameter.constraint, pos);
     }
 
     const fields: FieldObject[] = [];
@@ -5918,20 +6139,19 @@ class Checker {
       this.dependencyCollectors.push(...saved.dependencyCollectors);
     }
     this.pendingGenericMethodValidation.add(object);
-    this.drainGenericMethodValidation();
     return object;
   }
 
-  private drainGenericMethodValidation(): void {
-    if (
-      this.instantiating.size !== 0 ||
-      this.pendingGenericMethodValidation.size === 0
-    ) {
-      return;
+  // Validates the methods of generic instances made so far, as the package's
+  // own structs are validated: once its statements are checked, so a method
+  // body may use any struct the package declares. Validating can instantiate
+  // further types, which join the queue.
+  private validateGenericInstanceMethods(): void {
+    while (this.pendingGenericMethodValidation.size !== 0) {
+      const owners = [...this.pendingGenericMethodValidation];
+      this.pendingGenericMethodValidation.clear();
+      this.validateMethodDeclarations(owners);
     }
-    const owners = [...this.pendingGenericMethodValidation];
-    this.pendingGenericMethodValidation.clear();
-    this.validateMethodDeclarations(owners);
   }
 
   private typeNameMentionsParameter(

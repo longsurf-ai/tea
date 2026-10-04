@@ -34,7 +34,9 @@ export type ModuleInputs = Module['inputs'];
 export class Module<C extends Context = Context> {
   /** Type-only link lets Context infer this program's fields without inventing new ones. */
   declare protected readonly [contextType]: C;
+  /** Always {@link RUNTIME_ABI_VERSION}; construction rejects any other value. */
   declare readonly abi: typeof RUNTIME_ABI_VERSION;
+  /** Data the program reads; see {@link ModuleInputs}. */
   declare readonly inputs: {
     readonly schema: Schema;
     readonly series: readonly {
@@ -44,6 +46,7 @@ export class Module<C extends Context = Context> {
     }[];
     readonly builtins: readonly Builtin[];
   };
+  /** Parameter declarations; each `value` is absent until bound. */
   declare readonly parameters: readonly Parameter[];
   /** Binding persistence, history requirements and independent written call sites. */
   declare readonly state: {
@@ -53,6 +56,7 @@ export class Module<C extends Context = Context> {
   declare readonly outputs: {
     readonly schema: Schema;
   };
+  /** Request children, each record holding its own child Module and context. */
   declare readonly requests: readonly Request[];
 
   private readonly execute: (context: Context) => void;
@@ -245,11 +249,19 @@ export class Module<C extends Context = Context> {
   ready(): boolean {
     return this.remaining().length === 0 && concrete(this);
   }
+  /**
+   * Names of parameters that have no value yet. Defaults apply only when
+   * `bind()` runs, so before the first bind this lists every parameter.
+   */
   remaining(): readonly string[] {
     return this.parameters
       .filter(parameter => !Object.hasOwn(parameter, 'value'))
       .map(parameter => parameter.name);
   }
+  /**
+   * Run the program's entry function once. {@link Context.step} calls this
+   * inside its transaction; hosts call `step()` instead.
+   */
   main(context: C): void {
     this.execute(context);
   }
