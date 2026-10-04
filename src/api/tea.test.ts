@@ -128,15 +128,6 @@ describe('tea', () => {
     expect(node.ready()).toBe(true);
   });
 
-  test('a single DataStream must supply a series that is still unbound', () => {
-    const node = tea`emit "output0" close`.bind(numericSource(1));
-    expect(() => node.bind(numericSource(2))).toThrow(
-      new BindError('every series is already bound'),
-    );
-    // With nothing bound yet, a stream without series drives the steps.
-    expect(tea`emit "output0" 1`.bind(numericSource(1)).ready()).toBe(true);
-  });
-
   test('a selected source needs only its own series, not the default', async () => {
     const node = tea`
       source = input.source(close)

@@ -138,15 +138,16 @@ export interface Node {
    *
    * Streams bound to one Node are paired by position: their first rows form
    * the first input row, and so on, and the run ends when any of them ends.
-   * Paired rows must agree on `time`, when both have one, and on
-   * `provisional`. Streams with a regular {@link Clock} must share it.
+   * A single DataStream bound after every series is bound supplies none: it
+   * only drives the steps, and is paired in like the others. Paired rows must
+   * agree on `time`, when both have one, and on `provisional`. Streams with a
+   * regular {@link Clock} must share it.
    *
    * Throws {@link BindError} for an unknown parameter or a value the input
    * does not accept, a key or path that matches no declaration or more than
-   * one, a series that is already bound, a single DataStream when every
-   * series is already bound, a schema that lacks a series or gives it the
-   * wrong type, a `provisional` field that is not a non-nullable `Bool`, or
-   * clocks that disagree. Throws `Error` when this Node is
+   * one, a series that is already bound, a schema that lacks a series or gives
+   * it the wrong type, a `provisional` field that is not a non-nullable
+   * `Bool`, or clocks that disagree. Throws `Error` when this Node is
    * disposed. Rows that break the time or pairing rules fail the run instead,
    * and the error reaches observers through `error()`.
    *
@@ -560,12 +561,7 @@ class TeaNode implements Node {
     const children: (readonly [TeaNode, DataStream<unknown>])[] = [];
     /* Handling name-stream bindings */
     if (input instanceof DataStream) {
-      const unbound = names.filter(name => !this.connected.has(name));
-      // A stream that supplies no series only drives the steps, which the
-      // stream already bound does; pairing it in would only cut runs short.
-      if (unbound.length === 0 && this.data !== null)
-        throw new BindError('every series is already bound');
-      root.push([unbound, input]);
+      root.push([names.filter(name => !this.connected.has(name)), input]);
     } else {
       for (const [name, stream] of Object.entries(input)) {
         const ids = this.module.requests.flatMap((request, id) =>
