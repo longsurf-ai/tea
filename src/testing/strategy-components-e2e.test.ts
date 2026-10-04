@@ -388,6 +388,34 @@ describe('Tea strategy components end to end', () => {
     });
   });
 
+  test('an order sized to spend exactly the cash fills although q * p rounds past it', async () => {
+    // At 15, 1000 / 15 * 15 is 1000.0000000000001 in floating point.
+    const source = [
+      '',
+      'import broker',
+      'import portfolio',
+      'import trade',
+      'last_bar = input.int(0)',
+      'var entry = trade.nextOpen(broker.new(), portfolio.new(initialCash = 1000.0))',
+      'var target = trade.nextOpen(broker.new(), portfolio.new(initialCash = 1000.0))',
+      'entry.begin_bar(open, bar_index)',
+      'target.begin_bar(open, bar_index)',
+      'if bar_index == 0',
+      '    entry.entry("Long", trade.Direction.long, sizing = trade.percentOfEquity(100.0))',
+      '    target.rebalance("All", trade.targetPercentOfEquity(100.0))',
+      'entry.end_bar(close, bar_index == last_bar)',
+      'target.end_bar(close, bar_index == last_bar)',
+      'emit "output0" entry.position_quantity()',
+      'emit "output1" target.position_quantity()',
+    ].join('\n');
+    const {sink} = await execute(
+      source,
+      ['open,close', '15,15', '15,15', ''].join('\n'),
+    );
+    expectNumbersClose(valuesFor(sink, 1), [0, 1000 / 15]);
+    expectNumbersClose(valuesFor(sink, 2), [0, 1000 / 15]);
+  });
+
   test('applies the configured long-margin gate only when margin is enabled', async () => {
     const source = [
       '',

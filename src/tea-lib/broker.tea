@@ -1572,7 +1572,10 @@ export type BrokerEmulator
 			accountStateValid = command.kind == CommandKind.entry ? entryCapacity : command.tradeId > 0 and closeSideValid
 			marginRate = command.side == Side.buy ? account.marginLong : account.marginShort
 			capitalAvailable = command.side == Side.buy ? account.buyingPower : this.equity_at(closePrice, account)
-			capitalRequired = notional * marginRate / 100.0 + fee
+			// A size taken from a notional costs that notional; q * p could round
+			// past it and reject an order that spends exactly the capital.
+			sizedNotional = hasExplicitNotional ? command.notional : notional
+			capitalRequired = sizedNotional * marginRate / 100.0 + fee
 			capitalValid = command.kind == CommandKind.close or marginRate == 0.0 or capitalAvailable >= capitalRequired
 			if accountStateValid and capitalValid and closePrice > 0.0 and price > 0.0 and quantity > 0.0 and fee >= 0.0
 				tradeId = command.kind == CommandKind.entry ? this.nextTradeId : command.tradeId
@@ -1682,7 +1685,8 @@ export type BrokerEmulator
 						fillSide = delta > 0.0 ? Side.buy : Side.sell
 						price = this.execution_price(referencePrice, fillSide)
 						requestedQuantity = math.abs(delta)
-						buyCapacity = account.positionQuantity >= 0.0 and fillSide == Side.buy and account.marginLong != 0.0 ? math.max(this.default_buy_quantity(price, account.buyingPower), 0.0) : requestedQuantity
+						buyLimited = account.positionQuantity >= 0.0 and fillSide == Side.buy and account.marginLong != 0.0
+						buyCapacity = buyLimited ? math.max(this.default_buy_quantity(price, account.buyingPower), 0.0) : requestedQuantity
 						quantity = math.min(requestedQuantity, buyCapacity)
 						notional = quantity * price
 						fee = this.commission_for(quantity, notional)
@@ -1697,9 +1701,9 @@ export type BrokerEmulator
 						openingQuantity = crossesPosition ? math.abs(projectedQuantity) : math.max(math.abs(projectedQuantity) - math.abs(account.positionQuantity), 0.0)
 						closingSlippageCost = crossesPosition ? math.min(math.abs(account.positionQuantity), quantity) * math.abs(price - referencePrice) : 0.0
 						capitalRequired = openingQuantity * price * marginRate / 100.0 + fee + closingSlippageCost
-						// A capped buy spends the buying power by construction; recomputing
-						// its cost could only add rounding and reject it.
-						capped = quantity < requestedQuantity
+						// A buy that reaches the buying power spends it by construction;
+						// recomputing its cost could only add rounding and reject it.
+						capped = buyLimited and quantity >= buyCapacity
 						capitalValid = capped or not increasesExposure or marginRate == 0.0 or capitalAvailable >= capitalRequired
 						if capitalValid and quantity > 0.0 and price > 0.0 and fee >= 0.0
 							execution := Fill.new(this.nextFillId, order.id, order.commandId, fillSide, barIndex, referencePrice, price, quantity, notional, fee, order.orderType, CommandKind.rebalance)
@@ -1759,7 +1763,11 @@ export type BrokerEmulator
 						accountStateValid = order.kind == CommandKind.entry ? (isReversal or sameEntryDirection and entryCapacity) : order.kind == CommandKind.close and closeSideValid
 						marginRate = order.side == Side.buy ? account.marginLong : account.marginShort
 						capitalAvailable = order.side == Side.buy ? account.buyingPower : fillEquity
-						marginRequired = notional * marginRate / 100.0 + fee
+						// A size taken from a budget or a notional costs that amount; q * p
+						// could round past it and reject an order that spends exactly the
+						// capital, such as percentOfEquity(100) without commission.
+						sizedNotional = hasEquityPercent ? fillBudget : hasExplicitNotional ? order.notional : notional
+						marginRequired = sizedNotional * marginRate / 100.0 + fee
 						requiredCapital = hasCashBudget or hasEquityPercent and order.commissionIncluded ? (hasCashBudget ? order.cashBudget : fillBudget) : marginRequired
 						hasExplicitSize = sizeKinds > 0
 						capitalValid = isReversal or order.kind == CommandKind.close or (hasExplicitSize ? marginRate == 0.0 or capitalAvailable >= requiredCapital : capitalAvailable > 0.0)
