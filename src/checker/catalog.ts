@@ -1010,7 +1010,6 @@ function buildFuncs(): NativeFunc[] {
   // location replacement cannot be expressed in Tea source. Namespace and
   // method spellings resolve to these same catalog entries.
   funcs.push(
-    genericFunc('array.new', storableT, [], arrayT, Qualifier.Const),
     genericFunc(
       'array.new',
       storableT,
@@ -1021,6 +1020,7 @@ function buildFuncs(): NativeFunc[] {
       arrayT,
       JoinResult,
     ),
+    genericFunc('array.new', storableT, [], arrayT, Qualifier.Const),
     genericFunc(
       'array.from',
       storableT,
@@ -1072,18 +1072,18 @@ function buildFuncs(): NativeFunc[] {
       JoinResult,
     ),
     genericFunc('array.copy', storableT, [self(arrayT)], arrayT, JoinResult),
-    genericFunc('matrix.new', storableT, [], matrixT, Qualifier.Const),
     genericFunc(
       'matrix.new',
       storableT,
       [
         req('rows', IntType, Qualifier.Series, {acceptsNa: false}),
         req('columns', IntType, Qualifier.Series, {acceptsNa: false}),
-        req('initial', t, Qualifier.Series),
+        opt('initial', t, Qualifier.Series),
       ],
       matrixT,
       JoinResult,
     ),
+    genericFunc('matrix.new', storableT, [], matrixT, Qualifier.Const),
     genericFunc('matrix.rows', storableT, [self(matrixT)], IntType, JoinResult),
     genericFunc(
       'matrix.columns',

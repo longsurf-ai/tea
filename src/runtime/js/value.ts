@@ -831,6 +831,7 @@ export function matrix<E extends Value<unknown>>(element: E) {
       context: Context,
       ...shape:
         | []
+        | [rows: Value<number, 'int'>, columns: Value<number, 'int'>]
         | [
             rows: Value<number, 'int'>,
             columns: Value<number, 'int'>,

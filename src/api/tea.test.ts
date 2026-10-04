@@ -15,6 +15,7 @@ import {
   TimestampMillisecond,
   Utf8,
 } from 'apache-arrow';
+import {BindError} from '../runtime/errors';
 import * as io from '../runtime/io';
 import {d, i, m, ns, w, y, type Clock} from './clock';
 import {createNode, type Datum} from './node';
@@ -907,7 +908,7 @@ describe('tea', () => {
     expect(() => template.asStream()).toThrow(
       'Node is missing bindings: close',
     );
-    expect(() => template.to({})).toThrow('Node is missing bindings: close');
+    expect(() => template.to({})).toThrow(BindError);
 
     const node = template.bind(
       new DataStream(timedNumericSchema, new Subject<TimedNumericDatum>(), m),
@@ -1098,6 +1099,7 @@ describe('tea', () => {
 
     expect(teardowns).toBe(1);
     expect(sinkSubscription.closed).toBe(true);
+    expect(node.ready()).toBe(false);
     expect(() => node.bind({})).toThrow('Node is disposed');
     expect(() => node.to(new StepSink())).toThrow('Node is disposed');
   });

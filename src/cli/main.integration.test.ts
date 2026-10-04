@@ -114,6 +114,29 @@ describe('CLI Batch Recipe', () => {
     );
   });
 
+  test('a request script or rows out of time order are one line, without a stack', () => {
+    const request = invokeCli(
+      'run',
+      'tests/fixtures/cli/request.tea',
+      '-i',
+      DATA,
+    );
+    expect(request.status).toBe(1);
+    expect(request.stderr).toBe(
+      'tea: tea run binds no data for requests (daily); run the script through the JavaScript API\n',
+    );
+    const backwards = invokeCli(
+      'run',
+      SOURCE,
+      '-i',
+      'tests/fixtures/cli/time-backwards.csv',
+    );
+    expect(backwards.status).toBe(1);
+    expect(backwards.stderr).toBe(
+      'tea: DataStream time must be a nondecreasing bigint\n',
+    );
+  });
+
   test('reports semantic parameter failures from module.bind without a stack', () => {
     const result = invokeCli('run', SOURCE, '-i', DATA, '--scale', '5');
     expect(result.status).toBe(1);

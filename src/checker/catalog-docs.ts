@@ -1360,7 +1360,7 @@ c &= \min(\max(\mathit{transp}, 0), 100) \\
         rows: 'The number of rows.',
         columns: 'The number of columns.',
         initial:
-          'The value of every element. It is required when `rows` and `columns` are given.',
+          'The value of every element. Without it, every element is `na`, or `false` in a `matrix<bool>`.',
       },
       returns: 'A new matrix.',
       details: `Without arguments the matrix has no rows or columns, and the element type must be written: \`matrix.new<float>()\`. A matrix keeps its shape; no function adds or removes rows or columns. A negative or \`na\` dimension stops the run with an error. ${LIMIT}; a larger matrix also stops the run. ${ALLOCATIONS_LINK}; see {@link matrix.set}. A \`for … in\` loop cannot iterate over a matrix; loop over its rows and columns by index.`,

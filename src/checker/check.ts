@@ -4593,10 +4593,13 @@ class Checker {
     decl.params.forEach((p, i) => {
       const annotated = template.declaredParams[i];
       let declaredDefault: CheckedDefaultExpression | null = null;
+      // A method's parameters are all annotated; a function's default is
+      // checked against its annotation when it has one.
       if (
-        template.receiver !== null &&
         p.defaultValue !== null &&
-        !template.invalidDefaults.has(i)
+        (template.receiver === null
+          ? annotated !== null
+          : !template.invalidDefaults.has(i))
       ) {
         const declaredAnnotation =
           annotated ??

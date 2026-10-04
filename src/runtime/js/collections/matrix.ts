@@ -47,17 +47,19 @@ export function matrixCall(
     const element =
       result.element ?? fatal('matrix constructor requires an empty element');
     if (args.length === 0) return createMatrix(ctx, element, 0, 0, []);
-    requireArgs(operation, args, 3);
+    if (args.length !== 2 && args.length !== 3)
+      return fatal(`matrix.new received ${args.length} arguments`);
     const rows = shape(args[0], 'matrix rows');
     const columns = shape(args[1], 'matrix columns');
     const size = matrixSize(rows, columns, ctx.maxElements);
-    assertType(ctx, element, args[2], 'matrix initial value');
+    const initial = args[2] ?? element;
+    assertType(ctx, element, initial, 'matrix initial value');
     return createMatrix(
       ctx,
       element,
       rows,
       columns,
-      Array.from({length: size}, () => args[2]),
+      Array.from({length: size}, () => initial),
     );
   }
   const receiver = requireCollection(ctx, args[0], 'matrix');

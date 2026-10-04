@@ -68,6 +68,12 @@ export async function runCommand(
     loaded.bind(parameters),
     pineBuiltinSupplier(host.now),
   );
+  const requests = node.module.requests.map(request => request.name);
+  if (requests.length > 0) {
+    throw new OperationalError(
+      `tea run binds no data for requests (${requests.join(', ')}); run the script through the JavaScript API`,
+    );
+  }
 
   const declaration = node.module.outputs;
   const publications: Datum[] = [];

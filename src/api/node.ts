@@ -58,7 +58,7 @@ type BuiltinSupplier = (
 
 const noBuiltins: BuiltinSupplier = (path, module) => {
   if (module.inputs.builtins.length !== 0) {
-    throw new Error(
+    throw new BindError(
       `Node builtin input wiring is unavailable at request path ${path.join('.') || 'root'}`,
     );
   }
@@ -158,7 +158,8 @@ export interface Node {
 
   /**
    * Reports whether the main script and every request have all their
-   * parameters, request settings and streams bound.
+   * parameters, request settings and streams bound. A disposed Node is never
+   * ready.
    *
    * @example A program using `close` is not ready until a DataStream supplying
    * `close` has been bound.
@@ -184,8 +185,8 @@ export interface Node {
    * run continues, even with no observers left, until its inputs end or
    * `dispose()` is called.
    *
-   * Throws a plain `Error`, not a {@link BindError}, when this Node is
-   * disposed or `ready()` is false, with a message such as
+   * Throws a plain `Error` when this Node is disposed, and a
+   * {@link BindError} when `ready()` is false, with a message such as
    * `Node is missing bindings: close`, or when a request's stream has a clock
    * that does not match the request's timeframe.
    *
@@ -355,6 +356,7 @@ class TeaNode implements Node {
    */
   ready(): boolean {
     return (
+      !this.disposed &&
       this.module.ready() &&
       this.bindingSeriesNames().every(name => this.connected.has(name)) &&
       this.requests.every(request => request.ready())
@@ -453,7 +455,7 @@ class TeaNode implements Node {
         .filter((_, id) => !this.requests[id]!.ready())
         .map(request => request.name),
     ];
-    throw new Error(
+    throw new BindError(
       missing.length === 0
         ? 'Node configuration is incomplete'
         : `Node is missing bindings: ${missing.join(', ')}`,
@@ -699,12 +701,12 @@ class TeaNode implements Node {
           if (this.isRecord(parsed)) {
             const provisional = hasProvisional ? parsed.provisional : false;
             if (typeof provisional !== 'boolean')
-              throw new Error(
+              throw new BindError(
                 'DataStream provisional metadata must be boolean',
               );
             const entries = names.map(name => {
               if (!Object.hasOwn(parsed, name)) {
-                throw new Error(
+                throw new BindError(
                   `source value does not provide series '${name}'`,
                 );
               }
@@ -717,17 +719,17 @@ class TeaNode implements Node {
                   ? null
                   : undefined;
             if (previousProvisional && time !== activeTime)
-              throw new Error(
+              throw new BindError(
                 'DataStream must finalize its provisional step before advancing time',
               );
             if (typeof time === 'bigint') {
               if (previousTime !== null && time < previousTime) {
-                throw new Error(
+                throw new BindError(
                   'DataStream time must be a nondecreasing bigint',
                 );
               }
               if (time === previousTime && !previousProvisional)
-                throw new Error(
+                throw new BindError(
                   'DataStream cannot revise a committed timestamp',
                 );
               previousTime = time;
@@ -742,7 +744,9 @@ class TeaNode implements Node {
           }
           if (names.length === 1)
             return Object.freeze({[names[0]!]: parsed, provisional: false});
-          throw new Error(`source value does not provide series '${names[0]}'`);
+          throw new BindError(
+            `source value does not provide series '${names[0]}'`,
+          );
         }),
       );
     });
@@ -751,14 +755,18 @@ class TeaNode implements Node {
   /** Validates one exact epoch-millisecond input time before execution. */
   private inputTime(value: unknown, field: 'time'): bigint {
     if (typeof value !== 'bigint' && typeof value !== 'number') {
-      throw new Error(`DataStream ${field} must be an exact epoch-ms integer`);
+      throw new BindError(
+        `DataStream ${field} must be an exact epoch-ms integer`,
+      );
     }
     const number = Number(value);
     if (
       !Number.isSafeInteger(number) ||
       (typeof value === 'bigint' && BigInt(number) !== value)
     ) {
-      throw new Error(`DataStream ${field} must be an exact epoch-ms integer`);
+      throw new BindError(
+        `DataStream ${field} must be an exact epoch-ms integer`,
+      );
     }
     return BigInt(number);
   }
@@ -794,10 +802,10 @@ class TeaNode implements Node {
           Object.hasOwn(right, 'time') &&
           left.time !== right.time
         ) {
-          throw new Error('synchronized DataStream times disagree');
+          throw new BindError('synchronized DataStream times disagree');
         }
         if (left.provisional !== right.provisional)
-          throw new Error(
+          throw new BindError(
             'synchronized DataStream provisional states disagree',
           );
         return [Object.freeze({...left, ...right}), 1];
@@ -842,7 +850,7 @@ class TeaNode implements Node {
   private numericSeries(value: unknown): number {
     if (value === undefined) return Number.NaN;
     if (typeof value !== 'number') {
-      throw new TypeError('Tea series input must be numeric');
+      throw new BindError('Tea series input must be numeric');
     }
     return value;
   }
@@ -1069,7 +1077,7 @@ class TeaNode implements Node {
           finalizedBoundary !== null &&
           this.eventTime(datum, 'child') <= finalizedBoundary
         )
-          throw new Error(
+          throw new BindError(
             `request '${spec.name}' received a new child step after its parent interval finalized`,
           );
         currentChildIndex = index;
@@ -1156,7 +1164,7 @@ class TeaNode implements Node {
   private requestClock(spec: Request, child: TeaNode): Clock {
     const expected = timeframeClock(spec.context?.timeframe ?? '');
     if (expected !== i && child.clock !== i && expected !== child.clock) {
-      throw new Error(
+      throw new BindError(
         `request '${spec.name}' expects clock ${expected}, received ${child.clock}`,
       );
     }
@@ -1189,7 +1197,7 @@ class TeaNode implements Node {
     }
     const ratio = this.clock / childClock;
     if (ratio > BigInt(Number.MAX_SAFE_INTEGER)) {
-      throw new Error(`request '${spec.name}' clock ratio is too large`);
+      throw new BindError(`request '${spec.name}' clock ratio is too large`);
     }
     return Number(ratio);
   }
@@ -1294,7 +1302,9 @@ class TeaNode implements Node {
         typeof mainTime !== 'bigint' ||
         (previousMain !== null && mainTime <= previousMain)
       ) {
-        throw new Error('main DataStream time must be an increasing bigint');
+        throw new BindError(
+          'main DataStream time must be an increasing bigint',
+        );
       }
       const values: Stored[] = [];
       let consume = 0;

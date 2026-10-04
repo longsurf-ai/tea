@@ -920,6 +920,23 @@ describe('calls', () => {
 });
 
 describe('diagnostics', () => {
+  test("a function parameter's default must fit its annotation", () => {
+    const errorsOf = (src: string) =>
+      checkText(src).errors.map(error => error.msg);
+    expect(errorsOf('f(float x = "a") => x\ny = f()')).toEqual([
+      "default for parameter 'x' in 'f': cannot use string as float",
+    ]);
+    expect(errorsOf('f(int x = 1.5) => x\ny = f()')).toEqual([
+      "default for parameter 'x' in 'f': cannot use float as int",
+    ]);
+    expect(errorsOf('f(bool x = na) => x\ny = f()')).toEqual([
+      "default for parameter 'x' in 'f': cannot use na as bool",
+    ]);
+    expect(
+      errorsOf('f(float x = na, float y = 1, z = "a") => x + y\nv = f()'),
+    ).toEqual([]);
+  });
+
   test('indicator() is a once-only header of an entry script', () => {
     const errorsOf = (src: string) =>
       checkText(src).errors.map(error => error.msg);

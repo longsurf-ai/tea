@@ -440,13 +440,16 @@ describe('signature help', () => {
   });
 
   test('the active signature is the first with enough parameters', () => {
-    const found = help('a = array.new<float>(|');
+    const found = help('a = math.round(1.5, |');
     expect(found?.signatures.map(s => s.label)).toEqual(
-      nativeFuncs('array.new')!.map(formatNativeSignature),
+      nativeFuncs('math.round')!.map(formatNativeSignature),
     );
-    // `array.new()` takes nothing, so the overload with a `size` is active.
-    expect(found).toMatchObject({activeSignature: 1, activeParameter: 0});
-    expect(found?.signatures[1].parameters?.[0].label).toBe('series int size');
+    // `math.round(number)` takes one argument, so the overload with a
+    // `precision` is active.
+    expect(found).toMatchObject({activeSignature: 1, activeParameter: 1});
+    expect(found?.signatures[1].parameters?.[1].label).toBe(
+      'series int precision',
+    );
     // No overload takes a second argument: the first signature stands.
     expect(help('x = str.tostring(1, |')).toMatchObject({
       activeSignature: 0,

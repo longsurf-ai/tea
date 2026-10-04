@@ -10,11 +10,13 @@ import {OperationalError} from '../base/operational-error';
  * receiver unchanged: for an unknown or ill-typed parameter, invalid fixed
  * context, a request path or stream name that matches no declaration or more
  * than one, or a stream whose schema lacks a required numeric series, repeats
- * a bound series, or disagrees with another bound stream's clock. During a
- * step, the Pine builtin supplier throws it when its clock returns a value
- * that is not a safe integer, or when the program reads `time` from an input
- * without an exact epoch-millisecond time; that error fails the run and
- * reaches its observers.
+ * a bound series, or disagrees with another bound stream's clock.
+ * `Node.to()` throws it when a binding is still missing. During a run, Node
+ * throws it for an input row that breaks the time, provisional or pairing
+ * rules of `bind()`, and the Pine builtin supplier throws it when its clock
+ * returns a value that is not a safe integer, or when the program reads
+ * `time` from an input without an exact epoch-millisecond time; that error
+ * fails the run and reaches its observers.
  *
  * @example
  * ```ts
