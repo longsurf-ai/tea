@@ -118,12 +118,152 @@ test('current HTF child may refine an older open time without revising committed
     [1, false, 30],
   ]);
   child.next(row(1, 40));
-  expect(String(result.errors[0])).toContain(
-    'after its parent interval finalized',
-  );
   expect(result.values).toHaveLength(3);
+  main.next(row(3, 4));
+  expect(result.errors).toEqual([]);
+  expect(result.values.at(-1)).toMatchObject({index: 2, value: 40});
   node.dispose();
 });
+
+test.each(['carry', 'sparse'])(
+  'late scalar steps preserve child history and parent commits with %s fill',
+  fill => {
+    const main = new Subject<Row>();
+    const child = new Subject<Row>();
+    const node = tea`
+      requested = request.security("X", "5", close + nz(close[1], 0), fill="${fill}")
+      var int commits = 0
+      commits := commits + 1
+      emit "value" requested
+      emit "commits" commits
+    `
+      .bind(stream(main))
+      .bind({requested: stream(child)});
+    const result = observe(node);
+    child.next(row(0, 10));
+    main.next(row(7, 1));
+    const committed = {...result.values[0]!};
+
+    // The first live higher-timeframe bar opens before the historical tail.
+    child.next(row(5, 30, true));
+    expect(result.values).toEqual([committed]);
+    main.next(row(8, 2, true));
+    child.next(row(5, 40));
+    expect(result.values).toHaveLength(2);
+    main.next(row(8, 3));
+    main.next(row(12, 4));
+
+    // The same ordering can occur at every subsequent higher-timeframe boundary.
+    child.next(row(10, 50, true));
+    expect(result.values).toHaveLength(4);
+    main.next(row(13, 5, true));
+    child.next(row(10, 60));
+    expect(result.values).toHaveLength(5);
+    main.next(row(13, 6));
+
+    // Future child values must still wait for an eligible parent timestamp.
+    child.next(row(15, 70));
+    child.complete();
+    main.next(row(14, 7));
+    main.next(row(15, 8));
+    expect(result.errors).toEqual([]);
+    expect(result.values[0]).toEqual(committed);
+    expect(
+      result.values.map(value => [
+        value.index,
+        value.provisional,
+        value.value,
+        value.commits,
+      ]),
+    ).toEqual([
+      [0, false, 10, 1],
+      [1, true, 40, 2],
+      [1, false, 50, 2],
+      [2, false, fill === 'carry' ? 50 : NaN, 3],
+      [3, true, 90, 4],
+      [3, false, 100, 4],
+      [4, false, fill === 'carry' ? 100 : NaN, 5],
+      [5, false, 130, 6],
+    ]);
+    node.dispose();
+  },
+);
+
+test('multiple metrics sample late higher-timeframe children independently', () => {
+  const main = new Subject<Row>();
+  const five = new Subject<Row>();
+  const fifteen = new Subject<Row>();
+  const node = tea`
+    fiveClose = request.security("X", "5", close)
+    fiveAverage = request.security("X", "5", ta.sma(close, 2))
+    fifteenClose = request.security("Y", "15", close)
+    emit "fiveClose" fiveClose
+    emit "fiveAverage" fiveAverage
+    emit "fifteenClose" fifteenClose
+  `
+    .bind(stream(main))
+    .bind({
+      fiveClose: stream(five),
+      fiveAverage: stream(five),
+      fifteenClose: stream(fifteen),
+    });
+  const result = observe(node);
+  five.next(row(0, 10));
+  five.next(row(5, 20));
+  fifteen.next(row(0, 100));
+  main.next(row(17, 1));
+  fifteen.next(row(15, 200, true));
+  five.next(row(15, 30, true));
+  expect(result.values).toHaveLength(1);
+  main.next(row(18, 2, true));
+  five.next(row(15, 40));
+  fifteen.next(row(15, 210));
+  expect(result.values).toHaveLength(2);
+  main.next(row(18, 3));
+  expect(result.errors).toEqual([]);
+  expect(
+    result.values.map(value => [
+      value.index,
+      value.provisional,
+      value.fiveClose,
+      value.fiveAverage,
+      value.fifteenClose,
+    ]),
+  ).toEqual([
+    [0, false, 20, 15, 100],
+    [1, true, 30, 25, 200],
+    [1, false, 40, 30, 210],
+  ]);
+  node.dispose();
+});
+
+test.each([
+  [row(5, 1), row(5, 2), 'committed timestamp'],
+  [row(5, 1), row(4, 2), 'nondecreasing'],
+  [row(5, 1, true), row(6, 2), 'finalize its provisional step'],
+] as const)(
+  'late scalar children still reject invalid source progression',
+  (first, second, message) => {
+    const main = new Subject<Row>();
+    const child = new Subject<Row>();
+    const node = tea`
+      requested = request.security("X", "5", close)
+      emit "value" requested
+    `
+      .bind(stream(main))
+      .bind({requested: stream(child)});
+    const result = observe(node);
+    main.next(row(7, 1));
+    child.next(first);
+    main.next(row(8, 2));
+    expect(result.errors).toEqual([]);
+    child.next(second);
+    expect(result.errors).toHaveLength(1);
+    expect(String(result.errors[0])).toContain(message);
+    expect(result.values.map(value => value.value)).toEqual([NaN, 1]);
+    node.dispose();
+  },
+);
 
 test('collect windows retain earlier children during repeated parent attempts and replace child attempts', () => {
   const main = new Subject<Row>();

@@ -141,12 +141,19 @@ same child window; final parent attempts advance it. Multiple attempts of one
 child step contribute only its latest value, never duplicate collect entries.
 Positional final attempts wait for their child steps to finalize.
 
-A new child step that arrives after its parent interval finalized is rejected
-before that child step executes. Refinements of the current uncommitted child
-step remain valid, even if its higher-timeframe open precedes the parent's last
-time. They affect subsequent parent attempts only; child delivery alone does not
-rerun a committed parent. Applications deliver known child changes before the
-parent attempt that should use them. Future values remain buffered.
+Timed scalar requests accept a new child step even when its opening time is at
+or before the last finalized parent time. It becomes eligible for subsequent
+parent attempts only; child delivery never reruns a parent or revises published
+output. This allows a forming higher-timeframe bar to arrive after the parent's
+historical tail, or after the parent has advanced into the next child interval.
+The child's own timestamps must still advance in order, and finalized child
+steps cannot be revised.
+
+Timed collect requests reject a new child step at or before their last finalized
+parent boundary before that child step executes: its collection window has
+already closed. Refinements of the current uncommitted child step remain valid
+for both policies. Applications deliver known child changes before the parent
+attempt that should use them. Future values remain buffered.
 
 ## Ordering, completion, errors, and cancellation
 
