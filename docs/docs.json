@@ -22,7 +22,10 @@
     "dark": "#0f463a"
   },
   "seo": {
-    "indexing": "all"
+    "indexing": "all",
+    "metatags": {
+      "canonical": "https://openchart.co/tea"
+    }
   },
   "navigation": {
     "tabs": [
