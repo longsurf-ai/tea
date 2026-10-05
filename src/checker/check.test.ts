@@ -797,6 +797,61 @@ describe('calls', () => {
     }
   });
 
+  test('an input default may read the chart’s fixed values and nothing else', () => {
+    const messages = (source: string) =>
+      checkText(source).errors.map(error => error.msg);
+    expect(
+      messages(
+        'range = input.string(chart.timeframe == "D" or chart.timeframe == "W" or chart.timeframe == "M" ? "Monthly" : (chart.timeframe == "240" ? "Weekly" : "Daily"), "Profile time range", options = ["Daily", "Weekly", "Monthly"])',
+      ),
+    ).toEqual([]);
+    expect(
+      messages(
+        [
+          'length = input.int(timeframe.isintraday ? 20 : 50, minval = 1)',
+          'tick = input(syminfo.mintick > 0 ? syminfo.mintick : 0.01)',
+          'on = input.bool(not timeframe.isdaily and timeframe.multiplier >= 1)',
+        ].join('\n'),
+      ),
+    ).toEqual([]);
+    const rule = (name: string) =>
+      `'${name}' default may read only constants and the chart's fixed values chart.timeframe, syminfo.* and timeframe.*, combined with operators and ?:`;
+    for (const [source, name] of [
+      ['x = input.float(close * 2)', 'input.float'],
+      ['x = input.bool(barstate.isfirst)', 'input.bool'],
+      ['a = input.int(1)\nx = input.int(timeframe.isdaily ? a : 2)', 'input.int'],
+      ['var string tf = "D"\nx = input.string(tf)', 'input.string'],
+      ['tf = chart.timeframe\nx = input.string(tf)', 'input.string'],
+      [
+        'x = input.string(str.tostring(timeframe.multiplier))',
+        'input.string',
+      ],
+    ]) {
+      expect(messages(source)).toEqual([rule(name)]);
+    }
+  });
+
+  test('a chart default must be a valid default without the chart', () => {
+    const messages = (source: string) =>
+      checkText(source).errors.map(error => error.msg);
+    expect(
+      messages(
+        'x = input.string(chart.timeframe == "D" ? "Monthly" : "Hourly", options = ["Daily", "Monthly"])',
+      ),
+    ).toEqual(["'input.string' default must be one of its options"]);
+    expect(
+      messages('x = input.int(timeframe.isdaily ? 5 : 0, minval = 1)'),
+    ).toEqual(["'input.int' default must be at least minval"]);
+    for (const [source, name] of [
+      ['x = input.string(syminfo.ticker)', 'input.string'],
+      ['x = input.int(timeframe.multiplier * 2)', 'input.int'],
+    ]) {
+      expect(messages(source)).toEqual([
+        `'${name}' default cannot be na when the host supplies no chart values`,
+      ]);
+    }
+  });
+
   test('any series input is a source default, market or not', () => {
     expect(checkText('x = input.source(volume)').errors).toEqual([]);
     const alias = checkText(

@@ -81,7 +81,12 @@ checked package (every `Info`, and the calls that reach an error).
   checker error; missingness tests use `na(x)`.
 - `NativeParam.acceptsNa` owns parameter-level nullability beyond ordinary
   type assignability. Input defaults and concrete settings metadata reject
-  folded `NA_VALUE` before noding, including min/max/step. Input overloads,
+  folded `NA_VALUE` before noding, including min/max/step. A scalar input's
+  default is a constant or a Tea-only chart default: constants and fixed
+  (`simple`, builtin-bound) builtins joined by operators and `?:`.
+  `chartDefault()` alone decides that form and folds it with each fixed
+  builtin at its typed empty value; that value must pass every default check.
+  Source defaults stay series aliases. Input overloads,
   dependent option types/default membership, source-default vocabulary,
   display domain/default, and active qualifier are catalog/checker-owned;
   downstream manifest or UI projections must not reinterpret them.

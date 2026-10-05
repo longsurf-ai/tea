@@ -173,6 +173,9 @@ function reachProgram(program: Program): Reach {
   for (const param of program.params) {
     visitDepth(param.depth, reach);
     visitExpr(param.active, reach);
+    if (param.defaultValue?.kind === ParamDefaultKind.Chart) {
+      visitExpr(param.defaultValue.expr, reach);
+    }
   }
   for (const stmt of program.init) {
     visitStmt(stmt, reach);

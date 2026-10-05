@@ -669,6 +669,43 @@ describe('params and outputs', () => {
     });
   });
 
+  test('a chart default keeps its expression and its value without a chart', () => {
+    const program = mustBuild(
+      'range = input.string(chart.timeframe == "D" ? "Monthly" : "Daily")\nemit "range" range',
+    );
+    expect(program.params[0].defaultValue).toMatchObject({
+      kind: ParamDefaultKind.Chart,
+      value: 'Daily',
+      expr: {kind: IrKind.IfExpr, type: {kind: TypeKind.String}},
+    });
+    // The default alone reads chart.timeframe, which the module must declare.
+    expect(builtinInputsOf(program).map(builtin => builtin.source)).toEqual([
+      {domain: 'chart', field: 'timeframe'},
+    ]);
+  });
+
+  test('a chart default inside a request expression reads the root context', () => {
+    const program = mustBuild(
+      'x = request.security("X", "D", close * input.float(timeframe.isdaily ? 2.0 : 1.0))\nemit "x" x',
+    );
+    const [scale] = program.params;
+    expect(scale.defaultValue).toMatchObject({
+      kind: ParamDefaultKind.Chart,
+      value: 1,
+    });
+    const reads: unknown[] = [];
+    if (scale.defaultValue?.kind === ParamDefaultKind.Chart) {
+      walkIrStmt(scale.defaultValue.expr, {
+        expr: expr => {
+          if (expr.kind === IrKind.Read && expr.place.kind === PlaceKind.Builtin)
+            reads.push(expr.place.builtin);
+        },
+      });
+    }
+    expect(reads).toEqual(builtinInputsOf(program));
+    expect(builtinInputsOf(program.requests[0].child)).toEqual([]);
+  });
+
   test('plain emit preserves raw scalar type and named column identity', () => {
     const program = mustBuild(
       'emit "value" close\nemit.append "events" 1\nemit.append "events" 2',
@@ -1479,6 +1516,37 @@ describe('program surface', () => {
     expect(mustBuild('indicator("A")\nemit "x" close').body).toHaveLength(
       mustBuild('emit "x" close').body.length,
     );
+  });
+
+  test('an auto timeframe header declares the timeframe parameter first', () => {
+    const program = mustBuild(
+      'indicator("A", timeframe = "auto")\nlength = input.int(3)\nemit "x" close[length]',
+    );
+    expect(program.params.map(param => param.name)).toEqual([
+      'timeframe',
+      'length',
+    ]);
+    expect(program.params[0]).toMatchObject({
+      title: 'Timeframe',
+      control: 'timeframe',
+      type: {kind: TypeKind.String},
+      defaultValue: {
+        kind: ParamDefaultKind.Chart,
+        value: '',
+        expr: {kind: IrKind.Const, value: ''},
+      },
+      constraints: null,
+      display: 'all',
+    });
+    for (const header of ['indicator("A")', 'indicator("A", timeframe = "")']) {
+      expect(mustBuild(`${header}\nemit "x" close`).params).toEqual([]);
+    }
+    // No input can take its name: `timeframe` is a built-in namespace.
+    expect(
+      buildText(
+        'indicator("A", timeframe = "auto")\ntimeframe = input.timeframe("60")',
+      ).errors.map(error => error.msg),
+    ).toEqual(["cannot redeclare built-in 'timeframe'"]);
   });
 });
 

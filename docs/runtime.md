@@ -148,8 +148,9 @@ module
 `loadModule()` uses TypeScript's in-process transpiler to construct the generated
 `Module`, without a native compiler executable.
 The module constructor copies the ordinary Arrow schemas and keeps the binding
-calculation function private. `module.bind()` validates a named patch,
-preserves existing values, fills usable defaults only for still-unset parameters,
+calculation functions private. `module.bind()` validates a named patch,
+preserves existing values, fills usable defaults only for still-unset parameters
+(a chart default, below, also replaces a value that is still that default),
 and recomputes dependent depths, parameter activity and request contexts. It returns
 a new module tree, with copied child configuration and Arrow schemas. Both successful
 and failed binding leave the original tree unchanged.
@@ -195,6 +196,27 @@ stored fixed value is also used during execution, including committed history.
 Generated calculations clear late facts before evaluation. Missing parameters or
 context leave configuration incomplete, never apparently ready with stale depths.
 Errors in supplied values or calculated request policies fail binding immediately.
+
+A parameter marked `chartDefault` has a default that depends on the chart: an input
+whose default reads `chart.timeframe`, `syminfo.*` or `timeframe.*`, or the
+`timeframe` parameter of an `indicator(timeframe = "auto")` header, whose default
+`""` leaves the bars to the host. Before any bind, `defaultValue` is the default
+without a chart. Each root bind first applies its context, then evaluates every
+chart default from the fixed values it now holds, reading a value the host has not
+supplied as empty (`na`, or `false` for a bool), stores the result in
+`defaultValue`, and only then validates parameters, so `options`, `minval` and
+`maxval` apply to a resolved default as to a supplied value. A parameter keeps
+following its chart default while its value is that default, so a module bound
+without context and bound again with one takes the chart's default; a supplied value
+stops it. A request child's copy is unmarked and keeps the default without a chart.
+
+```ts
+// range = input.string(chart.timeframe == "D" ? "Monthly" : "Daily")
+module.parameters[0].defaultValue; // 'Daily'
+const daily = module.bind({}, new Map([[0, 'D']])); // builtin 0 is chart.timeframe
+daily.parameters[0].value; // 'Monthly'
+daily.bind({range: 'Daily'}).parameters[0].value; // 'Daily', supplied
+```
 
 `node.module` returns the Node's existing module, without rebuilding or copying its
 request tree. Readiness checks do not change it. The runtime captures the

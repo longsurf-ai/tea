@@ -113,7 +113,8 @@ const INPUT_DISPLAY =
 const INPUT_ACTIVE =
   'Whether a host shows the input as enabled. It is evaluated when the script is bound and may read other inputs; it never changes the input’s value.';
 
-const INPUT_DEFAULT = 'The value used when the host supplies none.';
+const INPUT_DEFAULT =
+  'The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see {@link input}).';
 const INPUT_RESULT =
   'The value the host supplied, or the default; it is the same on every bar.';
 const HIDDEN_BY_DEFAULT = 'Its value is hidden by default (`display.none`).';
@@ -191,7 +192,7 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         overlay:
           '`true` to draw the script’s outputs over the price chart; `false`, the default, to draw them in a separate pane. Pass it by name, as `overlay = true`: the second position belongs to `shorttitle`, which Tea does not accept yet, so `indicator("X", true)` is an error.',
         timeframe:
-          'The bars the host runs the script on: `""`, the default, for the chart’s own bars, or `"auto"` to let the host pick finer bars of the same symbol. Other values are rejected. Under `"auto"`, `timeframe.*` describes the bars the script runs on and {@link chart.timeframe} the chart’s.',
+          'The bars the host runs the script on: `""`, the default, for the chart’s own bars, or `"auto"` to let the host pick finer bars of the same symbol. Other values are rejected. Under `"auto"`, `timeframe.*` describes the bars the script runs on and {@link chart.timeframe} the chart’s. `"auto"` also gives the script a parameter named `timeframe`, titled Timeframe, which a host can offer as a setting: its default `""` leaves the bars to the host, whose chart decides them, and a timeframe the host binds, such as `"60"`, is reported back as the parameter’s value. The script itself cannot read it, and no input can take its name.',
       },
       details:
         'It must be the script’s first statement and appear at most once, and a library cannot declare it. The header only informs the host; Tea runs the script the same way with or without it.',
@@ -673,7 +674,7 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       summary: 'Declares an input that selects one member of an enum.',
       params: {
         defval:
-          'The member used when the host supplies none; its enum is the type of the result.',
+          'The member used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see {@link input}). Its enum is the type of the result.',
         title: INPUT_TITLE,
         options:
           'The only members the host may choose, as a bracketed list such as `[Average.sma, Average.ema]`; the default must be one of them. Without it, every member is allowed.',
@@ -711,7 +712,7 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
       summary: 'Declares an input whose type follows its default value.',
       params: {
         defval:
-          'The value used when the host supplies none. An `int`, `float`, `bool`, `string` or `color` constant declares an input of that type; a series alias such as `close` declares a source input like {@link input.source}.',
+          'The value used when the host supplies none. An `int`, `float`, `bool`, `string` or `color` value declares an input of that type: a constant, or an expression of the chart’s fixed values described below. A series alias such as `close` declares a source input like {@link input.source}.',
         title: INPUT_TITLE,
         tooltip: INPUT_TOOLTIP,
         inline: INPUT_INLINE,
@@ -729,6 +730,8 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
         'An input read inside a request expression is the request’s own copy: the host sets it separately for that request, and a value set for the script does not reach it.',
         '',
         'A `bool` or `color` input is hidden by default (`display.none`).',
+        '',
+        'A default is usually a constant. It may instead depend on the chart the host binds the script to: it may read the chart’s fixed values, {@link chart.timeframe}, `syminfo.*` and `timeframe.*`, combined with constants by operators, `and`, `or`, `not`, `?:` and parentheses. It cannot read series values, other inputs or variables, or call a function. Each time the host binds the script, its chart decides such a default, which the host can show; a value the host supplies replaces it. Without a chart, as under `tea run`, each of those values is `na`, or `false` for a `bool`; the default must then still be valid: not `na`, one of its `options`, and within `minval` and `maxval`. A chart that gives a default outside them stops the script from binding. A source input’s default is a series alias.',
       ),
       examples: [
         example(
@@ -741,7 +744,15 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
           ),
           CLOSES,
         ),
+        example(
+          'Without a chart, `chart.timeframe` is `na`, so neither comparison holds and `range` is `"Daily"`. A host that binds the script to a daily or weekly chart gets `"Monthly"`.',
+          lines(
+            'range = input.string(chart.timeframe == "D" or chart.timeframe == "W" ? "Monthly" : "Daily", "Range", options = ["Daily", "Monthly"])',
+            'emit "range" range',
+          ),
+        ),
       ],
+      pine: 'Pine Script requires a constant default. Tea also accepts a default that reads the chart’s fixed values, such as `chart.timeframe == "D" ? "Monthly" : "Daily"`, which the host’s chart decides when it binds the script.',
       see: ['input.int', 'input.source'],
       category: 'Any type',
     },

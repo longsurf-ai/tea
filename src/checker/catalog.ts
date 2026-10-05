@@ -532,6 +532,13 @@ function inputParam(
   );
 }
 
+// A scalar input's default: a constant or, Tea-only, a simple expression of
+// the chart's fixed values that bind evaluates. The checker limits it to
+// constants and fixed builtins combined by operators (checkInputContract).
+function defval(type: NativeTypeRef): NativeParam {
+  return req('defval', type, Qualifier.Simple, {acceptsNa: false});
+}
+
 function active(): NativeParam {
   return opt('active', BoolType, Qualifier.Input, {acceptsNa: false});
 }
@@ -567,7 +574,7 @@ function scalarInput(
   return inputParam(
     name,
     [
-      req('defval', type, Qualifier.Const, CONCRETE_CONST_VALUE),
+      defval(type),
       opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       ...confirmedInputTail(),
     ],
@@ -585,7 +592,7 @@ function optionsInput(
   return inputParam(
     name,
     [
-      req('defval', type, Qualifier.Const, CONCRETE_CONST_VALUE),
+      defval(type),
       opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       opt('options', TypeRef.Any, Qualifier.Const),
       ...confirmedInputTail(),
@@ -602,7 +609,7 @@ function numericInput(name: string, type: Type): NativeFunc[] {
     inputParam(
       name,
       [
-        req('defval', type, Qualifier.Const, CONCRETE_CONST_VALUE),
+        defval(type),
         opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
         opt('minval', type, Qualifier.Const, CONCRETE_CONST_NUMBER),
         opt('maxval', type, Qualifier.Const, CONCRETE_CONST_NUMBER),
@@ -616,7 +623,7 @@ function numericInput(name: string, type: Type): NativeFunc[] {
     inputParam(
       name,
       [
-        req('defval', type, Qualifier.Const, CONCRETE_CONST_VALUE),
+        defval(type),
         opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
         req('options', TypeRef.Any, Qualifier.Const),
         ...trailing,
@@ -632,7 +639,7 @@ function textAreaInput(): NativeFunc {
   return inputParam(
     'input.text_area',
     [
-      req('defval', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
+      defval(StringType),
       opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       opt('tooltip', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       opt('group', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
@@ -681,7 +688,7 @@ function genericScalarInput(
   return inputParam(
     'input',
     [
-      req('defval', type, Qualifier.Const, CONCRETE_CONST_VALUE),
+      defval(type),
       opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       ...standardInputMetadata(),
       ...displayAndActive(),
@@ -696,7 +703,7 @@ function enumInput(): NativeFunc {
   return inputParam(
     'input.enum',
     [
-      req('defval', TypeRef.Enum, Qualifier.Const, CONCRETE_CONST_VALUE),
+      defval(TypeRef.Enum),
       opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       opt('options', TypeRef.Any, Qualifier.Const),
       ...confirmedInputTail(),

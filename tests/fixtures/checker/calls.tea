@@ -27,7 +27,7 @@ plot("output9", close, color="red") // ERROR argument 'color' to 'plot': cannot 
 
 na(close, 2) // ERROR too many arguments in call to 'na'
 
-lw = input.int(bar_index) // ERROR argument 'defval' to 'input\.int' accepts at most const, got series
+lw = input.int(bar_index) // ERROR 'input\.int' default may read only constants and the chart's fixed values
 
 if close > 0
 	emit "output10" open

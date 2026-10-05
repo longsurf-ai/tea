@@ -1,6 +1,7 @@
 // One parameter-binding implementation for compiled modules, independent of stream ownership.
 
 import {DataType, Field, Float64, Schema, util} from 'apache-arrow';
+import {Color} from './color';
 import {cloneSchema} from './io';
 import {BindError} from './errors';
 import {resolveParamValues} from './params';
@@ -71,6 +72,11 @@ export class Module<C extends Context = Context> {
       data: ReturnType<typeof copyData>,
       constants: ReadonlyMap<number, Scalar>,
     ) => void = () => {},
+    // Each chart default by parameter index, evaluated from every fixed
+    // builtin's bound value or typed empty value.
+    private readonly chartDefaults: (
+      fixed: ReadonlyMap<number, Scalar>,
+    ) => ReadonlyMap<number, Value<unknown>> = () => new Map(),
   ) {
     this.execute = execute as (context: Context) => void;
     currentAbi(data);
@@ -80,6 +86,11 @@ export class Module<C extends Context = Context> {
   /**
    * Return an independently configured tree. A path selects request declaration
    * names; each child retains its own parameter values and defaults.
+   *
+   * Binding applies `context` first, then resolves the default of each
+   * parameter marked `chartDefault` from the fixed values the module now
+   * holds, and only then validates parameters, so a resolved default meets
+   * the same `options` and range checks as a supplied value.
    * @example `program.bind({length: 20}, undefined, ['daily'])` configures only daily.
    */
   bind(
@@ -124,29 +135,6 @@ export class Module<C extends Context = Context> {
         if (!known.has(name))
           throw new BindError(`unknown parameter '${name}'`);
       }
-      data.parameters.forEach(parameter => {
-        const supplied = Object.hasOwn(values, parameter.name);
-        const existing = Object.hasOwn(parameter, 'value');
-        const candidate = supplied
-          ? values[parameter.name]
-          : existing
-            ? parameter.value
-            : parameter.defaultValue;
-        if (!supplied && !existing && candidate === null) return;
-        if (candidate === undefined)
-          throw new BindError(`parameter '${parameter.name}' is undefined`);
-        const value = resolveParamValues([parameter], {
-          [parameter.name]: candidate,
-        })[0] as Scalar;
-        // Generated arithmetic may update active/settings/depths, never the
-        // validated input values from which those facts were calculated.
-        Object.defineProperty(parameter, 'value', {
-          value,
-          enumerable: true,
-          writable: false,
-          configurable: false,
-        });
-      });
       if (context.size > 0) {
         for (const [id, value] of context) {
           const builtin = data.inputs.builtins[id];
@@ -175,7 +163,6 @@ export class Module<C extends Context = Context> {
           Object.assign(builtin, {value});
         }
       }
-      for (const request of data.requests) visit(request.module, {}, new Map());
       const constants = new Map(
         data.inputs.builtins.flatMap((builtin, id) =>
           Object.hasOwn(builtin, 'value')
@@ -191,6 +178,51 @@ export class Module<C extends Context = Context> {
           configurable: false,
         });
       }
+      // Chart defaults read the bound context before the parameters that
+      // may take them; a value the host has not supplied reads as empty.
+      const previous = data.parameters.map(parameter => parameter.defaultValue);
+      const fixed = new Map(
+        data.inputs.builtins.flatMap((builtin, id) =>
+          builtin.constant
+            ? [[id, constants.get(id) ?? (builtin.empty.value as Scalar)]]
+            : [],
+        ),
+      );
+      for (const [pid, value] of (target as Module).chartDefaults(fixed)) {
+        Object.assign(data.parameters[pid]!, {
+          defaultValue: parameterScalar(value),
+        });
+      }
+      data.parameters.forEach((parameter, pid) => {
+        const supplied = Object.hasOwn(values, parameter.name);
+        // A value that is still its chart default follows the chart.
+        const existing =
+          Object.hasOwn(parameter, 'value') &&
+          !(parameter.chartDefault && parameter.value === previous[pid]);
+        const candidate = supplied
+          ? values[parameter.name]
+          : existing
+            ? parameter.value
+            : parameter.defaultValue;
+        if (!supplied && !existing && candidate === null) {
+          delete (parameter as {value?: Scalar}).value;
+          return;
+        }
+        if (candidate === undefined)
+          throw new BindError(`parameter '${parameter.name}' is undefined`);
+        const value = resolveParamValues([parameter], {
+          [parameter.name]: candidate,
+        })[0] as Scalar;
+        // Generated arithmetic may update active/settings/depths, never the
+        // validated input values from which those facts were calculated.
+        Object.defineProperty(parameter, 'value', {
+          value,
+          enumerable: true,
+          writable: false,
+          configurable: false,
+        });
+      });
+      for (const request of data.requests) visit(request.module, {}, new Map());
       try {
         (target as Module).calculate(data, constants);
       } catch (error) {
@@ -272,7 +304,12 @@ export class Module<C extends Context = Context> {
       ...request,
       module: request.module.clone(),
     }));
-    return new Module<C>({...this, requests}, this.execute, this.calculate);
+    return new Module<C>(
+      {...this, requests},
+      this.execute,
+      this.calculate,
+      this.chartDefaults,
+    );
   }
 }
 
@@ -467,6 +504,15 @@ function currentAbi(module: Pick<Module, 'abi'>): void {
     throw new BindError(
       `unsupported module ABI ${module.abi}; expected ${RUNTIME_ABI_VERSION}`,
     );
+}
+
+// A resolved default as parameters hold values: colors as canonical hex,
+// numeric na as null.
+function parameterScalar({value}: Value<unknown>): Scalar {
+  if (value instanceof Color) return value.toString();
+  return typeof value === 'number' && Number.isNaN(value)
+    ? null
+    : (value as Scalar);
 }
 
 function scalar(value: unknown): value is Scalar {

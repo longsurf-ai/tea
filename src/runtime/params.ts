@@ -34,7 +34,40 @@ export interface Parameter {
     | 'source'
     | 'enum';
   readonly control: string;
+  /**
+   * The value a bind applies when none is supplied. For a parameter marked
+   * `chartDefault`, it is the default for the chart the module is bound to:
+   * before any bind, the default without a chart.
+   */
   readonly defaultValue: Scalar;
+  /**
+   * Present, and `true`, when the default depends on the chart the host binds
+   * the script to: for an input whose default reads the chart's fixed values,
+   * such as `input.string(chart.timeframe == "D" ? "Monthly" : "Daily")`, and
+   * for the `timeframe` parameter of an `indicator(timeframe = "auto")`
+   * header, whose default `""` leaves the bars to the host.
+   *
+   * Each bind evaluates the default from the fixed context it binds, a value
+   * the host has not supplied reading as empty (`na`, or `false` for a bool),
+   * and stores it in `defaultValue`. A parameter whose value is still that
+   * default follows the chart: a later bind re-resolves it unless the bind
+   * supplies a value. A resolved default the parameter takes is validated as
+   * a supplied value would be, so one outside `options` fails the bind; one
+   * that is `na` leaves the parameter unset. A request child's copy has no
+   * marker and keeps the default without a chart.
+   *
+   * @example
+   * For `range = input.string(chart.timeframe == "D" ? "Monthly" : "Daily")`,
+   * where builtin 0 is `chart.timeframe`:
+   * ```ts
+   * module.parameters[0].defaultValue;          // 'Daily', without a chart
+   * module.parameters[0].chartDefault;          // true
+   * const daily = module.bind({}, new Map([[0, 'D']]));
+   * daily.parameters[0].value;                  // 'Monthly'
+   * daily.bind({}, new Map([[0, '60']])).parameters[0].value; // 'Daily'
+   * ```
+   */
+  readonly chartDefault?: true;
   /** Validated supplied value or applied default; absent before binding. */
   readonly value?: Scalar;
   /** Whether the control is active; null until its binding expression resolves. */

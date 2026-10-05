@@ -620,6 +620,9 @@ class Module<C extends Context = Context> {
       data: ReturnType<typeof copyData>,
       constants: ReadonlyMap<number, Scalar>,
     ) => void,
+    chartDefaults?: (
+      fixed: ReadonlyMap<number, Scalar>,
+    ) => ReadonlyMap<number, Value<unknown>>,
   );
   bind(
     values?: Readonly<Record<string, unknown>>,
@@ -702,6 +705,11 @@ Return an independently configured tree. A path selects request declaration name
 ```ts
 bind(values?: Readonly<Record<string, unknown>>, context?: ReadonlyMap<number, Scalar>, path?: readonly string[]): Module<C>;
 ```
+
+Binding applies `context` first, then resolves the default of each
+parameter marked `chartDefault` from the fixed values the module now
+holds, and only then validates parameters, so a resolved default meets
+the same `options` and range checks as a supplied value.
 
 **Example:** `program.bind({length: 20}, undefined, ['daily'])` configures only daily.
 

@@ -9,9 +9,18 @@ import type {ConstValue, Qualifier, Type} from './type';
 // VALUE arrives from the runtime at bind time. input.source defaults are
 // references to a series input (close), not constants — the param records
 // the default CHOICE; the bound value is the runtime's series selection.
+// A chart default (Tea-only) depends on the chart the host binds the script
+// to: `expr` reads only constants and fixed builtins (chart.timeframe,
+// syminfo.*, timeframe.*) through operators and ternaries, and bind
+// evaluates it from the bound fixed context. `value` is `expr` with every
+// fixed builtin at its typed empty value: the default before any chart is
+// bound. An `indicator(timeframe = "auto")` header's `timeframe` parameter
+// is a chart default whose `expr` is the constant "": the host picks the
+// bars for the chart.
 export const ParamDefaultKind = {
   Const: 'const',
   Series: 'series',
+  Chart: 'chart',
 } as const;
 
 export type ParamDefault =
@@ -19,6 +28,11 @@ export type ParamDefault =
   | {
       readonly kind: typeof ParamDefaultKind.Series;
       readonly series: SeriesInput;
+    }
+  | {
+      readonly kind: typeof ParamDefaultKind.Chart;
+      readonly expr: IrExpr;
+      readonly value: ConstValue;
     };
 
 export const ParamConstraintKind = {

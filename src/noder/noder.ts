@@ -72,6 +72,7 @@ import {ASSIGN_BASE_OP, AssignOp, Mode, NodeKind} from '../syntax/nodes';
 import type * as syntax from '../syntax/nodes';
 import {Op} from '../syntax/tokens';
 import {Effect} from '../checker/catalog';
+import {chartDefault} from '../checker/check';
 import {
   CallKind,
   SelectionKind,
@@ -184,6 +185,10 @@ class Noder {
   build(file: syntax.File): Program {
     const versionNumber = Number(file.version ?? '1');
     this.version = Number.isFinite(versionNumber) ? versionNumber : 1;
+    const declaration = this.declarationOf(file);
+    if (declaration?.timeframe === 'auto') {
+      this.params.push(this.headerTimeframeParam(file.stmtList[0]!.pos));
+    }
     const body: IrStmt[] = [];
     for (const stmt of file.stmtList) {
       body.push(...this.nodeStmt(stmt));
@@ -191,7 +196,7 @@ class Noder {
     const packageGlobals: IrName[] = [];
     const program: Program = {
       version: this.version,
-      declaration: this.declarationOf(file),
+      declaration,
       nominalIds: this.checked.nominalTypeIds,
       params: this.params,
       requests: this.program.requests,
@@ -1936,6 +1941,8 @@ class Noder {
       const tv = this.tvOf(defval);
       if (tv.value !== null) {
         defaultValue = {kind: ParamDefaultKind.Const, value: tv.value};
+      } else if (resolved.native.resultQualifier !== Qualifier.Series) {
+        defaultValue = this.chartDefaultOf(defval, this.tvOf(c).type);
       } else {
         const source = unwrapExpr(defval);
         const builtin =
@@ -2044,6 +2051,49 @@ class Noder {
     this.params.push(param);
     this.paramOf.set(c, param);
     return param;
+  }
+
+  // A chart default reads the root's fixed context however deep its input
+  // call sits: parameters are compilation-global and bind evaluates their
+  // defaults in the root module. The checker limited the expression to
+  // constants and fixed builtins, so it needs no names, slots or frame.
+  private chartDefaultOf(defval: syntax.Expr, type: Type): ParamDefault {
+    const folded = chartDefault(defval, this.info);
+    if ('invalid' in folded) {
+      return fatal('an invalid chart default reached the noder');
+    }
+    const [program, frame] = [this.program, this.frame];
+    while (this.program.parent !== null) this.program = this.program.parent;
+    this.frame = this.program.rootFrame;
+    const expr = this.nodeExpr(defval, type);
+    [this.program, this.frame] = [program, frame];
+    return {kind: ParamDefaultKind.Chart, expr, value: folded.value};
+  }
+
+  // An `indicator(timeframe = "auto")` header lets the host pick the bars.
+  // Its choice is the `timeframe` parameter, whose default "" leaves it to
+  // the host; no input can share the name, since `timeframe` is a built-in
+  // namespace no declaration may take.
+  private headerTimeframeParam(pos: Pos): ParamInput {
+    return {
+      name: 'timeframe',
+      title: 'Timeframe',
+      control: 'timeframe',
+      type: StringType,
+      defaultValue: {
+        kind: ParamDefaultKind.Chart,
+        expr: this.constExpr(pos, StringType, ''),
+        value: '',
+      },
+      constraints: null,
+      group: null,
+      inline: null,
+      tooltip: null,
+      confirm: false,
+      display: 'all',
+      active: this.constExpr(pos, BoolType, true),
+      depth: {kind: DepthKind.None},
+    };
   }
 
   // Arrow schemas are finite trees. Recursive references remain valid inside
