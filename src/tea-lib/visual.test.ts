@@ -64,9 +64,9 @@ describe('visual prelude', () => {
   test('verticalProfile writes its time box with nested rows, parts and levels', async () => {
     const program = mustBuild(
       [
-        'part = ProfileSegment.new(volume, color.green)',
-        'rows = array.from(ProfileRow.new(low, high, array.from(part)))',
-        'levels = array.from(ProfileLevel.new(close, color.orange))',
+        'part = ProfileSegment.new(volume, color.green, "Volume")',
+        'rows = array.from(ProfileRow.new(low, high, array.from(part, ProfileSegment.new(0.0, color.red))))',
+        'levels = array.from(ProfileLevel.new(close, color.orange, "Point of control"))',
         'verticalProfile("vp", time, time + 60000, rows, levels, "VP")',
       ].join('\n'),
     );
@@ -81,8 +81,18 @@ describe('visual prelude', () => {
         from: 0,
         to: 60000,
         title: 'VP',
-        rows: [{low: 9, high: 11, segments: [{value: 500, color: {a: 255}}]}],
-        levels: [{y: 10, color: {a: 255}}],
+        // A part without a title has an empty one.
+        rows: [
+          {
+            low: 9,
+            high: 11,
+            segments: [
+              {value: 500, color: {a: 255}, title: 'Volume'},
+              {value: 0, title: ''},
+            ],
+          },
+        ],
+        levels: [{y: 10, color: {a: 255}, title: 'Point of control'}],
       },
     });
   });

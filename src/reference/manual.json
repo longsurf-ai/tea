@@ -1891,14 +1891,14 @@
               ],
               "returns": "The description written to `id`, with fields named after the parameters.",
               "members": null,
-              "body": "Each row is a band of the axis, such as a price range, drawn sideways from\n`from` toward `to`; the longest row fills the box. A volume profile is one\nuse: one row per price range, its parts the volume traded on rising and on\nfalling bars. The host draws, for each `from`, only the description written\non the last row that carries it. Every row written is sent and kept, so\nwrite a finished profile once, and a forming one only on the newest bar\n([`barstate.islast`](#barstate.islast)): the last of stored data, or a live bar while it\ncan still change. This draws one fixed two-row profile:\n\n```tea\nstart = time[10]\nrows = array.from(ProfileRow.new(100.0, 101.0, array.from(ProfileSegment.new(3.0, color.green))), ProfileRow.new(101.0, 102.0, array.from(ProfileSegment.new(1.0, color.red))))\nlevels = array.from(ProfileLevel.new(100.5, color.orange))\nverticalProfile(\"profile\", start, time, rows, levels, \"Profile\")\n```"
+              "body": "Each row is a band of the axis, such as a price range, drawn sideways from\n`from` toward `to`; the longest row fills the box. A volume profile is one\nuse: one row per price range, its parts the volume traded on rising and on\nfalling bars. The host draws, for each `from`, only the description written\non the last row that carries it. Every row written is sent and kept, so\nwrite a finished profile once, and a forming one only on the newest bar\n([`barstate.islast`](#barstate.islast)): the last of stored data, or a live bar while it\ncan still change. Each part's color is a default: a host may let users\nrestyle the parts, listed by their titles. This draws one fixed two-row\nprofile:\n\n```tea\nstart = time[10]\nrows = array.from(ProfileRow.new(100.0, 101.0, array.from(ProfileSegment.new(3.0, color.green, \"Buying\"))), ProfileRow.new(101.0, 102.0, array.from(ProfileSegment.new(1.0, color.red, \"Selling\"))))\nlevels = array.from(ProfileLevel.new(100.5, color.orange, \"Point of control\"))\nverticalProfile(\"profile\", start, time, rows, levels, \"Profile\")\n```"
             },
             {
               "id": "ProfileSegment",
               "symbols": ["ProfileSegment"],
               "kind": "type",
               "category": "Vertical profiles",
-              "summary": "One part of a [`ProfileRow`](#ProfileRow): a length and the color to draw it in.",
+              "summary": "One part of a [`ProfileRow`](#ProfileRow): a length, the color to draw it in and the name of the part it belongs to.",
               "signatures": ["type ProfileSegment"],
               "parameters": [],
               "returns": null,
@@ -1909,7 +1909,14 @@
                     "`float value`",
                     "Length of the part, `0` or more, relative to the profile's longest row."
                   ],
-                  ["`color color`", "Color of the part."]
+                  [
+                    "`color color`",
+                    "Color of the part, which a host may let users change."
+                  ],
+                  [
+                    "`string title = \"\"`",
+                    "Name of the part, such as `\"Up volume\"`, which a host shows when it lets users restyle it; segments with the same title share one color there."
+                  ]
                 ]
               },
               "body": ""
@@ -1958,7 +1965,14 @@
                     "`float y`",
                     "Position of the line, on the axis the profile shares with the chart."
                   ],
-                  ["`color color`", "Color of the line."]
+                  [
+                    "`color color`",
+                    "Color of the line, which a host may let users change."
+                  ],
+                  [
+                    "`string title = \"\"`",
+                    "Name of the line, such as `\"Point of control\"`, which a host shows when it lets users restyle it; levels with the same title share one color there."
+                  ]
                 ]
               },
               "body": ""

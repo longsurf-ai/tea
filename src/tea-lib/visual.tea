@@ -678,15 +678,21 @@ export alert(const string id, series bool condition, series string title, series
         emit.append id AlertEvent.new(title, message, data)
 
 /**
- * One part of a {@link ProfileRow}: a length and the color to draw it in.
+ * One part of a {@link ProfileRow}: a length, the color to draw it in and the
+ * name of the part it belongs to.
  *
  * @category Vertical profiles
  */
 export type ProfileSegment
     /** Length of the part, `0` or more, relative to the profile's longest row. */
     float value
-    /** Color of the part. */
+    /** Color of the part, which a host may let users change. */
     color color
+    /**
+     * Name of the part, such as `"Up volume"`, which a host shows when it lets
+     * users restyle it; segments with the same title share one color there.
+     */
+    string title = ""
 
 /**
  * One band of a vertical profile, such as a price range, with the parts drawn in it.
@@ -709,8 +715,13 @@ export type ProfileRow
 export type ProfileLevel
     /** Position of the line, on the axis the profile shares with the chart. */
     float y
-    /** Color of the line. */
+    /** Color of the line, which a host may let users change. */
     color color
+    /**
+     * Name of the line, such as `"Point of control"`, which a host shows when it
+     * lets users restyle it; levels with the same title share one color there.
+     */
+    string title = ""
 
 struct VerticalProfile
     string id
@@ -731,12 +742,14 @@ struct VerticalProfile
  * on the last row that carries it. Every row written is sent and kept, so
  * write a finished profile once, and a forming one only on the newest bar
  * ({@link barstate.islast}): the last of stored data, or a live bar while it
- * can still change. This draws one fixed two-row profile:
+ * can still change. Each part's color is a default: a host may let users
+ * restyle the parts, listed by their titles. This draws one fixed two-row
+ * profile:
  *
  * ```tea
  * start = time[10]
- * rows = array.from(ProfileRow.new(100.0, 101.0, array.from(ProfileSegment.new(3.0, color.green))), ProfileRow.new(101.0, 102.0, array.from(ProfileSegment.new(1.0, color.red))))
- * levels = array.from(ProfileLevel.new(100.5, color.orange))
+ * rows = array.from(ProfileRow.new(100.0, 101.0, array.from(ProfileSegment.new(3.0, color.green, "Buying"))), ProfileRow.new(101.0, 102.0, array.from(ProfileSegment.new(1.0, color.red, "Selling"))))
+ * levels = array.from(ProfileLevel.new(100.5, color.orange, "Point of control"))
  * verticalProfile("profile", start, time, rows, levels, "Profile")
  * ```
  *
