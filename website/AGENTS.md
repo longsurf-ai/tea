@@ -1,7 +1,8 @@
 # Tea offline documentation renderer
 
 Docusaurus shell used only to build the static, version-matched site packaged
-for `tea docs`. Hosted documentation uses Mintlify from `../docs/docs.json`.
+for `tea docs`. Hosted documentation uses Mintlify from `../docs/docs.json`,
+published at https://openchart.co/tea.
 Content lives in `../docs`; this directory owns only offline configuration,
 navigation, and presentation.
 

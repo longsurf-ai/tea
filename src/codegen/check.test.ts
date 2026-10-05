@@ -203,3 +203,23 @@ test('an input-dependent tuple return keeps its captured values through history 
   expect(values).toEqual([NaN, NaN, NaN, 10, 20].map(value => [value]));
   context.dispose();
 });
+
+test('chart defaults typecheck and bind as the parameters hold values', () => {
+  const generated = generate(
+    mustBuild(
+      [
+        'scale = input.float(timeframe.isdaily ? 2 : 1)',
+        'tint = input.color(timeframe.isdaily ? color.red : color.blue)',
+        'mode = input.string(timeframe.isdaily ? "day" : "intraday")',
+        'emit "output0" close * scale',
+      ].join('\n'),
+    ),
+  );
+  expect(() => checkGenerated(generated)).not.toThrow();
+  const module = loadModule(generated).bind({}, new Map([[0, true]]));
+  expect(module.parameters.map(parameter => parameter.value)).toEqual([
+    2,
+    '#FF5252',
+    'day',
+  ]);
+});

@@ -2,8 +2,9 @@
 
 Human-authored language documentation and generated reference material for the
 standalone Tea toolchain. This directory is also the Mintlify project root;
-`docs.json` owns the hosted reader experience and navigation. The Docusaurus
-configuration in `../website/` exists only for the packaged offline renderer.
+`docs.json` owns the hosted reader experience and navigation, published at
+https://openchart.co/tea. The Docusaurus configuration in `../website/` exists
+only for the packaged offline renderer.
 
 ## Invariants
 

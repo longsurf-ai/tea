@@ -676,3 +676,96 @@ type AlertEvent<T: AlertPayload>
 export alert(const string id, series bool condition, series string title, series string message, data) =>
     if condition
         emit.append id AlertEvent.new(title, message, data)
+
+/**
+ * One part of a {@link ProfileRow}: a length, the color to draw it in and the
+ * name of the part it belongs to.
+ *
+ * @category Vertical profiles
+ */
+export type ProfileSegment
+    /** Length of the part, `0` or more, relative to the profile's longest row. */
+    float value
+    /** Color of the part, which a host may let users change. */
+    color color
+    /**
+     * Name of the part, such as `"Up volume"`, which a host shows when it lets
+     * users restyle it; segments with the same title share one color there.
+     */
+    string title = ""
+
+/**
+ * One band of a vertical profile, such as a price range, with the parts drawn in it.
+ *
+ * @category Vertical profiles
+ */
+export type ProfileRow
+    /** Bottom of the band, on the axis the profile shares with the chart. */
+    float low
+    /** Top of the band, above `low`. The rows of one profile do not overlap. */
+    float high
+    /** Parts drawn side by side from the start of the box, in this order. */
+    array<ProfileSegment> segments
+
+/**
+ * A line across the whole box of a vertical profile, such as a point of control.
+ *
+ * @category Vertical profiles
+ */
+export type ProfileLevel
+    /** Position of the line, on the axis the profile shares with the chart. */
+    float y
+    /** Color of the line, which a host may let users change. */
+    color color
+    /**
+     * Name of the line, such as `"Point of control"`, which a host shows when it
+     * lets users restyle it; levels with the same title share one color there.
+     */
+    string title = ""
+
+struct VerticalProfile
+    string id
+    int from
+    int to
+    array<ProfileRow> rows
+    array<ProfileLevel> levels
+    string title
+    string display
+
+/**
+ * Writes a vertical profile, bands of the vertical axis drawn sideways inside a time box, to a named output.
+ *
+ * Each row is a band of the axis, such as a price range, drawn sideways from
+ * `from` toward `to`; the longest row fills the box. A volume profile is one
+ * use: one row per price range, its parts the volume traded on rising and on
+ * falling bars. The host draws, for each `from`, only the description written
+ * on the last row that carries it. Every row written is sent and kept, so
+ * write a finished profile once, and a forming one only on the newest bar
+ * ({@link barstate.islast}): the last of stored data, or a live bar while it
+ * can still change. Each part's color is a default: a host may let users
+ * restyle the parts, listed by their titles. This draws one fixed two-row
+ * profile:
+ *
+ * ```tea
+ * start = time[10]
+ * rows = array.from(ProfileRow.new(100.0, 101.0, array.from(ProfileSegment.new(3.0, color.green, "Buying"))), ProfileRow.new(101.0, 102.0, array.from(ProfileSegment.new(1.0, color.red, "Selling"))))
+ * levels = array.from(ProfileLevel.new(100.5, color.orange, "Point of control"))
+ * verticalProfile("profile", start, time, rows, levels, "Profile")
+ * ```
+ *
+ * @param id Name of the output this call writes.
+ * @param from Start of the box, as a time such as {@link time}.
+ * @param to End of the box, after `from`.
+ * @param rows Bands of the profile, in any order; they must not overlap.
+ * @param levels Lines across the box, such as a point of control.
+ * @param title Display name, separate from `id`.
+ * @param display Where the output appears: a `display.*` constant such as
+ * {@link display.all} or {@link display.none}.
+ * @returns The description written to `id`, with fields named after the
+ * parameters.
+ * @category Vertical profiles
+ */
+export verticalProfile(const string id, series int from, series int to, array<ProfileRow> rows, array<ProfileLevel> levels, const string title = "", const string display = "all") =>
+    p = VerticalProfile.new(id, from, to, rows, levels, title, display)
+    emit id p
+    return p

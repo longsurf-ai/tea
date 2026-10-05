@@ -232,6 +232,99 @@ describe('module binding', () => {
     expect(module.requests[0]!.context?.fill).toBe('carry');
   });
 
+  test('a chart default resolves from each bind’s fixed context', () => {
+    const program = mustBuild(
+      [
+        'range = input.string(chart.timeframe == "D" or chart.timeframe == "W" or chart.timeframe == "M" ? "Monthly" : (chart.timeframe == "240" ? "Weekly" : "Daily"), "Profile time range", options = ["Daily", "Weekly", "Monthly"])',
+        'emit "range" range',
+      ].join('\n'),
+    );
+    // The projection reports the default without a chart and marks it.
+    expect(parametersOf(program.params, program.nominalIds)).toMatchObject([
+      {name: 'range', defaultValue: 'Daily', chartDefault: true},
+    ]);
+    const module = loadModule(generate(program));
+    expect(module.parameters[0]).toMatchObject({
+      defaultValue: 'Daily',
+      chartDefault: true,
+    });
+    const chart = module.inputs.builtins.findIndex(
+      builtin => builtin.source.domain === 'chart',
+    );
+    const on = (timeframe: string) => new Map([[chart, timeframe]]);
+    const range = (bound: Module) => bound.parameters[0]!.value;
+    expect(range(module.bind({}, on('D')))).toBe('Monthly');
+    expect(range(module.bind({}, on('240')))).toBe('Weekly');
+    expect(range(module.bind({}, on('60')))).toBe('Daily');
+    expect(range(module.bind())).toBe('Daily');
+    // A supplied value wins, and later binds keep it.
+    const supplied = module.bind({range: 'Weekly'}, on('D'));
+    expect(supplied.parameters[0]).toMatchObject({
+      value: 'Weekly',
+      defaultValue: 'Monthly',
+    });
+    expect(range(supplied.bind({}, on('60')))).toBe('Weekly');
+    // A value that is still the default follows the chart of a later bind.
+    expect(range(module.bind().bind({}, on('D')))).toBe('Monthly');
+    expect(range(module.bind({}, on('D')).bind({}, on('60')))).toBe('Daily');
+  });
+
+  test('a resolved chart default outside its options fails binding', () => {
+    const module = loadModule(
+      generate(
+        mustBuild(
+          'range = input.string(chart.timeframe == "D" ? "Hourly" : "Daily", options = ["Daily", "Weekly"])\nemit "range" range',
+        ),
+      ),
+    );
+    const chart = new Map([[0, 'D']]);
+    expect(() => module.bind({}, chart)).toThrow(BindError);
+    expect(() => module.bind({}, chart)).toThrow(
+      "parameter 'range' must be one of Daily, Weekly",
+    );
+    expect(module.bind({range: 'Weekly'}, chart).parameters[0]!.value).toBe(
+      'Weekly',
+    );
+  });
+
+  test('a request child keeps the chart default without a chart', () => {
+    const module = loadModule(
+      generate(
+        mustBuild(
+          'scale = input.float(timeframe.isdaily ? 2.0 : 1.0)\nr = request.security("X", "D", close * scale)\nemit "r" r',
+        ),
+      ),
+    ).bind({}, new Map([[0, true]]));
+    expect(module.parameters[0]).toMatchObject({value: 2, chartDefault: true});
+    const child = module.requests[0]!.module.parameters[0]!;
+    expect(child).toMatchObject({value: 1, defaultValue: 1});
+    expect(child.chartDefault).toBeUndefined();
+  });
+
+  test('an auto timeframe header declares a timeframe parameter the host binds', () => {
+    const module = loadModule(
+      generate(
+        mustBuild('indicator("A", timeframe = "auto")\nemit "x" close'),
+      ),
+    );
+    expect(module.parameters).toMatchObject([
+      {
+        name: 'timeframe',
+        title: 'Timeframe',
+        type: 'string',
+        control: 'timeframe',
+        defaultValue: '',
+        chartDefault: true,
+      },
+    ]);
+    expect(module.bind().parameters[0]!.value).toBe('');
+    expect(module.bind({timeframe: '60'}).parameters[0]!.value).toBe('60');
+    expect(
+      loadModule(generate(mustBuild('indicator("A")\nemit "x" close')))
+        .parameters,
+    ).toEqual([]);
+  });
+
   test('binding an executing module derives another configuration', () => {
     const module = loadModule(
       generate(

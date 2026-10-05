@@ -27,6 +27,7 @@ Values the host supplies when it binds the script, available in every script wit
 | [`timeframe.isweekly`](#isweekly)       | Whether the timeframe is measured in weeks.                                       |
 | [`timeframe.ismonthly`](#ismonthly)     | Whether the timeframe is measured in months.                                      |
 | [`timeframe.isdwm`](#isdwm)             | Whether the timeframe is measured in days, weeks or months.                       |
+| [`chart.timeframe`](#chart-timeframe)   | The timeframe of the chart as text, such as `"D"`.                                |
 
 ## Symbol
 
@@ -211,3 +212,13 @@ simple bool timeframe.isdwm
 ```
 
 The host supplies it separately; Tea does not derive it from [`timeframe.period`](./symbol-and-timeframe.md#period). Inside a request expression it is the value the host supplies for that request, or `false`; Tea does not take it from the request’s `timeframe` or from the script.
+
+### chart timeframe
+
+The timeframe of the chart as text, such as `"D"`.
+
+```tea
+simple string chart.timeframe
+```
+
+Supplied by the host when it binds the script; `na` when the host supplies none, as under `tea run`. It differs from [`timeframe.period`](./symbol-and-timeframe.md#period) when the host runs the script on other bars than the chart’s, as it may under an [`indicator`](./core.md#indicator) header with `timeframe = "auto"`. Inside a request expression it is still the chart’s timeframe.

@@ -34,7 +34,7 @@ runtime semantics remain in their existing packages.
   Node clock); each of its subscriptions is one `.to()` call, but a reader's
   own failure ends only that reader. RxJS owns ongoing
   values/errors/completion. Node-owned connection teardown stops the complete child graph between synchronous steps. `dispose()` is synchronous and
-  idempotent. Optional Bool `provisional` input metadata drives existing Context attempts; only final attempts advance index. The host's `isRealtime` callback drives Pine live/history flags. Final timestamps cannot be revised.
+  idempotent. Optional Bool `provisional` input metadata drives existing Context attempts; only final attempts advance index. The host's `isRealtime` and `isLast` callbacks drive Pine's live/history and newest-bar flags. Final timestamps cannot be revised.
 - `Context` keeps `StepResult` internal to Node. Node adds its successful-step
   index and exact source time, then publishes one lossless Arrow-schema row:
   source-named set fields contain nullable raw values, append fields contain
@@ -71,7 +71,7 @@ runtime semantics remain in their existing packages.
   scalar arrays and become ordinary Tea arrays inside the parent Heap
   transaction. This collect path is Node-only. The statically enabled Pine
   Extension derives contextual builtins from Node index, current input time
-  and the host's `now`/`isRealtime` callbacks; dynamic requests fail earlier
+  and the host's `now`/`isRealtime`/`isLast` callbacks; dynamic requests fail earlier
   at the noder boundary.
 
 - Parameters, input requirements, state descriptions, and one output schema live directly on the module. Both set and append results use one cell array; Node adds coordinates without rebuilding a payload language. Live streams stay in Node.

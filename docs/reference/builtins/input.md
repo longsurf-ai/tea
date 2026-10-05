@@ -45,7 +45,7 @@ Declares a whole-number input.
 
 ```tea
 input int input.int(
-    const int defval,
+    simple int defval,
     const string title = …,
     const int minval = …,
     const int maxval = …,
@@ -59,7 +59,7 @@ input int input.int(
 )
 
 input int input.int(
-    const int defval,
+    simple int defval,
     const string title = …,
     const any value options,
     const string tooltip = …,
@@ -71,13 +71,13 @@ input int input.int(
 )
 ```
 
-| Parameter | Type              | Description                                                                                                                            |
-| --------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `defval`  | `const int`       | The value used when the host supplies none. Must be a compile-time constant. Cannot be `na`.                                           |
-| `minval`  | `const int`       | The smallest value the host may supply. Must be a compile-time constant. Cannot be `na`.                                               |
-| `maxval`  | `const int`       | The largest value the host may supply. Must be a compile-time constant. Cannot be `na`.                                                |
-| `step`    | `const int`       | The increment a host’s control uses between values. Must be a compile-time constant. Cannot be `na`.                                   |
-| `options` | `const any value` | The only values the host may supply, as a bracketed list of distinct constants such as `[5, 10, 20]`; the default must be one of them. |
+| Parameter | Type              | Description                                                                                                                                                                           |
+| --------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple int`      | The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). Cannot be `na`. |
+| `minval`  | `const int`       | The smallest value the host may supply. Must be a compile-time constant. Cannot be `na`.                                                                                              |
+| `maxval`  | `const int`       | The largest value the host may supply. Must be a compile-time constant. Cannot be `na`.                                                                                               |
+| `step`    | `const int`       | The increment a host’s control uses between values. Must be a compile-time constant. Cannot be `na`.                                                                                  |
+| `options` | `const any value` | The only values the host may supply, as a bracketed list of distinct constants such as `[5, 10, 20]`; the default must be one of them.                                                |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
@@ -123,7 +123,7 @@ Declares a floating-point number input.
 
 ```tea
 input float input.float(
-    const float defval,
+    simple float defval,
     const string title = …,
     const float minval = …,
     const float maxval = …,
@@ -137,7 +137,7 @@ input float input.float(
 )
 
 input float input.float(
-    const float defval,
+    simple float defval,
     const string title = …,
     const any value options,
     const string tooltip = …,
@@ -149,13 +149,13 @@ input float input.float(
 )
 ```
 
-| Parameter | Type              | Description                                                                                                                            |
-| --------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `defval`  | `const float`     | The value used when the host supplies none. Must be a compile-time constant. Cannot be `na`.                                           |
-| `minval`  | `const float`     | The smallest value the host may supply. Must be a compile-time constant. Cannot be `na`.                                               |
-| `maxval`  | `const float`     | The largest value the host may supply. Must be a compile-time constant. Cannot be `na`.                                                |
-| `step`    | `const float`     | The increment a host’s control uses between values. Must be a compile-time constant. Cannot be `na`.                                   |
-| `options` | `const any value` | The only values the host may supply, as a bracketed list of distinct constants such as `[5, 10, 20]`; the default must be one of them. |
+| Parameter | Type              | Description                                                                                                                                                                           |
+| --------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple float`    | The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). Cannot be `na`. |
+| `minval`  | `const float`     | The smallest value the host may supply. Must be a compile-time constant. Cannot be `na`.                                                                                              |
+| `maxval`  | `const float`     | The largest value the host may supply. Must be a compile-time constant. Cannot be `na`.                                                                                               |
+| `step`    | `const float`     | The increment a host’s control uses between values. Must be a compile-time constant. Cannot be `na`.                                                                                  |
+| `options` | `const any value` | The only values the host may supply, as a bracketed list of distinct constants such as `[5, 10, 20]`; the default must be one of them.                                                |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
@@ -201,7 +201,7 @@ Declares a price-level input.
 
 ```tea
 input float input.price(
-    const float defval,
+    simple float defval,
     const string title = …,
     const string tooltip = …,
     const string inline = …,
@@ -212,9 +212,9 @@ input float input.price(
 )
 ```
 
-| Parameter | Type          | Description                                                                                  |
-| --------- | ------------- | -------------------------------------------------------------------------------------------- |
-| `defval`  | `const float` | The value used when the host supplies none. Must be a compile-time constant. Cannot be `na`. |
+| Parameter | Type           | Description                                                                                                                                                                           |
+| --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple float` | The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). Cannot be `na`. |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
@@ -258,7 +258,7 @@ Declares a true-or-false input.
 
 ```tea
 input bool input.bool(
-    const bool defval,
+    simple bool defval,
     const string title = …,
     const string tooltip = …,
     const string inline = …,
@@ -269,9 +269,9 @@ input bool input.bool(
 )
 ```
 
-| Parameter | Type         | Description                                                                  |
-| --------- | ------------ | ---------------------------------------------------------------------------- |
-| `defval`  | `const bool` | The value used when the host supplies none. Must be a compile-time constant. |
+| Parameter | Type          | Description                                                                                                                                                           |
+| --------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple bool` | The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
@@ -316,7 +316,7 @@ Declares a text input, optionally limited to a list of choices.
 
 ```tea
 input string input.string(
-    const string defval,
+    simple string defval,
     const string title = …,
     const any value options = …,
     const string tooltip = …,
@@ -328,10 +328,10 @@ input string input.string(
 )
 ```
 
-| Parameter | Type              | Description                                                                                                                                                                 |
-| --------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `defval`  | `const string`    | The value used when the host supplies none. Must be a compile-time constant. Cannot be `na`.                                                                                |
-| `options` | `const any value` | The only values the host may supply, as a bracketed list of distinct constants such as `["SMA", "EMA"]`; the default must be one of them. Without it, any text is accepted. |
+| Parameter | Type              | Description                                                                                                                                                                           |
+| --------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple string`   | The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). Cannot be `na`. |
+| `options` | `const any value` | The only values the host may supply, as a bracketed list of distinct constants such as `["SMA", "EMA"]`; the default must be one of them. Without it, any text is accepted.           |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
@@ -377,7 +377,7 @@ Declares a multi-line text input.
 
 ```tea
 input string input.text_area(
-    const string defval,
+    simple string defval,
     const string title = …,
     const string tooltip = …,
     const string group = …,
@@ -387,9 +387,9 @@ input string input.text_area(
 )
 ```
 
-| Parameter | Type           | Description                                                                                  |
-| --------- | -------------- | -------------------------------------------------------------------------------------------- |
-| `defval`  | `const string` | The value used when the host supplies none. Must be a compile-time constant. Cannot be `na`. |
+| Parameter | Type            | Description                                                                                                                                                                           |
+| --------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple string` | The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). Cannot be `na`. |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
@@ -403,7 +403,7 @@ Declares an input that selects one member of an enum.
 
 ```tea
 input.enum(
-    const enum defval,
+    simple enum defval,
     const string title = …,
     const any value options = …,
     const string tooltip = …,
@@ -415,10 +415,10 @@ input.enum(
 )
 ```
 
-| Parameter | Type              | Description                                                                                                                                                           |
-| --------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `defval`  | `const enum`      | The member used when the host supplies none; its enum is the type of the result. Must be a compile-time constant. Cannot be `na`.                                     |
-| `options` | `const any value` | The only members the host may choose, as a bracketed list such as `[Average.sma, Average.ema]`; the default must be one of them. Without it, every member is allowed. |
+| Parameter | Type              | Description                                                                                                                                                                                                                |
+| --------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple enum`     | The member used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). Its enum is the type of the result. Cannot be `na`. |
+| `options` | `const any value` | The only members the host may choose, as a bracketed list such as `[Average.sma, Average.ema]`; the default must be one of them. Without it, every member is allowed.                                                      |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
@@ -472,7 +472,7 @@ Declares a color input.
 
 ```tea
 input color input.color(
-    const color defval,
+    simple color defval,
     const string title = …,
     const string tooltip = …,
     const string inline = …,
@@ -483,9 +483,9 @@ input color input.color(
 )
 ```
 
-| Parameter | Type          | Description                                                                                  |
-| --------- | ------------- | -------------------------------------------------------------------------------------------- |
-| `defval`  | `const color` | The value used when the host supplies none. Must be a compile-time constant. Cannot be `na`. |
+| Parameter | Type           | Description                                                                                                                                                                           |
+| --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple color` | The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). Cannot be `na`. |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
@@ -513,7 +513,7 @@ Declares a text input that names a timeframe, such as `"D"`.
 
 ```tea
 input string input.timeframe(
-    const string defval,
+    simple string defval,
     const string title = …,
     const any value options = …,
     const string tooltip = …,
@@ -525,10 +525,10 @@ input string input.timeframe(
 )
 ```
 
-| Parameter | Type              | Description                                                                                                                                                                   |
-| --------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `defval`  | `const string`    | The value used when the host supplies none. Must be a compile-time constant. Cannot be `na`.                                                                                  |
-| `options` | `const any value` | The only values the host may supply, as a bracketed list of distinct constants such as `["60", "D", "W"]`; the default must be one of them. Without it, any text is accepted. |
+| Parameter | Type              | Description                                                                                                                                                                           |
+| --------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple string`   | The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). Cannot be `na`. |
+| `options` | `const any value` | The only values the host may supply, as a bracketed list of distinct constants such as `["60", "D", "W"]`; the default must be one of them. Without it, any text is accepted.         |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
@@ -548,7 +548,7 @@ Declares a text input that names a symbol, such as `"NASDAQ:AAPL"`.
 
 ```tea
 input string input.symbol(
-    const string defval,
+    simple string defval,
     const string title = …,
     const string tooltip = …,
     const string inline = …,
@@ -559,9 +559,9 @@ input string input.symbol(
 )
 ```
 
-| Parameter | Type           | Description                                                                                  |
-| --------- | -------------- | -------------------------------------------------------------------------------------------- |
-| `defval`  | `const string` | The value used when the host supplies none. Must be a compile-time constant. Cannot be `na`. |
+| Parameter | Type            | Description                                                                                                                                                                           |
+| --------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple string` | The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). Cannot be `na`. |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
@@ -581,7 +581,7 @@ Declares a text input for a trading session, such as `"0930-1600"`.
 
 ```tea
 input string input.session(
-    const string defval,
+    simple string defval,
     const string title = …,
     const any value options = …,
     const string tooltip = …,
@@ -595,7 +595,7 @@ input string input.session(
 
 | Parameter | Type              | Description                                                                                                                                                                             |
 | --------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `defval`  | `const string`    | The value used when the host supplies none. Must be a compile-time constant. Cannot be `na`.                                                                                            |
+| `defval`  | `simple string`   | The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). Cannot be `na`.   |
 | `options` | `const any value` | The only values the host may supply, as a bracketed list of distinct constants such as `["0930-1600", "0400-2000"]`; the default must be one of them. Without it, any text is accepted. |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
@@ -610,7 +610,7 @@ Declares an input that holds a point in time.
 
 ```tea
 input int input.time(
-    const int defval,
+    simple int defval,
     const string title = …,
     const string tooltip = …,
     const string inline = …,
@@ -621,9 +621,9 @@ input int input.time(
 )
 ```
 
-| Parameter | Type        | Description                                                                                  |
-| --------- | ----------- | -------------------------------------------------------------------------------------------- |
-| `defval`  | `const int` | The value used when the host supplies none. Must be a compile-time constant. Cannot be `na`. |
+| Parameter | Type         | Description                                                                                                                                                                           |
+| --------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple int` | The value used when the host supplies none: a constant, or an expression of the chart’s fixed values that the host’s chart decides (see [`input`](./input.md#input)). Cannot be `na`. |
 
 **Returns:** The value the host supplied, or the default; it is the same on every bar.
 
@@ -781,7 +781,7 @@ Declares an input whose type follows its default value.
 
 ```tea
 input int input(
-    const int defval,
+    simple int defval,
     const string title = …,
     const string tooltip = …,
     const string inline = …,
@@ -791,7 +791,7 @@ input int input(
 )
 
 input float input(
-    const float defval,
+    simple float defval,
     const string title = …,
     const string tooltip = …,
     const string inline = …,
@@ -801,7 +801,7 @@ input float input(
 )
 
 input bool input(
-    const bool defval,
+    simple bool defval,
     const string title = …,
     const string tooltip = …,
     const string inline = …,
@@ -811,7 +811,7 @@ input bool input(
 )
 
 input string input(
-    const string defval,
+    simple string defval,
     const string title = …,
     const string tooltip = …,
     const string inline = …,
@@ -821,7 +821,7 @@ input string input(
 )
 
 input color input(
-    const color defval,
+    simple color defval,
     const string title = …,
     const string tooltip = …,
     const string inline = …,
@@ -841,9 +841,9 @@ series float input(
 )
 ```
 
-| Parameter | Type                                                                          | Description                                                                                                                                                                                                                          |
-| --------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `defval`  | `const int, const float, const bool, const string, const color, series float` | The value used when the host supplies none. An `int`, `float`, `bool`, `string` or `color` constant declares an input of that type; a series alias such as `close` declares a source input like [`input.source`](./input.md#source). |
+| Parameter | Type                                                                               | Description                                                                                                                                                                                                                                                                                                 |
+| --------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defval`  | `simple int, simple float, simple bool, simple string, simple color, series float` | The value used when the host supplies none. An `int`, `float`, `bool`, `string` or `color` value declares an input of that type: a constant, or an expression of the chart’s fixed values described below. A series alias such as `close` declares a source input like [`input.source`](./input.md#source). |
 
 **Returns:** The value the host supplied, or the default; for a source input, the chosen series’ value on the current bar.
 
@@ -856,6 +856,8 @@ An input is named after the variable that declares it, and the host sets it by t
 An input read inside a request expression is the request’s own copy: the host sets it separately for that request, and a value set for the script does not reach it.
 
 A `bool` or `color` input is hidden by default (`display.none`).
+
+A default is usually a constant. It may instead depend on the chart the host binds the script to: it may read the chart’s fixed values, [`chart.timeframe`](./symbol-and-timeframe.md#chart-timeframe), `syminfo.*` and `timeframe.*`, combined with constants by operators, `and`, `or`, `not`, `?:` and parentheses. It cannot read series values, other inputs or variables, or call a function. Each time the host binds the script, its chart decides such a default, which the host can show; a value the host supplies replaces it. Without a chart, as under `tea run`, each of those values is `na`, or `false` for a `bool`; the default must then still be valid: not `na`, one of its `options`, and within `minval` and `maxval`. A chart that gives a default outside them stops the script from binding. A source input’s default is a series alias.
 
 **Example:** `length` is an `int` input and `source` a source input, so with their defaults `average` is the 3-bar average of the closes.
 
@@ -887,5 +889,21 @@ index  close  average
 4      12     13
 5      18     15
 ```
+
+**Example:** Without a chart, `chart.timeframe` is `na`, so neither comparison holds and `range` is `"Daily"`. A host that binds the script to a daily or weekly chart gets `"Monthly"`.
+
+```tea
+range = input.string(chart.timeframe == "D" or chart.timeframe == "W" ? "Monthly" : "Daily", "Range", options = ["Daily", "Monthly"])
+emit "range" range
+```
+
+**Output:**
+
+```text
+index  range
+0      Daily
+```
+
+**Pine Script:** Pine Script requires a constant default. Tea also accepts a default that reads the chart’s fixed values, such as `chart.timeframe == "D" ? "Monthly" : "Daily"`, which the host’s chart decides when it binds the script.
 
 **See also:** [`input.int`](./input.md#int), [`input.source`](./input.md#source)

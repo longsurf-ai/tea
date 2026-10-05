@@ -44,15 +44,16 @@ drawing objects: there is no `label.new`, `line.new`, `box.new`,
 
 Tea accepts these Pine Script parameters by position but rejects any argument for them.
 
-| Function                                             | Parameters   |
-| ---------------------------------------------------- | ------------ |
-| [`indicator`](./builtins/core.md#indicator)          | `shorttitle` |
-| [`request.security`](./builtins/request.md#security) | `currency`   |
+| Function                                             | Parameters                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------- |
+| [`indicator`](./builtins/core.md#indicator)          | `shorttitle`, `format`, `precision`, `scale`, `max_bars_back` |
+| [`request.security`](./builtins/request.md#security) | `currency`                                                    |
 
 ## Functions and values
 
 | Name                                             | In Tea                                                                                                                                                                                                                                                                                                                                          |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`input`](./builtins/input.md#input)             | Pine Script requires a constant default. Tea also accepts a default that reads the chart’s fixed values, such as `chart.timeframe == "D" ? "Monthly" : "Daily"`, which the host’s chart decides when it binds the script.                                                                                                                       |
 | [`plot`](./builtins/plots.md#plot)               | Tea has no `join`, `force_overlay` or `linestyle` parameter; passing one is an error. In Pine Script, `precision = 0` shows no decimal places; in Tea, `0` is the default and leaves the choice to the host.                                                                                                                                    |
 | [`alert`](./builtins/alerts.md#alert)            | Pine Script's `alert(message, freq)` has a different signature: it takes no `id`, condition, title or payload, and Tea has no `freq` parameter or `alert.freq_*` constants.                                                                                                                                                                     |
 | [`ta.vwma`](./builtins/ta/vwma.md)               | Pine's manual defines it as `ta.sma(source * volume, length) / ta.sma(volume, length)`. The two differ when `source` is `na` on a bar whose volume is known: Tea leaves that volume out, while `ta.sma(volume, length)` still counts it.                                                                                                        |

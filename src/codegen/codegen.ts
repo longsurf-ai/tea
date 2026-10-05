@@ -595,8 +595,41 @@ class Generator {
     );
     out.push(`}, ${this.moduleRef}_main, (module, contextConstants) => {`);
     for (const line of indent(bindLines)) out.push(line);
+    const defaultLines = this.lowerChartDefaults();
+    if (defaultLines.length > 0) {
+      out.push('}, contextConstants => {');
+      for (const line of indent(defaultLines)) out.push(line);
+    }
     out.push('});');
     return out;
+  }
+
+  /**
+   * Emit the chart defaults bind resolves before it checks parameters, each
+   * evaluated from the bound fixed context and returned by parameter index.
+   * Only the root resolves them; a request child keeps every default as it
+   * is before any chart is bound.
+   *
+   * @example `range = input.string(chart.timeframe == "D" ? "Monthly" : "Daily")`
+   * emits a callback returning `new Map([[0, t0]])`, where `t0` holds the
+   * evaluated ternary.
+   */
+  private lowerChartDefaults(): string[] {
+    if (!this.root) return [];
+    const lines: string[] = [];
+    const ctx = {...this.ctxFor(0), binding: true} satisfies LowerCtx;
+    const entries = this.program.params.flatMap((param, pid) => {
+      if (param.defaultValue?.kind !== ParamDefaultKind.Chart) return [];
+      const {expr} = param.defaultValue;
+      const value = coerce(capture(expr, lines, ctx), expr.type, param.type);
+      return [`[${pid}, ${value}]`];
+    });
+    return entries.length === 0
+      ? []
+      : [
+          ...lines,
+          `return new Map<number, Value<unknown>>([${entries.join(', ')}]);`,
+        ];
   }
 
   private contextName(): string {
@@ -1008,8 +1041,10 @@ class Generator {
     ).map((parameter, pid) => {
       const param = this.globalParams[pid];
       if (param === undefined) return fatal(`missing global parameter ${pid}`);
+      // A request child keeps each chart default as it is without a chart.
+      const {chartDefault: _chartDefault, ...childParameter} = parameter;
       return {
-        ...parameter,
+        ...(this.root ? parameter : childParameter),
         seriesSid: this.root ? (this.paramSeriesIds.get(param) ?? null) : null,
         active: this.root ? staticBool(param.active) : true,
       };

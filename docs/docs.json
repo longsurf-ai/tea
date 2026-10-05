@@ -22,7 +22,10 @@
     "dark": "#0f463a"
   },
   "seo": {
-    "indexing": "all"
+    "indexing": "all",
+    "metatags": {
+      "canonical": "https://openchart.co/tea"
+    }
   },
   "navigation": {
     "tabs": [
@@ -204,6 +207,13 @@
                   "reference/builtins/ta/wad",
                   "reference/builtins/ta/nvi",
                   "reference/builtins/ta/pvi"
+                ]
+              },
+              {
+                "group": "Volume profile",
+                "pages": [
+                  "reference/builtins/ta/volumeProfile",
+                  "reference/builtins/ta/VolumeByPrice"
                 ]
               }
             ]

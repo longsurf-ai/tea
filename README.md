@@ -53,7 +53,8 @@ folding for `.tea` files. See its README for packaging and installation.
 Language documentation and Mintlify configuration live in [docs](docs).
 Use a supported LTS Node release (20, 22, or 24), then run `npm run docs:dev`
 while writing or `npm run docs:check` to validate references, navigation, and
-the packaged offline build. The hosted documentation root is `/docs`.
+the packaged offline build. Mintlify publishes the documentation at
+https://openchart.co/tea from `main`.
 
 The Reference under `docs/reference` is generated from the code it describes:
 document a library export with a `/** */` doc comment directly above it, a native

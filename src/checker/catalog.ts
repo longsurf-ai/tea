@@ -296,6 +296,7 @@ function builtinVariable(
 
 const BARSTATE_FIELDS = [
   'isfirst',
+  'islast',
   'ishistory',
   'isrealtime',
   'isconfirmed',
@@ -471,6 +472,12 @@ function buildVars(): NativeVar[] {
       domain: 'timeframe',
       field: 'isdwm',
     }),
+    // Tea-only: the chart's timeframe, which differs from timeframe.period
+    // when the host runs the script on other bars.
+    builtinVariable('chart.timeframe', StringType, Qualifier.Simple, {
+      domain: 'chart',
+      field: 'timeframe',
+    }),
   ];
   for (const field of BARSTATE_FIELDS) {
     vars.push(
@@ -506,6 +513,7 @@ export const RESERVED_SERIES_INPUT_NAMES: ReadonlySet<string> = new Set([
 
 const CONCRETE_CONST_VALUE = {literal: true, acceptsNa: false} as const;
 const CONCRETE_CONST_NUMBER = {literal: true, acceptsNa: false} as const;
+const STAGED_CONST = {literal: true, availability: 'staged'} as const;
 
 function inputParam(
   name: string,
@@ -522,6 +530,13 @@ function inputParam(
     Effect.Param,
     defaultDisplay,
   );
+}
+
+// A scalar input's default: a constant or, Tea-only, a simple expression of
+// the chart's fixed values that bind evaluates. The checker limits it to
+// constants and fixed builtins combined by operators (checkInputContract).
+function defval(type: NativeTypeRef): NativeParam {
+  return req('defval', type, Qualifier.Simple, {acceptsNa: false});
 }
 
 function active(): NativeParam {
@@ -559,7 +574,7 @@ function scalarInput(
   return inputParam(
     name,
     [
-      req('defval', type, Qualifier.Const, CONCRETE_CONST_VALUE),
+      defval(type),
       opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       ...confirmedInputTail(),
     ],
@@ -577,7 +592,7 @@ function optionsInput(
   return inputParam(
     name,
     [
-      req('defval', type, Qualifier.Const, CONCRETE_CONST_VALUE),
+      defval(type),
       opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       opt('options', TypeRef.Any, Qualifier.Const),
       ...confirmedInputTail(),
@@ -594,7 +609,7 @@ function numericInput(name: string, type: Type): NativeFunc[] {
     inputParam(
       name,
       [
-        req('defval', type, Qualifier.Const, CONCRETE_CONST_VALUE),
+        defval(type),
         opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
         opt('minval', type, Qualifier.Const, CONCRETE_CONST_NUMBER),
         opt('maxval', type, Qualifier.Const, CONCRETE_CONST_NUMBER),
@@ -608,7 +623,7 @@ function numericInput(name: string, type: Type): NativeFunc[] {
     inputParam(
       name,
       [
-        req('defval', type, Qualifier.Const, CONCRETE_CONST_VALUE),
+        defval(type),
         opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
         req('options', TypeRef.Any, Qualifier.Const),
         ...trailing,
@@ -624,7 +639,7 @@ function textAreaInput(): NativeFunc {
   return inputParam(
     'input.text_area',
     [
-      req('defval', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
+      defval(StringType),
       opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       opt('tooltip', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       opt('group', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
@@ -673,7 +688,7 @@ function genericScalarInput(
   return inputParam(
     'input',
     [
-      req('defval', type, Qualifier.Const, CONCRETE_CONST_VALUE),
+      defval(type),
       opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       ...standardInputMetadata(),
       ...displayAndActive(),
@@ -688,7 +703,7 @@ function enumInput(): NativeFunc {
   return inputParam(
     'input.enum',
     [
-      req('defval', TypeRef.Enum, Qualifier.Const, CONCRETE_CONST_VALUE),
+      defval(TypeRef.Enum),
       opt('title', StringType, Qualifier.Const, CONCRETE_CONST_VALUE),
       opt('options', TypeRef.Any, Qualifier.Const),
       ...confirmedInputTail(),
@@ -726,8 +741,9 @@ function buildFuncs(): NativeFunc[] {
       Effect.Declaration,
     ),
     // An entry script's header: host-facing metadata that never changes
-    // execution. Parameters keep Pine's positional order; shorttitle waits
-    // for a host that displays it.
+    // execution. Parameters keep Pine's positional order; shorttitle,
+    // format, precision, scale and max_bars_back wait for a host that uses
+    // them. The checker accepts only "" and "auto" as timeframe.
     func(
       'indicator',
       [
@@ -735,11 +751,16 @@ function buildFuncs(): NativeFunc[] {
           literal: true,
           acceptsNa: false,
         }),
-        opt('shorttitle', StringType, Qualifier.Const, {
-          literal: true,
-          availability: 'staged',
-        }),
+        opt('shorttitle', StringType, Qualifier.Const, STAGED_CONST),
         opt('overlay', BoolType, Qualifier.Const, {
+          literal: true,
+          acceptsNa: false,
+        }),
+        opt('format', StringType, Qualifier.Const, STAGED_CONST),
+        opt('precision', IntType, Qualifier.Const, STAGED_CONST),
+        opt('scale', StringType, Qualifier.Const, STAGED_CONST),
+        opt('max_bars_back', IntType, Qualifier.Const, STAGED_CONST),
+        opt('timeframe', StringType, Qualifier.Const, {
           literal: true,
           acceptsNa: false,
         }),

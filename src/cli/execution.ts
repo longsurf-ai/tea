@@ -1,6 +1,6 @@
 // Purpose: Run one Tea file through the public finite Batch Recipe.
 
-import {from, firstValueFrom, toArray} from 'rxjs';
+import {from, firstValueFrom, map, toArray} from 'rxjs';
 import {Field, Float64, Int64, Schema} from 'apache-arrow';
 import {i} from '../api/clock';
 import {createNode} from '../api/node';
@@ -64,9 +64,11 @@ export async function runCommand(
     dynamicTokens,
     RUN_RESERVED_PARAMETERS,
   );
+  // The CSV's last row is the newest bar it has: Pine's `barstate.islast`.
+  let newest = false;
   const node = createNode(
     loaded.bind(parameters),
-    pineBuiltinSupplier(host.now),
+    pineBuiltinSupplier(host.now, undefined, () => newest),
   );
   const requests = node.module.requests.map(request => request.name);
   if (requests.length > 0) {
@@ -80,7 +82,9 @@ export async function runCommand(
   if (options.trace) {
     for (const line of traceDeclaration(declaration)) host.print(line);
   }
-  const stream = await csvBatchStream(input).catch((error: unknown) => {
+  const stream = await csvBatchStream(input, last => {
+    newest = last;
+  }).catch((error: unknown) => {
     // A missing file or a malformed cell is the user's input to fix.
     throw new OperationalError(
       `cannot read input '${input}': ${(error as {code?: unknown}).code === 'ENOENT' ? 'no such file' : (error as Error).message}`,
@@ -117,8 +121,10 @@ export async function runCommand(
   return {ok: true};
 }
 
+/** The CSV as one finite stream; `mark` hears whether each row it emits is the last. */
 async function csvBatchStream(
   path: string,
+  mark: (last: boolean) => void,
 ): Promise<DataStream<Readonly<Record<string, unknown>>>> {
   const discovered = await CSVSource.open(path);
   const fields = discovered.schema.fields.map(
@@ -151,7 +157,16 @@ async function csvBatchStream(
       fields.push(new Field(name, new Float64(), false));
     }
   }
-  return new DataStream(new Schema(fields), from(rows), i);
+  return new DataStream(
+    new Schema(fields),
+    from(rows).pipe(
+      map((row, index) => {
+        mark(index === rows.length - 1);
+        return row;
+      }),
+    ),
+    i,
+  );
 }
 
 function derivePrice(

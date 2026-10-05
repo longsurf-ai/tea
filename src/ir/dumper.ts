@@ -83,9 +83,11 @@ export function dumpProgram(program: Program): string {
     }
     if (param.defaultValue !== null) {
       line +=
-        param.defaultValue.kind === ParamDefaultKind.Const
-          ? ` default=${formatValue(param.defaultValue.value)}`
-          : ` default=series(${param.defaultValue.series.id})`;
+        param.defaultValue.kind === ParamDefaultKind.Series
+          ? ` default=series(${param.defaultValue.series.id})`
+          : param.defaultValue.kind === ParamDefaultKind.Chart
+            ? ` default=chart(${formatValue(param.defaultValue.value)})`
+            : ` default=${formatValue(param.defaultValue.value)}`;
     }
     const c = param.constraints;
     if (c !== null) {
@@ -106,6 +108,9 @@ export function dumpProgram(program: Program): string {
       line += ` {${parts.join(' ')}}`;
     }
     dumpDepthLine(line, param.depth, '', out, labels);
+    if (param.defaultValue?.kind === ParamDefaultKind.Chart) {
+      dumpExpr(param.defaultValue.expr, 'default: ', '  ', out, labels);
+    }
   }
 
   for (const series of seriesInputsOf(program)) {

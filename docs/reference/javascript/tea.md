@@ -198,6 +198,7 @@ Returns the supplier of Pine's per-bar values, such as `bar_index`, `time`, `tim
 function pineBuiltinSupplier(
   now?: () => number,
   isRealtime?: () => boolean,
+  isLast?: () => boolean,
 ): (
   _path: readonly number[],
   module: Module,
@@ -206,46 +207,50 @@ function pineBuiltinSupplier(
 ) => readonly Stored[];
 ```
 
-| Parameter    | Description                                                                                                                                              |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `now`        | Returns the time for `timenow`, in epoch milliseconds. Defaults to `Date.now`.                                                                           |
-| `isRealtime` | Returns whether the current bar is live, for `barstate.isrealtime` and `barstate.ishistory`. Defaults to always `false`, so every bar counts as history. |
+| Parameter    | Description                                                                                                                                                                                                          |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `now`        | Returns the time for `timenow`, in epoch milliseconds. Defaults to `Date.now`.                                                                                                                                       |
+| `isRealtime` | Returns whether the current bar is live, for `barstate.isrealtime` and `barstate.ishistory`. Defaults to always `false`, so every bar counts as history.                                                             |
+| `isLast`     | Returns whether the current attempt is of the newest bar the host has delivered, such as a finite input's last row or any live row, for `barstate.islast`. Defaults to always `false`, so no bar counts as the last. |
 
 **Returns:** The supplier to pass to [`createNode`](./tea.md#createnode).
 
 The [`tea`](./tea.md#tea) template installs one with the default callbacks; pass one
-to [`createNode`](./tea.md#createnode) when calling it directly, or to supply your own clock
-or realtime flag. A Node and each of its requests call the supplier on
-every step with their own bar index and input row, and each call samples
-`now` and `isRealtime` once; pass a constant function for a fixed time.
+to [`createNode`](./tea.md#createnode) when calling it directly, or to supply your own clock,
+realtime flag or newest-bar flag. A Node and each of its requests call the
+supplier on every step with their own bar index and input row, and each
+call samples `now`, `isRealtime` and `isLast` once; pass a constant function
+for a fixed time.
 
-| Builtin                | Reads                                         | Fails when                    |
-| ---------------------- | --------------------------------------------- | ----------------------------- |
-| `bar_index`            | the bar's index                               | never                         |
-| `time`                 | the row's `time` field                        | the row has no time           |
-| `timenow`              | `now()`                                       | `now()` is not a safe integer |
-| `barstate.isfirst`     | whether the bar's index is 0                  | never                         |
-| `barstate.isconfirmed` | whether `provisional` is not `true`           | never                         |
-| `barstate.isnew`       | whether the row is the bar's first            | never                         |
-| `barstate.isrealtime`  | `isRealtime()`                                | never                         |
-| `barstate.ishistory`   | the opposite of `isRealtime()`                | never                         |
-| `syminfo.*`            | nothing: `na`                                 | never                         |
-| `timeframe.*`          | nothing: `na`, or `false` for the `is*` flags | never                         |
+| Builtin                        | Reads                                         | Fails when                    |
+| ------------------------------ | --------------------------------------------- | ----------------------------- |
+| `bar_index`                    | the bar's index                               | never                         |
+| `time`                         | the row's `time` field                        | the row has no time           |
+| `timenow`                      | `now()`                                       | `now()` is not a safe integer |
+| `barstate.isfirst`             | whether the bar's index is 0                  | never                         |
+| `barstate.isconfirmed`         | whether `provisional` is not `true`           | never                         |
+| `barstate.isnew`               | whether the row is the bar's first            | never                         |
+| `barstate.isrealtime`          | `isRealtime()`                                | never                         |
+| `barstate.ishistory`           | the opposite of `isRealtime()`                | never                         |
+| `barstate.islast`              | `isLast()`                                    | never                         |
+| `syminfo.*`, `chart.timeframe` | nothing: `na`                                 | never                         |
+| `timeframe.*`                  | nothing: `na`, or `false` for the `is*` flags | never                         |
 
 The bar's index is the one in [`Datum`](./tea.md#datum): 0 for the first bar, and the
 same for every row of a bar. A failure throws [`BindError`](./tea.md#binderror) and fails
 the run. The supplier checks `now()` on every call, even when the script
 does not read `timenow`.
 
-`syminfo.*` and `timeframe.*` get real values only when the host fixes them
-while binding the module: the second argument of `Module.bind` maps the
-builtin's position in `module.inputs.builtins` to its value, which then
-replaces what this supplier gives on every step.
+`syminfo.*`, `timeframe.*` and `chart.timeframe` get real values only when
+the host fixes them while binding the module: the second argument of
+`Module.bind` maps the builtin's position in `module.inputs.builtins` to its
+value, which then replaces what this supplier gives on every step.
 
 **Example:** For a module containing only `emit "now" timenow`,
 `pineBuiltinSupplier(() => 1000)([], module, 0, {})` returns `[1000]`.
 `pineBuiltinSupplier(Date.now, () => live)` reports realtime bars once the
-host sets `live`.
+host sets `live`; `pineBuiltinSupplier(Date.now, () => live, () => newest)`
+also reports the bar the host marks `newest` as the last.
 
 ### sync
 
