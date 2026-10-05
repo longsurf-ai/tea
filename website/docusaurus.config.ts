@@ -11,10 +11,8 @@ export default async function createConfig(): Promise<Config> {
   return {
     title: 'Tea',
     tagline: 'Documentation for the Tea programming language.',
-    // The packaged offline site serves from the root; the GitHub Pages
-    // workflow sets both to publish at https://longsurf-ai.github.io/tea/.
     url: process.env['TEA_DOCS_URL'] ?? 'http://localhost',
-    baseUrl: process.env['TEA_DOCS_BASE_URL'] ?? '/',
+    baseUrl: '/',
     favicon: 'tea-mark.svg',
     staticDirectories: ['../docs/assets'],
     onBrokenLinks: 'throw',
