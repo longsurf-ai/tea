@@ -1079,7 +1079,10 @@ class TeaNode implements Node {
     let currentChildIndex = -1;
     return child
       .requestOutput(spec, (datum, index) => {
+        // Collect windows close permanently; scalar samples serve later parent
+        // attempts without revising any parent output already published.
         if (
+          spec.mode === 'collect' &&
           this.timed &&
           child.timed &&
           index !== currentChildIndex &&

@@ -664,48 +664,56 @@ describe('tea', () => {
     expect(await execute(untimed(), untimed())).toEqual([1, 2]);
   });
 
-  test('rejects scalar children that open before an already served main time', async () => {
-    const mainRows = new Subject<TimedNumericDatum>();
-    const childRows = new Subject<TimedNumericDatum>();
-    let node = tea`
+  test.each([5n, 10n])(
+    'uses a first late scalar at %s only on subsequent main inputs',
+    async time => {
+      const mainRows = new Subject<TimedNumericDatum>();
+      const childRows = new Subject<TimedNumericDatum>();
+      let node = tea`
       requested = request.security("X", "2", close)
       emit "output0" requested
     `;
-    node = node.bind(timedNumericSubject(mainRows));
-    node = node.bind({requested: timedNumericSubject(childRows)});
-    const sink = new StepSink();
-    node.to(sink);
+      node = node.bind(timedNumericSubject(mainRows));
+      node = node.bind({requested: timedNumericSubject(childRows)});
+      const sink = new StepSink();
+      node.to(sink);
 
-    mainRows.next({time: 10n, close: 0});
-    await sink.waitFor(1);
-    childRows.next({time: 5n, close: 100});
-    await expect(sink.completion).rejects.toThrow(
-      'after its parent interval finalized',
-    );
-    expect(values(sink)).toEqual([NaN]);
-  });
+      mainRows.next({time: 10n, close: 0});
+      await sink.waitFor(1);
+      childRows.next({time, close: 100});
+      expect(values(sink)).toEqual([NaN]);
+      mainRows.next({time: 11n, close: 0});
+      mainRows.complete();
+      await sink.completion;
+      expect(values(sink)).toEqual([NaN, 100]);
+    },
+  );
 
-  test('rejects a new late child after retaining a current value', async () => {
-    const mainRows = new Subject<TimedNumericDatum>();
-    const childRows = new Subject<TimedNumericDatum>();
-    let node = tea`
+  test.each([6n, 10n])(
+    'replaces a retained scalar with a late child at %s for subsequent main inputs',
+    async time => {
+      const mainRows = new Subject<TimedNumericDatum>();
+      const childRows = new Subject<TimedNumericDatum>();
+      let node = tea`
       requested = request.security("X", "2", close)
       emit "output0" requested
     `;
-    node = node.bind(timedNumericSubject(mainRows));
-    node = node.bind({requested: timedNumericSubject(childRows)});
-    const sink = new StepSink();
-    node.to(sink);
+      node = node.bind(timedNumericSubject(mainRows));
+      node = node.bind({requested: timedNumericSubject(childRows)});
+      const sink = new StepSink();
+      node.to(sink);
 
-    childRows.next({time: 5n, close: 100});
-    mainRows.next({time: 10n, close: 0});
-    await sink.waitFor(1);
-    childRows.next({time: 6n, close: 200});
-    await expect(sink.completion).rejects.toThrow(
-      'after its parent interval finalized',
-    );
-    expect(values(sink)).toEqual([100]);
-  });
+      childRows.next({time: 5n, close: 100});
+      mainRows.next({time: 10n, close: 0});
+      await sink.waitFor(1);
+      childRows.next({time, close: 200});
+      expect(values(sink)).toEqual([100]);
+      mainRows.next({time: 11n, close: 0});
+      mainRows.complete();
+      await sink.completion;
+      expect(values(sink)).toEqual([100, 200]);
+    },
+  );
 
   test('rejects an invalid input-bound request policy before execution', () => {
     const fillNode = tea`
@@ -791,32 +799,35 @@ describe('tea', () => {
     expect(values(sink)).toEqual([NaN, NaN]);
   });
 
-  test('rejects lower-timeframe values that arrive after their window', async () => {
-    const mainRows = new Subject<TimedNumericDatum>();
-    const childRows = new Subject<TimedNumericDatum>();
-    let node = tea`
+  test.each([8n, 10n])(
+    'rejects lower-timeframe values at %s that arrive after their window',
+    async time => {
+      const mainRows = new Subject<TimedNumericDatum>();
+      const childRows = new Subject<TimedNumericDatum>();
+      let node = tea`
       lower = request.security_lower_tf("X", "", close)
       emit "output0" close
       emit "output1" lower.size()
       emit "output2" lower.first()
     `;
-    node = node.bind({
-      close: timedNumericSubject(mainRows),
-      lower: timedNumericSubject(childRows),
-    });
-    const sink = new StepSink();
-    node.to(sink);
+      node = node.bind({
+        close: timedNumericSubject(mainRows),
+        lower: timedNumericSubject(childRows),
+      });
+      const sink = new StepSink();
+      node.to(sink);
 
-    childRows.next({time: 5n, close: 1});
-    mainRows.next({time: 10n, close: 10});
-    await sink.waitFor(1);
+      childRows.next({time: 5n, close: 1});
+      mainRows.next({time: 10n, close: 10});
+      await sink.waitFor(1);
 
-    childRows.next({time: 8n, close: 99});
-    await expect(sink.completion).rejects.toThrow(
-      'after its parent interval finalized',
-    );
-    expect(outputValues(sink)).toEqual([[10, 1, 1]]);
-  });
+      childRows.next({time, close: 99});
+      await expect(sink.completion).rejects.toThrow(
+        'after its parent interval finalized',
+      );
+      expect(outputValues(sink)).toEqual([[10, 1, 1]]);
+    },
+  );
 
   test('falls back to one-to-one arrays without clocks or event time', async () => {
     let node = tea`
