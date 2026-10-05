@@ -1,0 +1,5 @@
+//@version=1
+
+var float total = 0.0
+total += close
+emit "total" barstate.islast ? total : na

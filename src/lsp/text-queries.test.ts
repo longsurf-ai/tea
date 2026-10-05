@@ -580,14 +580,19 @@ describe('signature help', () => {
   });
 
   test('a parameter that cannot be passed yet keeps its position', () => {
-    // indicator(title, shorttitle, overlay): shorttitle is staged and hidden,
-    // so the second positional argument matches nothing shown.
+    // indicator(title, shorttitle, overlay, format, precision, scale,
+    // max_bars_back, timeframe): the staged parameters are hidden, so the
+    // second positional argument matches nothing shown, and the eighth is
+    // timeframe.
     const positional = help('indicator("x", |');
     expect(positional?.signatures[0].label).toBe(
-      'void indicator(const string title, const bool overlay = …)',
+      'void indicator(const string title, const bool overlay = …, const string timeframe = …)',
     );
-    expect(positional?.activeParameter).toBe(2);
+    expect(positional?.activeParameter).toBe(3);
     expect(help('indicator("x", overlay = |')?.activeParameter).toBe(1);
+    expect(
+      help('indicator("x", na, true, na, na, na, na, |')?.activeParameter,
+    ).toBe(2);
   });
 
   test('signatures and parameters carry their documentation', () => {

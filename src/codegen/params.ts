@@ -12,7 +12,9 @@ import type {Parameter} from '../runtime/params';
 import type {Scalar} from '../runtime/value';
 
 /**
- * Preserve parameter constraints and enum identity in either backend.
+ * Preserve parameter constraints and enum identity in either backend. A chart
+ * default projects its value before any chart is bound and is marked
+ * `chartDefault`; the generated module's bind resolves it per chart.
  * @example `parametersOf(program.params, program.nominalIds)[0].defaultValue`
  * reads the checked default without binding a run.
  */
@@ -31,6 +33,9 @@ export function parametersOf(
     confirm: param.confirm,
     display: param.display,
     defaultValue: paramDefault(param),
+    ...(param.defaultValue?.kind === ParamDefaultKind.Chart
+      ? {chartDefault: true as const}
+      : {}),
     active:
       param.active.kind === IrKind.Const &&
       typeof param.active.value === 'boolean'

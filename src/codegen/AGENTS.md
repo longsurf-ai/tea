@@ -57,7 +57,9 @@ supported GPU subset. `docs/runtime.md` owns execution contracts.
   and one immutable `bind()` method. Its private calculation callback receives
   only a draft of binding facts and fixed context values. It resets late facts
   before checking missing parameters and evaluates the supported non-allocating
-  const/input/simple subset. There is no binding-time frame or Heap.
+  const/input/simple subset. There is no binding-time frame or Heap. A root
+  with chart defaults also emits a callback evaluating them from fixed values
+  alone, which bind runs before it validates parameters.
 - Bound history normalizes each synthesized component before combining maxima;
   an invalid component contributes zero without erasing another valid demand.
   Builtin constancy comes from qualifiers. Parameter enum identity comes from

@@ -54,7 +54,7 @@ checked package (every `Info`, and the calls that reach an error).
 - `catalog-docs.ts` holds the reader-facing documentation of every catalog
   name and supported parameter; the catalog keeps the facts (signatures,
   qualifiers, values) and the reference tests fail when a name lacks docs.
-- The catalog lists a builtin only if it is inexpressible in Tea. Visual functions are ordinary Tea source that build nominal values and emit them under explicit const-string IDs. The only headers are `library()`, which names a library, and `indicator()`, which an entry may place once as its first statement with literal arguments and a non-empty title; `strategy()`, `output()`, and `effect.emit()` have no special function definitions.
+- The catalog lists a builtin only if it is inexpressible in Tea. Visual functions are ordinary Tea source that build nominal values and emit them under explicit const-string IDs. The only headers are `library()`, which names a library, and `indicator()`, which an entry may place once as its first statement with literal arguments, a non-empty title and a `timeframe` of `""` or `"auto"`; `strategy()`, `output()`, and `effect.emit()` have no special function definitions.
 - `Info.emits` records each checked emission's column facts. A post-check reachable-call walk canonicalizes names and checks Tea type identity and fixed set/append mode before Arrow. Plain columns have exactly one static writer path and cannot repeat within a step; multiple append writers are permitted. Each call occurrence counts independently, including omitted defaults and loops. Validation-only method instances do not create columns and defer unknown const name values.
 - Explicit returns and retained tail-return sugar share one function result. Check every returned value and reachable fallthrough; returning branches do not contribute a value to their surrounding expression. Main has no required return; source return statements belong to functions.
 - Qualifier propagation- Qualifier propagation takes the later-known operand: expression results
@@ -81,7 +81,12 @@ checked package (every `Info`, and the calls that reach an error).
   checker error; missingness tests use `na(x)`.
 - `NativeParam.acceptsNa` owns parameter-level nullability beyond ordinary
   type assignability. Input defaults and concrete settings metadata reject
-  folded `NA_VALUE` before noding, including min/max/step. Input overloads,
+  folded `NA_VALUE` before noding, including min/max/step. A scalar input's
+  default is a constant or a Tea-only chart default: constants and fixed
+  (`simple`, builtin-bound) builtins joined by operators and `?:`.
+  `chartDefault()` alone decides that form and folds it with each fixed
+  builtin at its typed empty value; that value must pass every default check.
+  Source defaults stay series aliases. Input overloads,
   dependent option types/default membership, source-default vocabulary,
   display domain/default, and active qualifier are catalog/checker-owned;
   downstream manifest or UI projections must not reinterpret them.

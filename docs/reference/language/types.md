@@ -283,7 +283,7 @@ Fixed during compilation: literals, `const` declarations, built-in constants
 such as `color.red` and `math.pi`, enum members, and operators applied to
 these.
 
-Output names and some built-in parameters, such as `input.*` defaults, need the
+Output names and some built-in parameters, such as an input's `title`, need the
 value itself during compilation. Literals and constants provide it, and so do
 operators, `int()`, `float()`, `color.new()`, `color.rgb()` and the `math.*`
 functions applied to them. Other calls, including calls to functions you
@@ -300,7 +300,9 @@ data and return `series` values. See [input](../builtins/input.md).
 ### `simple`
 
 Fixed before the first step, from the context the script runs in, such as
-`syminfo.ticker` and `timeframe.period`.
+`syminfo.ticker` and `timeframe.period`. An `input.*` default may read these
+values, so the chart the host binds the script to decides it (see
+[input](../builtins/input.md#input)).
 
 ### `series`
 

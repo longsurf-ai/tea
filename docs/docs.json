@@ -208,6 +208,13 @@
                   "reference/builtins/ta/nvi",
                   "reference/builtins/ta/pvi"
                 ]
+              },
+              {
+                "group": "Volume profile",
+                "pages": [
+                  "reference/builtins/ta/volumeProfile",
+                  "reference/builtins/ta/VolumeByPrice"
+                ]
               }
             ]
           },

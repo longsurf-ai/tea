@@ -16,6 +16,7 @@ export type BuiltinSource =
       readonly domain: 'barstate';
       readonly field:
         | 'isfirst'
+        | 'islast'
         | 'ishistory'
         | 'isrealtime'
         | 'isconfirmed'
@@ -46,4 +47,8 @@ export type BuiltinSource =
         | 'isweekly'
         | 'ismonthly'
         | 'isdwm';
+    }
+  | {
+      readonly domain: 'chart';
+      readonly field: 'timeframe';
     };

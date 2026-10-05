@@ -9,9 +9,18 @@ import type {ConstValue, Qualifier, Type} from './type';
 // VALUE arrives from the runtime at bind time. input.source defaults are
 // references to a series input (close), not constants — the param records
 // the default CHOICE; the bound value is the runtime's series selection.
+// A chart default (Tea-only) depends on the chart the host binds the script
+// to: `expr` reads only constants and fixed builtins (chart.timeframe,
+// syminfo.*, timeframe.*) through operators and ternaries, and bind
+// evaluates it from the bound fixed context. `value` is `expr` with every
+// fixed builtin at its typed empty value: the default before any chart is
+// bound. An `indicator(timeframe = "auto")` header's `timeframe` parameter
+// is a chart default whose `expr` is the constant "": the host picks the
+// bars for the chart.
 export const ParamDefaultKind = {
   Const: 'const',
   Series: 'series',
+  Chart: 'chart',
 } as const;
 
 export type ParamDefault =
@@ -19,6 +28,11 @@ export type ParamDefault =
   | {
       readonly kind: typeof ParamDefaultKind.Series;
       readonly series: SeriesInput;
+    }
+  | {
+      readonly kind: typeof ParamDefaultKind.Chart;
+      readonly expr: IrExpr;
+      readonly value: ConstValue;
     };
 
 export const ParamConstraintKind = {
@@ -197,12 +211,20 @@ export interface MutableMethodIrFunc extends IrFuncBase {
 
 export type IrFunc = FreeIrFunc | ConstMethodIrFunc | MutableMethodIrFunc;
 
-/** The entry script's `indicator()` header: a title and a chart placement hint. */
+/**
+ * The entry script's `indicator()` header: a title, a chart placement hint
+ * and the bars the host runs the script on.
+ */
 export interface Declaration {
   readonly kind: 'indicator';
   readonly title: string;
   // Draw over the price pane instead of in a pane of its own.
   readonly overlay: boolean;
+  /**
+   * `''` asks the host to run the script on the chart's bars; `'auto'` lets
+   * the host pick finer bars of the same symbol. Tea runs either the same way.
+   */
+  readonly timeframe: '' | 'auto';
 }
 
 // @agent invariant: one Program instance runs against exactly one context
@@ -227,7 +249,8 @@ export interface Program {
    * never changes execution, and request children have none.
    *
    * @example `indicator("RSI", overlay = false)` as the first statement gives
-   * `{kind: 'indicator', title: 'RSI', overlay: false}`; without it, `null`.
+   * `{kind: 'indicator', title: 'RSI', overlay: false, timeframe: ''}`;
+   * without it, `null`.
    */
   readonly declaration: Declaration | null;
   /**

@@ -120,7 +120,7 @@ compile-time constant: literals, other constants, built-in constants such as
 - A `const` variable cannot be reassigned and has no history: `length[1]` is
   an error.
 - Its value can be used where a compile-time value is required, such as an
-  output name or an `input.*` default.
+  output name or an input's `title`.
 
 ```tea
 const string prefix = "band"

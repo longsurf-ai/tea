@@ -97,6 +97,32 @@ describe('Pine Extension', () => {
     expect(module.parameters[0]!.value).toBe(2);
   });
 
+  test('chart.timeframe is fixed context the host binds apart from timeframe.period', async () => {
+    const module = loadModule(
+      generate(
+        mustBuild(
+          'emit "chart" chart.timeframe\nemit "period" timeframe.period',
+        ),
+      ),
+    );
+    const context = new Map(
+      module.inputs.builtins.map((builtin, index) => [
+        index,
+        builtin.source.domain === 'chart' ? 'D' : '60',
+      ]),
+    );
+    const node = createNode(
+      module.bind({}, context),
+      pineBuiltinSupplier(() => 0),
+    ).bind(new DataStream(new Schema([]), of({})));
+    const sink = new DatumSink();
+    node.to(sink);
+    await sink.completion;
+    expect(sink.values.map(value => [value.chart, value.period])).toEqual([
+      ['D', '60'],
+    ]);
+  });
+
   test('bar states distinguish first attempt, final commit, history and realtime', () => {
     let live = false;
     const rows = new Subject<{time: number; provisional: boolean}>();
@@ -187,6 +213,103 @@ describe('Pine Extension', () => {
       [0, 1, 0],
       [1, 0, 0],
       [1, 0, 1],
+    ]);
+    node.dispose();
+  });
+
+  test('islast is true only while the host marks the newest bar, every live attempt included', () => {
+    let live = false;
+    let newest = false;
+    const rows = new Subject<{time: number; provisional: boolean}>();
+    const node = createNode(
+      loadModule(
+        generate(
+          mustBuild(
+            [
+              'emit "last" barstate.islast',
+              'emit "confirmed" barstate.isconfirmed',
+              'emit "realtime" barstate.isrealtime',
+            ].join('\n'),
+          ),
+        ),
+      ).bind(),
+      pineBuiltinSupplier(
+        () => 0,
+        () => live,
+        () => newest,
+      ),
+    ).bind(
+      new DataStream(
+        new Schema([
+          new Field('time', new TimestampMillisecond(), false),
+          new Field('provisional', new Bool(), false),
+        ]),
+        rows,
+      ),
+    );
+    const sink = new DatumSink();
+    node.to(sink);
+    // Stored rows: only the last one is the newest, final as it is.
+    rows.next({time: 1, provisional: false});
+    newest = true;
+    rows.next({time: 2, provisional: false});
+    // Live: each update is of the newest bar.
+    live = true;
+    rows.next({time: 3, provisional: true});
+    rows.next({time: 3, provisional: false});
+    expect(
+      sink.values.map(value => [value.last, value.confirmed, value.realtime]),
+    ).toEqual([
+      [false, true, false],
+      [true, true, false],
+      [true, false, true],
+      [true, true, true],
+    ]);
+    node.dispose();
+  });
+
+  test('islast follows the host callback at each Node step, so a request child marks its own newest bar', () => {
+    let newest = false;
+    const timed = new Schema([
+      new Field('time', new TimestampMillisecond(), false),
+    ]);
+    const root = new Subject<{time: number}>();
+    const child = new Subject<{time: number}>();
+    const node = createNode(
+      loadModule(
+        generate(
+          mustBuild(
+            [
+              'child = request.security("X", "", barstate.islast ? 1 : 0, fill = "carry")',
+              'emit "output0" barstate.islast ? 1 : 0',
+              'emit "output1" child',
+            ].join('\n'),
+          ),
+        ),
+      ).bind(),
+      pineBuiltinSupplier(
+        () => 0,
+        () => false,
+        () => newest,
+      ),
+    )
+      .bind(new DataStream(timed, root))
+      .bind({child: new DataStream(timed, child)});
+    const sink = new DatumSink();
+    node.to(sink);
+    // The child's one row is its newest; only the root's last row is. A child
+    // reading the root's flag at the root's steps would carry 0.
+    newest = true;
+    child.next({time: 1});
+    newest = false;
+    root.next({time: 1});
+    root.next({time: 2});
+    newest = true;
+    root.next({time: 3});
+    expect(values(sink)).toEqual([
+      [0, 1],
+      [0, 1],
+      [1, 1],
     ]);
     node.dispose();
   });

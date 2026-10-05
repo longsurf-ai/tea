@@ -12,8 +12,8 @@ For a runnable walkthrough, see
 ## Ordinary program composition
 
 Every Tea entry is an ordinary program; no `strategy()` header is required or
-supported, and an optional `indicator()` header only labels the script for a
-host. Import the libraries that supply the desired policy:
+supported, and an optional `indicator()` header only informs a host. Import
+the libraries that supply the desired policy:
 
 ```tea
 import broker

@@ -496,14 +496,28 @@ class Checker {
           this.error(duplicate.pos, 'duplicate indicator() declaration');
         }
       }
-      // Hosts show the title, so it can't be blank.
+      // Hosts show the title, so it can't be blank. A timeframe is either
+      // the chart's ("") or one the host picks ("auto").
       for (const stmt of indicators) {
         const call = this.info.calls.get(
           unwrapParens(stmt.x) as syntax.CallExpr,
         );
-        const title = call?.kind === CallKind.Native ? call.args[0] : null;
+        if (call?.kind !== CallKind.Native) continue;
+        const arg = (name: string) =>
+          call.args[call.native.params.findIndex(p => p.name === name)];
+        const title = arg('title');
         if (title != null && this.tvOf(title).value === '') {
           this.error(title.pos, 'indicator() title must not be empty');
+        }
+        const timeframe = arg('timeframe');
+        if (timeframe != null) {
+          const value = this.tvOf(timeframe).value;
+          if (value !== '' && value !== 'auto') {
+            this.error(
+              timeframe.pos,
+              `indicator() timeframe must be "" (the chart's) or "auto"`,
+            );
+          }
         }
       }
       this.validateMethodDeclarations([
@@ -3531,8 +3545,7 @@ class Checker {
         );
         return INVALID_TV;
       }
-      const value =
-        tv.value !== null && typeof tv.value === 'boolean' ? !tv.value : null;
+      const value = tv.value === null ? null : foldUnary(e.op, tv.value);
       return {type: BoolType, qualifier: tv.qualifier, value};
     }
     if (e.op === Op.Minus || e.op === Op.Plus) {
@@ -3546,14 +3559,7 @@ class Checker {
       if (e.op === Op.Plus) {
         return tv;
       }
-      const value =
-        tv.value === null
-          ? null
-          : isNaValue(tv.value)
-            ? NA_VALUE
-            : typeof tv.value === 'number'
-              ? canonicalConst(-tv.value)
-              : null;
+      const value = tv.value === null ? null : foldUnary(e.op, tv.value);
       return {type: tv.type, qualifier: tv.qualifier, value};
     }
     this.error(e.pos, `invalid unary operator '${e.op}'`);
@@ -5144,7 +5150,9 @@ class Checker {
       if (!qualifierLE(tv.qualifier, param.qualifierCap)) {
         return fail(
           expr.pos,
-          `argument '${param.name}' to '${native.name}' accepts at most ${param.qualifierCap}, got ${tv.qualifier}`,
+          native.effect === Effect.Param && param.name === 'defval'
+            ? inputDefaultRule(native.name)
+            : `argument '${param.name}' to '${native.name}' accepts at most ${param.qualifierCap}, got ${tv.qualifier}`,
         );
       }
       if (param.constLiteral && tv.value === null) {
@@ -5561,6 +5569,8 @@ class Checker {
     }
 
     const defvalExpr = arg('defval');
+    const defval =
+      defvalExpr === null ? null : this.inputDefaultValue(native, defvalExpr);
     const optionsExpr = arg('options');
     if (defvalExpr !== null && optionsExpr !== null) {
       const tuple = unwrapParens(optionsExpr);
@@ -5602,12 +5612,10 @@ class Checker {
           optionValues.push(elemTv.value);
         }
         if (
-          defvalTv.value !== null &&
-          !isNaValue(defvalTv.value) &&
+          defval !== null &&
+          !isNaValue(defval) &&
           optionValues.length > 0 &&
-          !optionValues.some(option =>
-            constValuesEqual(option, defvalTv.value!),
-          )
+          !optionValues.some(option => constValuesEqual(option, defval))
         ) {
           this.error(
             defvalExpr.pos,
@@ -5620,7 +5628,6 @@ class Checker {
     const minval = value('minval');
     const maxval = value('maxval');
     const step = value('step');
-    const defval = value('defval');
     if (
       typeof minval === 'number' &&
       typeof maxval === 'number' &&
@@ -5683,6 +5690,37 @@ class Checker {
         );
       }
     }
+  }
+
+  // The default the input checks see: its constant, or for a chart default
+  // (Tea-only) its value before the host binds the chart's values. Reports a
+  // default that reads anything else, or that is na without those values.
+  // A source default is a series alias, checked separately.
+  private inputDefaultValue(
+    native: NativeFunc,
+    expr: syntax.Expr,
+  ): ConstValue | null {
+    const tv = this.tvOf(expr);
+    if (
+      tv.value !== null ||
+      tv.type.kind === TypeKind.Invalid ||
+      native.resultQualifier === Qualifier.Series
+    ) {
+      return tv.value;
+    }
+    const folded = chartDefault(expr, this.info);
+    if ('invalid' in folded) {
+      this.error(folded.invalid.pos, inputDefaultRule(native.name));
+      return null;
+    }
+    if (isNaValue(folded.value)) {
+      this.error(
+        expr.pos,
+        `'${native.name}' default cannot be na when the host supplies no chart values`,
+      );
+      return null;
+    }
+    return folded.value;
   }
 
   private bindExpressionNeedsUnavailableFrame(expr: syntax.Expr): boolean {
@@ -6782,6 +6820,101 @@ function foldBinary(
     default:
       return null;
   }
+}
+
+function foldUnary(op: Op, value: ConstValue): ConstValue | null {
+  switch (op) {
+    case Op.Not:
+      return typeof value === 'boolean' ? !value : null;
+    case Op.Plus:
+      return value;
+    case Op.Minus:
+      return isNaValue(value)
+        ? NA_VALUE
+        : typeof value === 'number'
+          ? canonicalConst(-value)
+          : null;
+    default:
+      return null;
+  }
+}
+
+/** What an `input.*` default may read; the error for any other default. */
+function inputDefaultRule(native: string): string {
+  return `'${native}' default may read only constants and the chart's fixed values chart.timeframe, syminfo.* and timeframe.*, combined with operators and ?:`;
+}
+
+/**
+ * A chart default (Tea-only): an `input.*` default that is not a constant
+ * but reads the values the host fixes when it binds the script to a chart.
+ * It may consist only of constants, fixed builtins (`chart.timeframe`,
+ * `syminfo.*`, `timeframe.*`), operators, parentheses and `?:`; `invalid`
+ * is its first other part, which the checker reports. `value` is the
+ * default before the host supplies those values, each fixed builtin reading
+ * its typed empty value (`false` for a `bool`, otherwise `na`); the noder
+ * records it as the default a host sees before binding.
+ *
+ * @example For `chart.timeframe == "D" ? "Monthly" : "Daily"`, `value` is
+ * `"Daily"`: without a chart, `chart.timeframe` is `na`, and `na == "D"` is
+ * false.
+ */
+export function chartDefault(
+  expr: syntax.Expr,
+  info: Info,
+): {readonly value: ConstValue} | {readonly invalid: syntax.Expr} {
+  const first: {invalid?: syntax.Expr} = {};
+  const fold = (e: syntax.Expr): ConstValue => {
+    const tv = info.types.get(e);
+    if (tv?.value != null) return tv.value;
+    let value: ConstValue | null = null;
+    switch (e.kind) {
+      case NodeKind.ParenExpr:
+        return fold(e.x);
+      case NodeKind.Name:
+      case NodeKind.SelectorExpr: {
+        const selection =
+          e.kind === NodeKind.SelectorExpr ? info.selections.get(e) : null;
+        const object =
+          e.kind === NodeKind.Name
+            ? info.uses.get(e)
+            : selection?.kind === SelectionKind.Builtin
+              ? selection.builtin
+              : undefined;
+        if (
+          object?.kind === ObjectKind.Builtin &&
+          object.binding?.kind === 'builtin' &&
+          qualifierLE(object.qualifier, Qualifier.Simple)
+        ) {
+          value = object.type.kind === TypeKind.Bool ? false : NA_VALUE;
+        }
+        break;
+      }
+      case NodeKind.UnaryExpr:
+        value = foldUnary(e.op, fold(e.x));
+        break;
+      case NodeKind.BinaryExpr: {
+        const x = {...(info.types.get(e.x) ?? INVALID_TV), value: fold(e.x)};
+        const y = {...(info.types.get(e.y) ?? INVALID_TV), value: fold(e.y)};
+        value = tv === undefined ? null : foldBinary(e.op, x, y, tv.type);
+        break;
+      }
+      case NodeKind.CondExpr: {
+        // Bind may take either branch, so both must qualify.
+        const cond = fold(e.cond);
+        const then = fold(e.then);
+        const otherwise = fold(e.else);
+        value = cond === true ? then : otherwise;
+        break;
+      }
+    }
+    if (value === null) {
+      first.invalid ??= e;
+      return NA_VALUE;
+    }
+    return value;
+  };
+  const value = fold(expr);
+  return first.invalid === undefined ? {value} : {invalid: first.invalid};
 }
 
 // Value folders for pure numeric natives; keyed by catalog name. Applied only
