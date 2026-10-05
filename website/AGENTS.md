@@ -1,9 +1,8 @@
 # Tea offline documentation renderer
 
-Docusaurus shell that builds the static site: the public one on GitHub Pages
-at https://longsurf-ai.github.io/tea/ (`TEA_DOCS_URL` and `TEA_DOCS_BASE_URL`,
-set by `.github/workflows/docs.yml`), and the version-matched one packaged for
-`tea docs`, served from the root. Navigation comes from `../docs/docs.json`.
+Docusaurus shell used only to build the static, version-matched site packaged
+for `tea docs`. Hosted documentation uses Mintlify from `../docs/docs.json`,
+published at https://openchart.co/tea.
 Content lives in `../docs`; this directory owns only offline configuration,
 navigation, and presentation.
 
