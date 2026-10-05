@@ -63,6 +63,17 @@ describe('CLI Batch Recipe', () => {
     expect(output).toContain('{"value":6}');
   });
 
+  test('run marks the CSV last row as barstate.islast', () => {
+    const output = cli(
+      'run',
+      join(ROOT, 'tests/fixtures/cli/last-bar.tea'),
+      '-i',
+      DATA,
+    );
+    expect(output).toMatch(/^0\s+na$/m);
+    expect(output).toMatch(/^1\s+3$/m);
+  });
+
   test('run preserves negative values and long parameter names', () => {
     const output = cli(
       'run',

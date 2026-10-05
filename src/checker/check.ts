@@ -496,14 +496,28 @@ class Checker {
           this.error(duplicate.pos, 'duplicate indicator() declaration');
         }
       }
-      // Hosts show the title, so it can't be blank.
+      // Hosts show the title, so it can't be blank. A timeframe is either
+      // the chart's ("") or one the host picks ("auto").
       for (const stmt of indicators) {
         const call = this.info.calls.get(
           unwrapParens(stmt.x) as syntax.CallExpr,
         );
-        const title = call?.kind === CallKind.Native ? call.args[0] : null;
+        if (call?.kind !== CallKind.Native) continue;
+        const arg = (name: string) =>
+          call.args[call.native.params.findIndex(p => p.name === name)];
+        const title = arg('title');
         if (title != null && this.tvOf(title).value === '') {
           this.error(title.pos, 'indicator() title must not be empty');
+        }
+        const timeframe = arg('timeframe');
+        if (timeframe != null) {
+          const value = this.tvOf(timeframe).value;
+          if (value !== '' && value !== 'auto') {
+            this.error(
+              timeframe.pos,
+              `indicator() timeframe must be "" (the chart's) or "auto"`,
+            );
+          }
         }
       }
       this.validateMethodDeclarations([

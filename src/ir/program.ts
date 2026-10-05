@@ -197,12 +197,20 @@ export interface MutableMethodIrFunc extends IrFuncBase {
 
 export type IrFunc = FreeIrFunc | ConstMethodIrFunc | MutableMethodIrFunc;
 
-/** The entry script's `indicator()` header: a title and a chart placement hint. */
+/**
+ * The entry script's `indicator()` header: a title, a chart placement hint
+ * and the bars the host runs the script on.
+ */
 export interface Declaration {
   readonly kind: 'indicator';
   readonly title: string;
   // Draw over the price pane instead of in a pane of its own.
   readonly overlay: boolean;
+  /**
+   * `''` asks the host to run the script on the chart's bars; `'auto'` lets
+   * the host pick finer bars of the same symbol. Tea runs either the same way.
+   */
+  readonly timeframe: '' | 'auto';
 }
 
 // @agent invariant: one Program instance runs against exactly one context
@@ -227,7 +235,8 @@ export interface Program {
    * never changes execution, and request children have none.
    *
    * @example `indicator("RSI", overlay = false)` as the first statement gives
-   * `{kind: 'indicator', title: 'RSI', overlay: false}`; without it, `null`.
+   * `{kind: 'indicator', title: 'RSI', overlay: false, timeframe: ''}`;
+   * without it, `null`.
    */
   readonly declaration: Declaration | null;
   /**

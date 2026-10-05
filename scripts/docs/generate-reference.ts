@@ -202,7 +202,7 @@ const BUILTIN_PAGES: readonly BuiltinPage[] = [
       'The symbol and the timeframe a host binds the script to, such as `NASDAQ:AAPL` and `D`.',
     intro:
       'Values the host supplies when it binds the script, available in every script without an import. `tea run` supplies none of them, so there they are `na`, or `false` for the `timeframe.is*` flags.',
-    natives: namespace('syminfo', 'timeframe'),
+    natives: namespace('syminfo', 'timeframe', 'chart'),
   },
   {
     slug: 'input',
@@ -452,12 +452,13 @@ function valueEntries(values: readonly NativeVar[], outputs: Outputs): Entry[] {
     );
     if (key === undefined)
       throw new Error(`native value ${value.name} has no documentation`);
-    const members = NATIVE_VALUE_DOCS[key]!.members;
+    const {members, heading} = NATIVE_VALUE_DOCS[key]!;
     const doc = nativeValueDocs(key)!;
     if (!key.endsWith('*')) {
       entries.push(
         entry({
           name: value.name,
+          ...(heading === undefined ? {} : {heading}),
           kind: value.qualifier === Qualifier.Const ? 'constant' : 'variable',
           summary: doc.summary,
           signatures: [valueSignature(value)],

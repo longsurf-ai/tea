@@ -44,10 +44,10 @@ drawing objects: there is no `label.new`, `line.new`, `box.new`,
 
 Tea accepts these Pine Script parameters by position but rejects any argument for them.
 
-| Function                                             | Parameters   |
-| ---------------------------------------------------- | ------------ |
-| [`indicator`](./builtins/core.md#indicator)          | `shorttitle` |
-| [`request.security`](./builtins/request.md#security) | `currency`   |
+| Function                                             | Parameters                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------- |
+| [`indicator`](./builtins/core.md#indicator)          | `shorttitle`, `format`, `precision`, `scale`, `max_bars_back` |
+| [`request.security`](./builtins/request.md#security) | `currency`                                                    |
 
 ## Functions and values
 

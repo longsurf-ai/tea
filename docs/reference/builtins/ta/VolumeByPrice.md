@@ -24,3 +24,44 @@ Row `i` covers the prices from `low + i * step` to `low + (i + 1) * step`.
 The arrays hold one value per row, the bottom row first. An empty profile,
 when the window holds no bar with a price range, has no rows and is `na`
 everywhere else.
+
+**Formula**
+
+$$
+\begin{aligned}
+\mathrm{row}_i &= [\mathit{low} + i \cdot \mathit{step},\ \mathit{low} + (i + 1) \cdot \mathit{step}) \\
+\mathit{poc} &= \min \operatorname*{arg\,max}_i (\mathit{up}_i + \mathit{down}_i) \\
+\sum_{i = \mathit{valueLow}}^{\mathit{valueHigh}} (\mathit{up}_i + \mathit{down}_i)
+&\ge \frac{\mathit{valueArea}}{100} \sum_i (\mathit{up}_i + \mathit{down}_i)
+\end{aligned}
+$$
+
+**Warm-up and na:** None of its own: it holds what [`ta.volumeProfile`](./volumeProfile.md) returned. An
+empty profile has no rows, and `low`, `step`, `poc`, `valueLow` and
+`valueHigh` are `na`.
+
+**Example:** Bar 0 spans 10 to 12, so its two rows are 1 high. Bar 1 widens the range to
+10 to 14, so from then on each row is 2 high.
+
+```tea
+profile = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), false, rows = 2)
+emit "low" profile.low
+emit "step" profile.step
+emit "rows" profile.up.size()
+```
+
+```csv
+time,open,high,low,close,volume
+0,10,12,10,11,100
+1,11,14,12,13,50
+2,13,14,10,11,200
+```
+
+**Output:**
+
+```text
+index  low  step  rows
+0      10   1     2
+1      10   2     2
+2      10   2     2
+```

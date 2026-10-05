@@ -7,16 +7,16 @@ description: "Missing values, conversions, script declarations and script errors
 
 Functions available in every script without an import.
 
-| Name                        | Description                                                                   |
-| --------------------------- | ----------------------------------------------------------------------------- |
-| [`library`](#library)       | Declares a file as a library and names it.                                    |
-| [`indicator`](#indicator)   | Declares the script’s title and whether a host draws it over the price chart. |
-| [`na`](#na)                 | Tests whether a value is missing.                                             |
-| [`nz`](#nz)                 | Replaces a missing value with a fallback.                                     |
-| [`int`](#int)               | Converts a number to an integer by dropping its fractional part.              |
-| [`float`](#float)           | Converts a number to a `float`.                                               |
-| [`str.tostring`](#tostring) | Converts a value to text.                                                     |
-| [`runtime.error`](#error)   | Stops the script with an error message.                                       |
+| Name                        | Description                                                                                         |
+| --------------------------- | --------------------------------------------------------------------------------------------------- |
+| [`library`](#library)       | Declares a file as a library and names it.                                                          |
+| [`indicator`](#indicator)   | Declares the script’s title, whether a host draws it over the price chart, and the bars it runs on. |
+| [`na`](#na)                 | Tests whether a value is missing.                                                                   |
+| [`nz`](#nz)                 | Replaces a missing value with a fallback.                                                           |
+| [`int`](#int)               | Converts a number to an integer by dropping its fractional part.                                    |
+| [`float`](#float)           | Converts a number to a `float`.                                                                     |
+| [`str.tostring`](#tostring) | Converts a value to text.                                                                           |
+| [`runtime.error`](#error)   | Stops the script with an error message.                                                             |
 
 ## Script declarations
 
@@ -42,18 +42,23 @@ export upper(float source, float width) => source + width
 
 ### indicator
 
-Declares the script’s title and whether a host draws it over the price chart.
+Declares the script’s title, whether a host draws it over the price chart, and the bars it runs on.
 
 ```tea
-void indicator(const string title, const bool overlay = …)
+void indicator(
+    const string title,
+    const bool overlay = …,
+    const string timeframe = …
+)
 ```
 
-| Parameter | Type           | Description                                                                                                                                                                                                                                                                                                |
-| --------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `title`   | `const string` | The name a host shows for the script. It cannot be empty. Must be a compile-time constant. Cannot be `na`.                                                                                                                                                                                                 |
-| `overlay` | `const bool`   | `true` to draw the script’s outputs over the price chart; `false`, the default, to draw them in a separate pane. Pass it by name, as `overlay = true`: the second position belongs to `shorttitle`, which Tea does not accept yet, so `indicator("X", true)` is an error. Must be a compile-time constant. |
+| Parameter   | Type           | Description                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`     | `const string` | The name a host shows for the script. It cannot be empty. Must be a compile-time constant. Cannot be `na`.                                                                                                                                                                                                                                                                         |
+| `overlay`   | `const bool`   | `true` to draw the script’s outputs over the price chart; `false`, the default, to draw them in a separate pane. Pass it by name, as `overlay = true`: the second position belongs to `shorttitle`, which Tea does not accept yet, so `indicator("X", true)` is an error. Must be a compile-time constant.                                                                         |
+| `timeframe` | `const string` | The bars the host runs the script on: `""`, the default, for the chart’s own bars, or `"auto"` to let the host pick finer bars of the same symbol. Other values are rejected. Under `"auto"`, `timeframe.*` describes the bars the script runs on and [`chart.timeframe`](./symbol-and-timeframe.md#chart-timeframe) the chart’s. Must be a compile-time constant. Cannot be `na`. |
 
-It must be the script’s first statement and appear at most once, and a library cannot declare it. The header only informs the host; it never changes how the script runs.
+It must be the script’s first statement and appear at most once, and a library cannot declare it. The header only informs the host; Tea runs the script the same way with or without it.
 
 **Example:** The header changes nothing in the output: `range` is `high - low` on every bar, from 2 on bar 0 to 5 on bar 5.
 

@@ -116,8 +116,10 @@ Pine is statically enabled while it is Tea's only Extension. It derives:
 - `time` from the current input datum;
 - `timenow` sampled from the injected host clock per attempt; hosts may supply a
   constant clock for one finite evaluation;
-- bar-state flags from the current attempt and the host's `isRealtime`
-  callback, sampled per attempt like `timenow` (false by default).
+- bar-state flags from the current attempt and the host's `isRealtime` and
+  `isLast` callbacks, each sampled per attempt like `timenow` (false by
+  default). `isLast` marks the newest bar the host has delivered, such as a
+  finite input's last row and every live row, as `barstate.islast`.
 
 Missing application symbol/timeframe metadata becomes the builtin's declared
 empty Value. Contextual builtins never become another `Node.bind()` form.

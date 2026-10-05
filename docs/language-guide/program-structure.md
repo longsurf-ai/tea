@@ -72,9 +72,11 @@ or [libraries](../imports.md).
 ## Optional chart metadata
 
 An entry may begin with an `indicator()` header that tells a host how to show
-it: a title and whether to draw over the price chart. It must be the first
-statement, appear once, and use literal arguments with a non-empty title.
-It never changes how the program runs, and there is no `strategy()` header.
+it: a title, whether to draw over the price chart, and, with
+`timeframe = "auto"`, that the host may run it on finer bars of the same
+symbol. It must be the first statement, appear once, and use literal
+arguments with a non-empty title. Tea runs the program the same way with or
+without it, and there is no `strategy()` header.
 
 ```tea
 indicator("RSI", overlay = false)

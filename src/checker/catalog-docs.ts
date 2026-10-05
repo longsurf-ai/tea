@@ -39,6 +39,12 @@ export interface NativeFunctionDoc {
 export interface NativeValueDoc {
   /** One sentence, shown in summary tables. */
   readonly summary: string;
+  /**
+   * The heading on its reference page, when the last part of the name would
+   * repeat another heading there: `chart timeframe` beside the Timeframe
+   * section.
+   */
+  readonly heading?: string;
   /** Further Markdown paragraphs. */
   readonly details?: string;
   /** Complete programs the reference runs; build each with `example()`. */
@@ -179,14 +185,16 @@ export const NATIVE_FUNCTION_DOCS: Readonly<Record<string, NativeFunctionDoc>> =
     },
     indicator: {
       summary:
-        'Declares the script’s title and whether a host draws it over the price chart.',
+        'Declares the script’s title, whether a host draws it over the price chart, and the bars it runs on.',
       params: {
         title: 'The name a host shows for the script. It cannot be empty.',
         overlay:
           '`true` to draw the script’s outputs over the price chart; `false`, the default, to draw them in a separate pane. Pass it by name, as `overlay = true`: the second position belongs to `shorttitle`, which Tea does not accept yet, so `indicator("X", true)` is an error.',
+        timeframe:
+          'The bars the host runs the script on: `""`, the default, for the chart’s own bars, or `"auto"` to let the host pick finer bars of the same symbol. Other values are rejected. Under `"auto"`, `timeframe.*` describes the bars the script runs on and {@link chart.timeframe} the chart’s.',
       },
       details:
-        'It must be the script’s first statement and appear at most once, and a library cannot declare it. The header only informs the host; it never changes how the script runs.',
+        'It must be the script’s first statement and appear at most once, and a library cannot declare it. The header only informs the host; Tea runs the script the same way with or without it.',
       examples: [
         example(
           'The header changes nothing in the output: `range` is `high - low` on every bar, from 2 on bar 0 to 5 on bar 5.',
@@ -1842,6 +1850,13 @@ export const NATIVE_VALUE_DOCS: Readonly<Record<string, NativeValueDoc>> = {
     details: FLAG_FROM_HOST,
     category: 'Timeframe',
   },
+  'chart.timeframe': {
+    summary: 'The timeframe of the chart as text, such as `"D"`.',
+    heading: 'chart timeframe',
+    details:
+      'Supplied by the host when it binds the script; `na` when the host supplies none, as under `tea run`. It differs from {@link timeframe.period} when the host runs the script on other bars than the chart’s, as it may under an {@link indicator} header with `timeframe = "auto"`. Inside a request expression it is still the chart’s timeframe.',
+    category: 'Timeframe',
+  },
   'barstate.isfirst': {
     summary:
       'Whether the current bar is the first one, where {@link bar_index} is 0.',
@@ -1855,6 +1870,31 @@ export const NATIVE_VALUE_DOCS: Readonly<Record<string, NativeValueDoc>> = {
       ),
     ],
     see: ['bar_index'],
+    category: 'Bar state',
+  },
+  'barstate.islast': {
+    summary: 'Whether the current bar is the newest one the script has.',
+    details:
+      'The host reports it for each execution: `true` on the last bar of stored data and on every live update, since each is the newest bar when it executes, and `false` on every earlier bar, warmup included. It is `false` unless the host marks the newest bar. Unlike `not barstate.isconfirmed`, which marks the newest bar only while it is still forming, it also holds when that bar is already final, so use it to act once at the end of the data. Inside a request expression it refers to the requested data’s newest bar.',
+    examples: [
+      example(
+        '`total_volume` is `na` until the last bar, where it holds the volume of every bar: 840.',
+        lines(
+          'var float total = 0.0',
+          'total += volume',
+          'emit "total_volume" barstate.islast ? total : na',
+        ),
+        lines(
+          'time,volume',
+          '0,100',
+          '1,150',
+          '2,120',
+          '3,180',
+          '4,90',
+          '5,200',
+        ),
+      ),
+    ],
     category: 'Bar state',
   },
   'barstate.ishistory': {

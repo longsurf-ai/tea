@@ -13,6 +13,7 @@ Values the host supplies for the current bar, available in every script without 
 | [`time`](#time)                        | The current bar’s time, in milliseconds since the Unix epoch.                                    |
 | [`timenow`](#timenow)                  | The current clock time, in milliseconds since the Unix epoch.                                    |
 | [`barstate.isfirst`](#isfirst)         | Whether the current bar is the first one, where [`bar_index`](./bar-and-time.md#bar_index) is 0. |
+| [`barstate.islast`](#islast)           | Whether the current bar is the newest one the script has.                                        |
 | [`barstate.ishistory`](#ishistory)     | Whether the script is processing historical data.                                                |
 | [`barstate.isrealtime`](#isrealtime)   | Whether the script is processing live data.                                                      |
 | [`barstate.isconfirmed`](#isconfirmed) | Whether the current update is the bar’s final one.                                               |
@@ -156,6 +157,46 @@ index  close  first
 ```
 
 **See also:** [`bar_index`](./bar-and-time.md#bar_index)
+
+### islast
+
+Whether the current bar is the newest one the script has.
+
+```tea
+series bool barstate.islast
+```
+
+The host reports it for each execution: `true` on the last bar of stored data and on every live update, since each is the newest bar when it executes, and `false` on every earlier bar, warmup included. It is `false` unless the host marks the newest bar. Unlike `not barstate.isconfirmed`, which marks the newest bar only while it is still forming, it also holds when that bar is already final, so use it to act once at the end of the data. Inside a request expression it refers to the requested data’s newest bar.
+
+**Example:** `total_volume` is `na` until the last bar, where it holds the volume of every bar: 840.
+
+```tea
+var float total = 0.0
+total += volume
+emit "total_volume" barstate.islast ? total : na
+```
+
+```csv
+time,volume
+0,100
+1,150
+2,120
+3,180
+4,90
+5,200
+```
+
+**Output:**
+
+```text
+index  total_volume
+0      na
+1      na
+2      na
+3      na
+4      na
+5      840
+```
 
 ### ishistory
 

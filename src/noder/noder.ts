@@ -819,7 +819,16 @@ class Noder {
     if (typeof title !== 'string') {
       return fatal('indicator() title is not a folded string');
     }
-    return {kind: 'indicator', title, overlay: value('overlay') === true};
+    const timeframe = value('timeframe') ?? '';
+    if (timeframe !== '' && timeframe !== 'auto') {
+      return fatal('indicator() timeframe is not "" or "auto"');
+    }
+    return {
+      kind: 'indicator',
+      title,
+      overlay: value('overlay') === true,
+      timeframe,
+    };
   }
 
   private nodeExprStmt(stmt: syntax.ExprStmt): IrStmt[] {

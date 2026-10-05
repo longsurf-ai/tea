@@ -59,3 +59,47 @@ pass one-element arrays and never reset:
 profile = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), false)
 emit "poc" profile.low + (profile.poc + 0.5) * profile.step
 ```
+
+**Formula**
+
+$$
+\begin{aligned}
+\mathit{step} &= \frac{H - L}{\mathit{rows}}, \quad
+H = \max_s \mathit{high}_s, \quad L = \min_s \mathit{low}_s \\
+\mathit{up}_i &= \sum_{s\ \text{rising}} \mathit{volume}_s \cdot
+\frac{\lvert [\mathit{low}_s, \mathit{high}_s] \cap \mathrm{row}_i \rvert}{\mathit{high}_s - \mathit{low}_s}
+\end{aligned}
+
+over the bars `s` added since the last reset, and `down` likewise over
+falling bars; `row` is as in [`ta.VolumeByPrice`](./VolumeByPrice.md).
+$$
+
+**Warm-up and na:** None: the first call returns the profile of the bars it was given.
+Bars with an `na` high or low add nothing, so until one with both arrives
+the profile is empty.
+
+**Example:** `poc` is the middle of the row with the most volume. On bar 0 the two rows
+tie, so the lower one wins: 10.5. Bar 1 widens the range to 10 to 14 and
+fills the upper row; bar 2 adds 100 to each row, leaving the lower row ahead,
+200 to 150: 11.
+
+```tea
+profile = ta.volumeProfile(array.from(high), array.from(low), array.from(volume), array.from(close >= open), false, rows = 2)
+emit "poc" profile.low + (profile.poc + 0.5) * profile.step
+```
+
+```csv
+time,open,high,low,close,volume
+0,10,12,10,11,100
+1,11,14,12,13,50
+2,13,14,10,11,200
+```
+
+**Output:**
+
+```text
+index  poc
+0      10.5
+1      11
+2      11
+```

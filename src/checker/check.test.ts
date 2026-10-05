@@ -511,7 +511,9 @@ describe('context builtins', () => {
       ['timeframe.isweekly', {domain: 'timeframe', field: 'isweekly'}],
       ['timeframe.ismonthly', {domain: 'timeframe', field: 'ismonthly'}],
       ['timeframe.isdwm', {domain: 'timeframe', field: 'isdwm'}],
+      ['chart.timeframe', {domain: 'chart', field: 'timeframe'}],
       ['barstate.isfirst', {domain: 'barstate', field: 'isfirst'}],
+      ['barstate.islast', {domain: 'barstate', field: 'islast'}],
       ['barstate.ishistory', {domain: 'barstate', field: 'ishistory'}],
       ['barstate.isrealtime', {domain: 'barstate', field: 'isrealtime'}],
       ['barstate.isconfirmed', {domain: 'barstate', field: 'isconfirmed'}],
@@ -972,6 +974,32 @@ describe('diagnostics', () => {
     expect(errorsOf('indicator("RSI", "R")')).toEqual([
       "argument 'shorttitle' to 'indicator' is not supported yet",
     ]);
+  });
+
+  test('indicator() timeframe is "" or "auto", in Pine\'s position', () => {
+    const errorsOf = (src: string) =>
+      checkText(src).errors.map(error => error.msg);
+    expect(errorsOf('indicator("A", timeframe = "auto")')).toEqual([]);
+    expect(errorsOf('indicator("A", timeframe = "")')).toEqual([]);
+    for (const value of ['"D"', '"60"', '"AUTO"']) {
+      expect(errorsOf(`indicator("A", timeframe = ${value})`)).toEqual([
+        'indicator() timeframe must be "" (the chart\'s) or "auto"',
+      ]);
+    }
+    expect(errorsOf('indicator("A", timeframe = na)')).toEqual([
+      "argument 'timeframe' to 'indicator' cannot be na",
+    ]);
+    // Pine's positional order. The placeholders reject any argument until a
+    // host uses them; one argument per line reports each of them.
+    expect(
+      errorsOf(
+        'indicator("A",\n na,\n true,\n "price",\n 2,\n "right",\n 500,\n "auto")',
+      ),
+    ).toEqual(
+      ['shorttitle', 'format', 'precision', 'scale', 'max_bars_back'].map(
+        name => `argument '${name}' to 'indicator' is not supported yet`,
+      ),
+    );
   });
 
   test('switch has at most one default arm and it is final', () => {

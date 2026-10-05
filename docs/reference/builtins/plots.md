@@ -700,8 +700,9 @@ Each row is a band of the axis, such as a price range, drawn sideways from
 use: one row per price range, its parts the volume traded on rising and on
 falling bars. The host draws, for each `from`, only the description written
 on the last row that carries it. Every row written is sent and kept, so
-write a finished profile once and a forming one only while its bar can still
-change. This draws one fixed two-row profile:
+write a finished profile once, and a forming one only on the newest bar
+([`barstate.islast`](./bar-and-time.md#islast)): the last of stored data, or a live bar while it
+can still change. This draws one fixed two-row profile:
 
 ```tea
 start = time[10]

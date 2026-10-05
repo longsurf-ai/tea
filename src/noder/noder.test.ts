@@ -1462,13 +1462,19 @@ describe('program surface', () => {
       kind: 'indicator',
       title: 'RSI',
       overlay: true,
+      timeframe: '',
     });
     expect(program.requests[0].child.declaration).toBeNull();
     expect(mustBuild('indicator("A")\nemit "x" close').declaration).toEqual({
       kind: 'indicator',
       title: 'A',
       overlay: false,
+      timeframe: '',
     });
+    expect(
+      mustBuild('indicator("A", timeframe = "auto")\nemit "x" close')
+        .declaration,
+    ).toMatchObject({timeframe: 'auto'});
     expect(mustBuild('emit "x" close').declaration).toBeNull();
     expect(mustBuild('indicator("A")\nemit "x" close').body).toHaveLength(
       mustBuild('emit "x" close').body.length,

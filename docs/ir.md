@@ -154,12 +154,12 @@ places to its depth pass for annotation.
   series input alias, such as `close` or a library's exported alias; a direct
   `input.series(...)` call is not one. Neither noder nor runtime classifies a
   builtin by parsing its spelling.
-- **typed builtins** (also a projection): `time`, `timenow`, `bar_index`, `barstate.*`, `syminfo.*`, and
-  `timeframe.*` are typed values supplied by the runtime context rather than
+- **typed builtins** (also a projection): `time`, `timenow`, `bar_index`, `barstate.*`, `syminfo.*`,
+  `timeframe.*` and `chart.timeframe` are typed values supplied by the runtime context rather than
   numeric series columns. They project to `BuiltinInput`, which carries
   source, type, qualifier, and depth. Its source is a closed `{domain, field}`
   key. The domain is only the builtin namespace (`time`, `bar`, `barstate`,
-  `syminfo`, or `timeframe`); it never implies a corresponding compiler or
+  `syminfo`, `timeframe`, or `chart`); it never implies a corresponding compiler or
   runtime context object. Parent and request-child Programs project their own
   carriers even when they use the same semantic `BuiltinObject`.
 - **names**: variables in a Program are `Name` objects — the `ir.Name` model.

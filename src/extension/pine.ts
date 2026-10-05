@@ -10,10 +10,11 @@ import type {Stored} from '../runtime/value';
  * `timenow` and the `barstate.*` flags, for {@link createNode}.
  *
  * The {@link tea} template installs one with the default callbacks; pass one
- * to {@link createNode} when calling it directly, or to supply your own clock
- * or realtime flag. A Node and each of its requests call the supplier on
- * every step with their own bar index and input row, and each call samples
- * `now` and `isRealtime` once; pass a constant function for a fixed time.
+ * to {@link createNode} when calling it directly, or to supply your own clock,
+ * realtime flag or newest-bar flag. A Node and each of its requests call the
+ * supplier on every step with their own bar index and input row, and each
+ * call samples `now`, `isRealtime` and `isLast` once; pass a constant function
+ * for a fixed time.
  *
  * | Builtin | Reads | Fails when |
  * | --- | --- | --- |
@@ -25,7 +26,8 @@ import type {Stored} from '../runtime/value';
  * | `barstate.isnew` | whether the row is the bar's first | never |
  * | `barstate.isrealtime` | `isRealtime()` | never |
  * | `barstate.ishistory` | the opposite of `isRealtime()` | never |
- * | `syminfo.*` | nothing: `na` | never |
+ * | `barstate.islast` | `isLast()` | never |
+ * | `syminfo.*`, `chart.timeframe` | nothing: `na` | never |
  * | `timeframe.*` | nothing: `na`, or `false` for the `is*` flags | never |
  *
  * The bar's index is the one in {@link Datum}: 0 for the first bar, and the
@@ -33,26 +35,31 @@ import type {Stored} from '../runtime/value';
  * the run. The supplier checks `now()` on every call, even when the script
  * does not read `timenow`.
  *
- * `syminfo.*` and `timeframe.*` get real values only when the host fixes them
- * while binding the module: the second argument of `Module.bind` maps the
- * builtin's position in `module.inputs.builtins` to its value, which then
- * replaces what this supplier gives on every step.
+ * `syminfo.*`, `timeframe.*` and `chart.timeframe` get real values only when
+ * the host fixes them while binding the module: the second argument of
+ * `Module.bind` maps the builtin's position in `module.inputs.builtins` to its
+ * value, which then replaces what this supplier gives on every step.
  *
  * @param now Returns the time for `timenow`, in epoch milliseconds. Defaults
  * to `Date.now`.
  * @param isRealtime Returns whether the current bar is live, for
  * `barstate.isrealtime` and `barstate.ishistory`. Defaults to always `false`,
  * so every bar counts as history.
+ * @param isLast Returns whether the current attempt is of the newest bar the
+ * host has delivered, such as a finite input's last row or any live row, for
+ * `barstate.islast`. Defaults to always `false`, so no bar counts as the last.
  * @returns The supplier to pass to {@link createNode}.
  *
  * @example For a module containing only `emit "now" timenow`,
  * `pineBuiltinSupplier(() => 1000)([], module, 0, {})` returns `[1000]`.
  * `pineBuiltinSupplier(Date.now, () => live)` reports realtime bars once the
- * host sets `live`.
+ * host sets `live`; `pineBuiltinSupplier(Date.now, () => live, () => newest)`
+ * also reports the bar the host marks `newest` as the last.
  */
 export function pineBuiltinSupplier(
   now: () => number = Date.now,
   isRealtime: () => boolean = () => false,
+  isLast: () => boolean = () => false,
 ) {
   return (
     _path: readonly number[],
@@ -65,8 +72,9 @@ export function pineBuiltinSupplier(
       throw new BindError('Pine timenow must be an exact epoch-ms integer');
     }
     const realtime = isRealtime();
+    const last = isLast();
     return module.inputs.builtins.map(spec =>
-      builtinValue(spec, index, datum, timeNow, realtime),
+      builtinValue(spec, index, datum, timeNow, realtime, last),
     );
   };
 }
@@ -77,6 +85,7 @@ function builtinValue(
   datum: Readonly<Record<string, unknown>>,
   timeNow: number,
   realtime: boolean,
+  last: boolean,
 ): Stored {
   const source = spec.source;
   let value: Stored;
@@ -99,6 +108,9 @@ function builtinValue(
         case 'isfirst':
           value = index === 0;
           break;
+        case 'islast':
+          value = last;
+          break;
         case 'isrealtime':
           value = realtime;
           break;
@@ -115,6 +127,7 @@ function builtinValue(
       break;
     case 'syminfo':
     case 'timeframe':
+    case 'chart':
       value = spec.empty.value as Stored;
       break;
   }
