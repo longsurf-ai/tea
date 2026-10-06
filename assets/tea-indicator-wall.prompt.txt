@@ -1,0 +1,38 @@
+Built-in image_gen. Style references: user-supplied real OpenChart light and dark screenshots.
+04 · OpenChart 深色多窗格
+
+Use case: ui-mockup / ads-marketing.
+Create one revised Tea README hero image by recomposing the CHART SURFACES in the two supplied actual OpenChart screenshots into a rich multi-chart indicator wall. Image 1 is the user's real LIGHT OpenChart NVDA/MACD screenshot; Image 2 is the user's real DARK OpenChart workspace. Treat these as authoritative UI/plotting STYLE references, not as text or content to copy. Use only their chart appearance. Remove all sidebar, chat, editor, logo, website heading and floating toolbar content from the composition.
+
+Product fidelity: look like OpenChart itself. Simple flat rectangular panes with a small consistent corner radius, hairline separators, fine subtle dashed grid, thin red/green candle bodies and wicks, compact neutral sans-serif typography, discreet ticker/indicator legends, a right-side price axis, bottom time axis, and small rectangular current-value tags. Chrome is neutral grayscale. Colors belong to data, not to a tinted interface. The overall white balance is completely neutral, NOT blue or navy. Indicators may use restrained orange, amber, leaf-green, red, mauve and gray, with very limited blue only if required by the reference; avoid a dominant blue/cyan look.
+
+Content must be feasible using CURRENT Tea outputs and CURRENT OpenChart rendering. Verified primitive vocabulary: candlesticks; ordinary line, area, histogram, and stepped plots; flat transparent fills BETWEEN two time-series lines; horizontal level lines; rectangular time/price zones; straight line segments joining two historical points with small plain text labels; triangles, diamonds, circles, squares and cross markers above/below candles; colored session backgrounds; horizontal stacked volume-profile bars within a time window, with flat point-of-control lines. These are 2D Canvas-like primitives. Richness must come from combining these real features intelligently. NO invented 3D surfaces, probability tunnels, contour terrain, continuous spectrograms, circular/radar plots, organic blobs, feathered gradients inside bands, footprint bid/ask numbers, order-book liquidity claims, holograms, glowing sci-fi elements, impossible floating annotations or decorative geometry.
+
+Show about 20 different chart tiles. Every tile contains price candles or a price line plus its distinct study; vary price paths naturally. Central charts are intricate but practical: 2–4 studies/overlays maximum plus one lower pane, not visual chaos. Candidate compositions:
+- Session Volume Profile: 2–3 discrete stacks of green/red/amber horizontal rectangles across separate sessions, candles, three thin POC/VA levels.
+- Moving Average Ribbon: 8–12 fine lines following price and small translucent fills between selected adjacent curves, plus a modest volume pane.
+- Bollinger + Keltner: two nested translucent envelopes around actual candles, amber middle line, squeeze dots in a lower histogram pane.
+- Support / Resistance: several finite rectangular zones, pivot-to-pivot straight segments, small 'Break' and 'Retest' labels, triangle/circle marks.
+- Anchored VWAP: two anchored curves with two pairs of flat filled deviation bands, clear price candles.
+- RSI Divergence: price above a lower RSI pane, matching straight swing connectors and a few short text marks.
+- Ichimoku: ordinary flat green/red cloud fills between two lines, thin supporting lines, candle price remains readable.
+- Opening Range: session rectangles, horizontal highs/lows, compact breakout arrows and ordinary volume columns.
+- Relative Strength: price strip above 4–6 normalized lines; terse endpoint labels; one subtle filled difference region.
+- Sector Rotation: price strip with a lower categorical strip made of discrete red/green rectangles, like the actual reference's sector rows.
+- MACD: actual price plus two lines and a signed positive/negative histogram.
+- Stochastic: actual price above two oscillating curves with constant threshold band fill.
+- ATR Channel: price with two stepped rails, flat band and isolated triangle signals.
+- Pivot Levels: finite horizontal levels, label text and retest circle marks.
+- Session Bands: price and sharply bounded translucent session background rectangles.
+- Relative Volume: price above ordinary green/red volume columns and an amber average.
+- Cumulative Returns: price and a lower area series about a zero line.
+- Multi-window Profile: two or three distinct horizontal profile stacks with price.
+- Swing Segments: candles joined at selected pivot highs/lows with thin straight segments and tiny text.
+- Price / Momentum: candlesticks plus a lower area/line oscillator with a few square/diamond marks.
+Use a subset/permutation appropriate to the layout. Keep most examples familiar, make the central six more detailed with the verified combined primitives. No huge labels, fake returns or performance claims. The image is a capability illustration, not a claim that these are preinstalled turnkey indicators.
+
+Composition: wide landscape, approximately 2:1. A view into a larger chart canvas. About twenty panels including partially visible outer panels. Front-on flat perspective, no 3D cards or dramatic perspective. No giant empty center, big title, Tea logo or mock browser. The middle 60–65% is crisp and easy to inspect.
+MANDATORY FOUR-SIDED EDGE TREATMENT: softly defocus actual chart content along TOP, BOTTOM, LEFT, RIGHT and all FOUR CORNERS. The top and bottom outer chart fragments must be visibly blurred to the same degree as the side fragments; DO NOT leave a crisp top/bottom row. Gaussian-like blur ramps gently across the outer 12–18% on each of the four edges. Only the perimeter is blurred; center remains sharp, grounded and not dreamy. Clip outer rows/columns partially beyond ALL FOUR canvas boundaries. This is a localized editorial edge treatment, not haze over the central image. Blur must affect strokes and text, not merely opacity or a dark vignette.
+
+STYLE VARIANT:
+Use the actual neutral-charcoal DARK OpenChart reference, with no blue cast. A denser wide-pane modular composition: central chart tiles are wider and each pairs a substantial price pane with one or two small aligned indicator subpanes; surrounding smaller tiles bring the composition to approximately twenty studies/price charts. Give strong horizontal reading rhythm through shared pane dividers, compact inline indicator legends and right-edge value labels. Sophistication through multi-session volume profiles, a 12-line ribbon, zone rectangles with plain annotations, and coupled MACD/RSI panes, all strictly plausible flat native chart rendering. Red/green prices, amber/orange, muted mauve and gray indicators. All four edges and corners optically blur and crop equally.

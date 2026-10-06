@@ -1,72 +1,56 @@
-# Tea language
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/tea-logo-dark.svg">
+    <img src="docs/assets/tea-logo-light.svg" alt="Tea" width="180">
+  </picture>
+</p>
 
-Tea is a programming language for time-series analysis and trading. It compiles
-to typed TypeScript using `tea/runtime`, with a supported scalar subset also
-lowering to WGSL. Broker, portfolio, and visualization behavior lives in ordinary
-Tea libraries.
+<p align="center">
+  <img src="assets/tea-indicator-wall-rounded.png" alt="Illustrated Tea indicator showcase in OpenChart's dark style: price charts with bands, volume profiles, lines, areas, annotations, shapes, and signal marks." width="100%">
+</p>
 
-Every entry is an ordinary program. For example:
+<p align="center">
+  Tea is an open-source language for computation on time-series data.
+</p>
 
-```tea
-// example.tea
-sum = close + open
-emit "sum" sum
-plot("sum-plot", sum, "Open plus close")
-```
+<p align="center">
+  <a href="https://openchart.co/tea"><strong>Read the documentation →</strong></a>
+</p>
 
-With `dataset.csv`:
+## Introduction
 
-```csv
-open,close
-1.0,1.3
-1.2,1.5
-1.4,1.2
-```
+Tea is a programming language for computation over data streams. It lets you
+express computations whose outputs depend on the current input and previous
+inputs, with history and state managed by the language.
 
-Run `tea run example.tea -i dataset.csv`. The named `sum` column contains
-2.3, 2.7, and 2.6; `sum-plot` contains the corresponding visual descriptions.
+You can use Tea to build:
 
-Plain `emit` writes a column once per step. `emit.append` collects an ordered
-list of values per step. Column names and types are fixed at compilation.
-Functions support explicit `return` and implicit tail-expression returns;
-ternaries evaluate only their selected branch.
+- **Technical indicators:** Combine and transform market data into signals.
+- **Trading strategies (coming soon):** Backtesting and live trading workflows
+  are not yet available.
+- **Market scanners (coming soon):** Live scanning is not yet available.
+- **Alerts:** Emit events that a host application can use to trigger external
+  actions, such as notifying an AI agent.
+- **Time-series prediction:** Express forecasting models and evaluate them
+  across datasets and parameter configurations.
 
-## Embedding
+### Why Tea
 
-Run `npm run build:package` to emit JavaScript and declarations. `tea` exports
-Node/DataStream APIs and the Pine builtin supplier; `tea/runtime` exports the
-typed execution library. Compiler hosts use `tea/compiler`, which takes source
-through `compileToProgram`, `generate` and `loadModule` to a `Module`. Editors
-use `tea/lsp` and `tea/reference`. The GPU backend is not exported yet.
-
-All entries share one split build, preserving runtime class identity. Consumers
-typecheck against declarations using their own compiler settings.
-
-## Editor support
-
-The VS Code/Cursor extension under [editors/vscode](editors/vscode) provides
-syntax highlighting, comment commands, bracket pairing, and indentation-aware
-folding for `.tea` files. See its README for packaging and installation.
-
-## Documentation
-
-Language documentation and Mintlify configuration live in [docs](docs).
-Use a supported LTS Node release (20, 22, or 24), then run `npm run docs:dev`
-while writing or `npm run docs:check` to validate references, navigation, and
-the packaged offline build. Mintlify publishes the documentation at
-https://openchart.co/tea from `main`.
-
-The Reference under `docs/reference` is generated from the code it describes:
-document a library export with a `/** */` doc comment directly above it, a native
-function or value in `src/checker/catalog-docs.ts`, and a package export with
-TSDoc; the `tea` command page comes from its command definitions. Only the
-language pages in `docs/reference/language` are written by hand. Run
-`npm run docs:generate` after changing any of these; `npm test` fails when a
-public name is undocumented or an example does not compile.
-
-The Docusaurus shell in [website](website) renders the version-matched offline
-site. `tea docs` serves that packaged build locally without running a site
-builder or requiring network access.
-
-See [Program IR](docs/ir.md), [Memory model](docs/memory-model.md), and
-[Runtime](docs/runtime.md) for compiler and execution contracts.
+- **Easy to write and read.** Tea's compact syntax lets people and agents focus
+  on the calculation. The language handles repeated evaluation, history, and
+  retained state, while the host supplies data streams. See
+  [Program structure](https://openchart.co/tea/language-guide/program-structure).
+- **Built for time-series performance.** Tea evaluates data incrementally and
+  retains the history each calculation needs. It uses
+  [Apache Arrow](https://arrow.apache.org/) for typed data exchange.
+- **Explicit I/O boundaries.** Tea scripts have no direct network or filesystem
+  access. The host application controls data access and external actions.
+- **Extensible.** Tea supports functions, structs, collections, interfaces, and
+  generics for composing reusable calculations. Recursive function calls are
+  not supported.
+- **Open source.** The compiler, runtime, and standard libraries are developed
+  in the open, so you can inspect how the language works and contribute to it.
+- **Experimental GPU execution.** Eligible numeric programs compile to WGSL
+  and run through WebGPU on compatible devices. Multiple datasets or parameter
+  configurations can share the same compiled program. See
+  [GPU support and limitations](https://openchart.co/tea/advanced/gpu-lowering).
