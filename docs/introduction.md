@@ -20,7 +20,7 @@ what sets Tea apart from other solutions are:
 2. **Tea is fast**: Tea is purposedly built for handling time series, where memory copy are avoided as much as possible (hint: we love [Arrow](https://arrow.apache.org/)).
 3. **Tea is secure**: There's no network or file system access capability built into Tea, making it easy to share and trust other people/agent's code.
 4. **Tea is extensible**: Despite not being a GPPL, Tea supports structs, collection types, interfaces, just as any high level programming language. The only limitation is that it doesn't support recursion.
-5. **Tea is Open**: Tea is open sourced under the Apache 2.0 license, allowing anyone to build on top of it.
+5. **Tea is open source**: Tea is released under the [MIT License](https://github.com/longsurf-ai/tea/blob/main/LICENSE), allowing anyone to build on top of it. Third-party notices are retained in [LICENSES/](https://github.com/longsurf-ai/tea/tree/main/LICENSES).
 6. **Tea runs on GPU**: This is still experimental, but Tea programs can be compiled into webGPU kernels that leverages any GPU from any platform to accelerate your strategy searching, parameter fitting, etc.
 
 

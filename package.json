@@ -16,6 +16,7 @@
     "website",
     "website/build",
     "README.md",
+    "LICENSE",
     "LICENSES"
   ],
   "bin": {

@@ -48,8 +48,10 @@ You can use Tea to build:
 - **Extensible.** Tea supports functions, structs, collections, interfaces, and
   generics for composing reusable calculations. Recursive function calls are
   not supported.
-- **Open source.** The compiler, runtime, and standard libraries are developed
-  in the open, so you can inspect how the language works and contribute to it.
+- **Open source.** Tea is released under the [MIT License](LICENSE). The
+  compiler, runtime, and standard libraries are developed in the open, so you
+  can inspect how the language works and contribute to it. Third-party notices
+  are retained in [LICENSES/](LICENSES/).
 - **Experimental GPU execution.** Eligible numeric programs compile to WGSL
   and run through WebGPU on compatible devices. Multiple datasets or parameter
   configurations can share the same compiled program. See
