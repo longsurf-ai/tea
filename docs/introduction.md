@@ -9,8 +9,8 @@ It can be used to express arbitrary computation where output is a function of th
 What this means is that Tea can be used to build:
 
 * **Technical Indicators**: market data are combined and transformed into signals
-* **Trading Strategies**: a single Tea script can be used for both backtesting and live trading
-* **Market Scanner**: a Tea script can be applied to thousands of securities to find potential opportunities
+* **Trading Strategies (coming soon)**: backtesting and live trading workflows are not yet available
+* **Market Scanner (coming soon)**: live scanning is not yet available
 * **Alerts**: a Tea script can be used to set up alerts that trigger external event (e.g., AI agents)
 * **Time Series Prediction**: a Tea script can be used to model time series and automatically estimate the best parameters
 

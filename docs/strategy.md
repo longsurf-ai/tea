@@ -6,8 +6,8 @@ A Tea strategy is the entry source plus the policy state it declares. Broker
 execution, portfolio accounting, and their sequencing are reusable ordinary Tea
 libraries compiled into the same `Program` as the strategy.
 
-For a runnable walkthrough, see
-[Backtest your strategy](getting-started/backtest-your-strategy.md).
+The [strategy backtesting workflow](getting-started/backtest-your-strategy.md)
+is coming soon.
 
 ## Ordinary program composition
 

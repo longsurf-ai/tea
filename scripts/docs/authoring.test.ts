@@ -8,8 +8,6 @@ import {generate} from '../../src/codegen/codegen';
 const pages = [
   'getting-started/Hello world.md',
   'getting-started/Write your first indicator.md',
-  'getting-started/backtest-your-strategy.md',
-  'getting-started/live-scanner.md',
   'advanced/tea-compiler.md',
   'geometry.md',
   'runtime.md',
